@@ -49,10 +49,10 @@
     {
       "identity" : "llmkit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Beingpax/LLMkit.git",
+      "location" : "https://github.com/pinhosystems/LLMkit.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "2a84ea31fa3fc73a84e015fb3df33e6eba8653d8"
+        "branch" : "fix/transcription-timeout-and-decoder",
+        "revision" : "e432c85d785910942c16be685df65fa981558bbc"
       }
     },
     {

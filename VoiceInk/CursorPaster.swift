@@ -126,9 +126,15 @@ class CursorPaster {
         vDown?.flags   = .maskCommand
         vUp?.flags     = .maskCommand
 
+        // Small gaps between events so slow apps (Electron, web views, busy editors)
+        // don't drop a transition. 1ms is below human perception but well above
+        // the few microseconds it can take for the event tap to dispatch.
         cmdDown?.post(tap: .cghidEventTap)
+        usleep(1_000)
         vDown?.post(tap: .cghidEventTap)
+        usleep(1_000)
         vUp?.post(tap: .cghidEventTap)
+        usleep(1_000)
         cmdUp?.post(tap: .cghidEventTap)
 
         logger.notice("CGEvents posted for Cmd+V")

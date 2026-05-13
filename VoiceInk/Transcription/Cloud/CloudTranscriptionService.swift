@@ -11,6 +11,7 @@ enum CloudTranscriptionError: Error, LocalizedError {
     case networkError(Error)
     case noTranscriptionReturned
     case dataEncodingError
+    case timeout(seconds: TimeInterval)
 
     var errorDescription: String? {
         switch self {
@@ -30,11 +31,20 @@ enum CloudTranscriptionError: Error, LocalizedError {
             return "The API returned an empty or invalid response."
         case .dataEncodingError:
             return "Failed to encode the request body."
+        case .timeout(let seconds):
+            return "Transcription timed out after \(Int(seconds))s. Increase the timeout in AI Models → Transcription Request Timeout for longer audio."
         }
     }
 }
 
 class CloudTranscriptionService: TranscriptionService {
+    /// Fallback when the user has not configured the timeout. Big enough for ~5 min of
+    /// audio on most providers while still surfacing a real error before the user gives up.
+    static let defaultTranscriptionTimeoutSeconds: TimeInterval = 120
+
+    /// UserDefaults key for the user-configurable transcription resource timeout.
+    static let transcriptionTimeoutSecondsKey = "TranscriptionTimeoutSeconds"
+
     private let modelContext: ModelContext
     private lazy var openAICompatibleService = OpenAICompatibleTranscriptionService()
 
@@ -46,13 +56,18 @@ class CloudTranscriptionService: TranscriptionService {
         let audioData = try loadAudioData(from: audioURL)
         let fileName = audioURL.lastPathComponent
         let language = selectedLanguage()
+        let resourceTimeout = Self.configuredResourceTimeout()
 
         do {
             if model.provider == .custom {
                 guard let customModel = model as? CustomCloudModel else {
                     throw CloudTranscriptionError.unsupportedProvider
                 }
-                return try await openAICompatibleService.transcribe(audioURL: audioURL, model: customModel)
+                return try await openAICompatibleService.transcribe(
+                    audioURL: audioURL,
+                    model: customModel,
+                    resourceTimeout: resourceTimeout
+                )
             }
 
             guard let cloudProvider = CloudProviderRegistry.provider(for: model.provider) else {
@@ -66,15 +81,24 @@ class CloudTranscriptionService: TranscriptionService {
                 model: model.name,
                 language: language,
                 prompt: transcriptionPrompt(),
-                customVocabulary: getCustomDictionaryTerms()
+                customVocabulary: getCustomDictionaryTerms(),
+                resourceTimeout: resourceTimeout
             )
         } catch let error as CloudTranscriptionError {
             throw error
         } catch let error as LLMKitError {
-            throw mapLLMKitError(error)
+            throw mapLLMKitError(error, resourceTimeout: resourceTimeout)
         } catch {
             throw CloudTranscriptionError.networkError(error)
         }
+    }
+
+    /// Reads the user-configured transcription resource timeout, falling back to a
+    /// sensible default when the setting is missing or out of range.
+    static func configuredResourceTimeout() -> TimeInterval {
+        let stored = UserDefaults.standard.double(forKey: transcriptionTimeoutSecondsKey)
+        guard stored > 0 else { return defaultTranscriptionTimeoutSeconds }
+        return stored
     }
 
     // MARK: - Helpers
@@ -122,7 +146,7 @@ class CloudTranscriptionService: TranscriptionService {
         return unique
     }
 
-    private func mapLLMKitError(_ error: LLMKitError) -> CloudTranscriptionError {
+    private func mapLLMKitError(_ error: LLMKitError, resourceTimeout: TimeInterval) -> CloudTranscriptionError {
         switch error {
         case .missingAPIKey:
             return .missingAPIKey
@@ -132,9 +156,11 @@ class CloudTranscriptionService: TranscriptionService {
             return .noTranscriptionReturned
         case .encodingError:
             return .dataEncodingError
+        case .timeout:
+            return .timeout(seconds: resourceTimeout)
         case .networkError(let detail):
             return .networkError(NSError(domain: "LLMkit", code: -1, userInfo: [NSLocalizedDescriptionKey: detail]))
-        case .invalidURL, .decodingError, .timeout:
+        case .invalidURL, .decodingError:
             return .networkError(error)
         }
     }

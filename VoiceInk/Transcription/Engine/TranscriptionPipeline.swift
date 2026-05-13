@@ -151,6 +151,20 @@ class TranscriptionPipeline {
                 }
             }
 
+            // Timeouts deserve a longer, more discoverable notification: the user
+            // can act on them (raise the timeout) and we don't want them to look
+            // like a silent failure mixed in with the recorder dismiss animation.
+            if let cloudError = error as? CloudTranscriptionError,
+               case .timeout(let seconds) = cloudError {
+                await MainActor.run {
+                    NotificationManager.shared.showNotification(
+                        title: "Transcription timed out after \(Int(seconds))s",
+                        type: .error,
+                        duration: 6.0
+                    )
+                }
+            }
+
             transcription.text = "Transcription Failed: \(errorDescription)"
             transcription.transcriptionStatus = TranscriptionStatus.failed.rawValue
         }
@@ -209,10 +223,13 @@ class TranscriptionPipeline {
             SoundManager.shared.playStopSound()
             let autoSendKey = PowerModeManager.shared.currentActiveConfiguration?.autoSendKey
             await restorePromptDetectionSettingsIfNeeded()
+            // Wait for Cmd+V to actually be posted before dismissing the recorder.
+            // Previously dismissTask ran in parallel with the paste task, which could
+            // shift focus away from the target app mid-paste and lose characters.
+            await pastePostTask.value
             dismissTask = Task { @MainActor in
                 await onDismiss()
             }
-            await pastePostTask.value
 
             if let autoSendKey, autoSendKey.isEnabled {
                 Task { @MainActor in
