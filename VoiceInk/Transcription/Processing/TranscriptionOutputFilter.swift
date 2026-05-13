@@ -5,10 +5,22 @@ struct TranscriptionOutputFilter {
     private static let lowercaseTranscriptionKey = "LowercaseTranscription"
     private static let apostropheLikeCharacters = CharacterSet(charactersIn: "'’‘ʼ＇")
     
-    private static let hallucinationPatterns = [
-        #"\[.*?\]"#,     // []
-        #"\(.*?\)"#,     // ()
-        #"\{.*?\}"#      // {}
+    /// Whisper-style non-verbal annotations that legitimately appear inside brackets/parens.
+    /// Strip only these — never plain user content like "(o gerente novo)" or "[ver depois]".
+    private static let hallucinationKeywords: Set<String> = [
+        "music", "music playing", "soft music", "loud music", "upbeat music",
+        "instrumental", "instrumental music", "intro music", "outro music",
+        "applause", "cheering", "crowd", "chatter", "background noise", "noise",
+        "laughter", "laugh", "laughs", "laughing", "chuckle", "chuckles",
+        "silence", "pause", "long pause",
+        "coughing", "cough", "sneeze", "breathing", "breath", "breathes",
+        "sigh", "sighs", "groan", "groans",
+        "whispering", "whisper", "muffled",
+        "inaudible", "indistinct", "unintelligible",
+        "click", "clicking", "tap", "tapping", "thump",
+        "intro", "outro", "music ends", "music fades",
+        "música", "música ao fundo", "risos", "aplausos", "silêncio",
+        "tosse", "suspiro", "inaudível"
     ]
 
     static func filter(_ text: String) -> String {
@@ -21,13 +33,9 @@ struct TranscriptionOutputFilter {
             filteredText = regex.stringByReplacingMatches(in: filteredText, options: [], range: range, withTemplate: "")
         }
 
-        // Remove bracketed hallucinations
-        for pattern in hallucinationPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern) {
-                let range = NSRange(filteredText.startIndex..., in: filteredText)
-                filteredText = regex.stringByReplacingMatches(in: filteredText, options: [], range: range, withTemplate: "")
-            }
-        }
+        // Remove only bracketed/parenthesized Whisper hallucinations whose content
+        // matches a known non-verbal annotation. Legitimate parentheticals survive.
+        filteredText = removeKnownAnnotations(in: filteredText)
 
         // Remove filler words (if enabled)
         if FillerWordManager.shared.isEnabled {
@@ -83,6 +91,52 @@ struct TranscriptionOutputFilter {
         }
 
         return normalizeWhitespace(cleanedScalars.joined())
+    }
+
+    /// Strips bracket/paren/brace groups whose entire content is a known hallucination keyword.
+    /// Matches case-insensitively and ignores adjective adverbs like "loud" before the keyword.
+    private static func removeKnownAnnotations(in text: String) -> String {
+        let pairs: [(open: Character, close: Character)] = [("[", "]"), ("(", ")"), ("{", "}")]
+        var result = text
+        for (open, close) in pairs {
+            result = stripAnnotations(in: result, opening: open, closing: close)
+        }
+        return result
+    }
+
+    private static func stripAnnotations(in text: String, opening: Character, closing: Character) -> String {
+        guard text.contains(opening) else { return text }
+        var output = ""
+        output.reserveCapacity(text.count)
+        var cursor = text.startIndex
+        while let openIdx = text[cursor...].firstIndex(of: opening) {
+            output.append(contentsOf: text[cursor..<openIdx])
+            guard let closeIdx = text[text.index(after: openIdx)...].firstIndex(of: closing) else {
+                output.append(contentsOf: text[openIdx...])
+                return output
+            }
+            let inner = text[text.index(after: openIdx)..<closeIdx]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if isHallucination(inner) {
+                cursor = text.index(after: closeIdx)
+            } else {
+                output.append(contentsOf: text[openIdx...closeIdx])
+                cursor = text.index(after: closeIdx)
+            }
+        }
+        output.append(contentsOf: text[cursor...])
+        return output
+    }
+
+    private static func isHallucination(_ candidate: String) -> Bool {
+        guard !candidate.isEmpty else { return false }
+        if hallucinationKeywords.contains(candidate) { return true }
+        // Allow simple adjective prefixes (e.g. "loud applause", "soft chuckling")
+        let words = candidate.split(separator: " ")
+        guard words.count >= 2 else { return false }
+        let tail = words.dropFirst().joined(separator: " ")
+        return hallucinationKeywords.contains(tail)
     }
 
     private static func normalizeWhitespace(_ text: String) -> String {
