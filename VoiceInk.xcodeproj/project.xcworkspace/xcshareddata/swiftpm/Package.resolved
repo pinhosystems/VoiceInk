@@ -51,8 +51,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pinhosystems/LLMkit.git",
       "state" : {
-        "branch" : "fix/transcription-timeout-and-decoder",
-        "revision" : "e432c85d785910942c16be685df65fa981558bbc"
+        "branch" : "main",
+        "revision" : "0e7aa1d46dade014b36dd2e95e37333f89aeddff"
       }
     },
     {
