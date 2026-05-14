@@ -186,13 +186,12 @@ struct EnhancementSettingsPanel: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Stepper(value: maxChars, in: 500...32000, step: 500) {
-                        Text("\(maxChars.wrappedValue)")
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .frame(minWidth: 56, alignment: .trailing)
-                    }
-                    .labelsHidden()
+                    Text("\(maxChars.wrappedValue)")
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .frame(minWidth: 56, alignment: .trailing)
+                    Stepper("Max characters", value: maxChars, in: 500...32000, step: 500)
+                        .labelsHidden()
                 }
                 .padding(.leading, 4)
                 .transition(.opacity.combined(with: .move(edge: .top)))
