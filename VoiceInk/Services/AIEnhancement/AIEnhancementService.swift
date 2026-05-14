@@ -37,6 +37,39 @@ class AIEnhancementService: ObservableObject {
         }
     }
 
+    /// Whether the focused app's currently-selected text is attached to the
+    /// enhancement prompt. Previously this was always-on (gated only on
+    /// Accessibility permission), which produced noisy/inconsistent results in
+    /// terminals where "selection" is fragile or wrong.
+    @Published var useSelectedTextContext: Bool {
+        didSet {
+            UserDefaults.standard.set(useSelectedTextContext, forKey: "useSelectedTextContext")
+        }
+    }
+
+    /// Per-source caps in characters. Default 4000 — comfortable for most chat
+    /// completions while protecting against a misreporting terminal returning
+    /// tens of KB. The values flow into UserDefaults so the user can tune them.
+    static let defaultContextMaxChars: Int = 4000
+
+    @Published var selectedTextContextMaxChars: Int {
+        didSet {
+            UserDefaults.standard.set(selectedTextContextMaxChars, forKey: "selectedTextContextMaxChars")
+        }
+    }
+
+    @Published var clipboardContextMaxChars: Int {
+        didSet {
+            UserDefaults.standard.set(clipboardContextMaxChars, forKey: "clipboardContextMaxChars")
+        }
+    }
+
+    @Published var screenCaptureContextMaxChars: Int {
+        didSet {
+            UserDefaults.standard.set(screenCaptureContextMaxChars, forKey: "screenCaptureContextMaxChars")
+        }
+    }
+
     @Published var customPrompts: [CustomPrompt] {
         didSet {
             if let encoded = try? JSONEncoder().encode(customPrompts) {
@@ -86,6 +119,19 @@ class AIEnhancementService: ObservableObject {
         self.isEnhancementEnabled = UserDefaults.standard.bool(forKey: "isAIEnhancementEnabled")
         self.useClipboardContext = UserDefaults.standard.bool(forKey: "useClipboardContext")
         self.useScreenCaptureContext = UserDefaults.standard.bool(forKey: "useScreenCaptureContext")
+        // Default selected-text context to ON so users on existing installs see
+        // identical behavior; the toggle exists so they can turn it off when a
+        // terminal or text editor reports flaky selections.
+        if UserDefaults.standard.object(forKey: "useSelectedTextContext") == nil {
+            UserDefaults.standard.set(true, forKey: "useSelectedTextContext")
+        }
+        self.useSelectedTextContext = UserDefaults.standard.bool(forKey: "useSelectedTextContext")
+        let storedSelectedMax = UserDefaults.standard.integer(forKey: "selectedTextContextMaxChars")
+        self.selectedTextContextMaxChars = storedSelectedMax > 0 ? storedSelectedMax : Self.defaultContextMaxChars
+        let storedClipboardMax = UserDefaults.standard.integer(forKey: "clipboardContextMaxChars")
+        self.clipboardContextMaxChars = storedClipboardMax > 0 ? storedClipboardMax : Self.defaultContextMaxChars
+        let storedScreenMax = UserDefaults.standard.integer(forKey: "screenCaptureContextMaxChars")
+        self.screenCaptureContextMaxChars = storedScreenMax > 0 ? storedScreenMax : Self.defaultContextMaxChars
         if let savedPromptsData = UserDefaults.standard.data(forKey: "customPrompts"),
            let decodedPrompts = try? JSONDecoder().decode([CustomPrompt].self, from: savedPromptsData) {
             self.customPrompts = decodedPrompts
@@ -144,30 +190,42 @@ class AIEnhancementService: ObservableObject {
 
     private func getSystemMessage(for mode: EnhancementPrompt) async -> String {
         let selectedTextContext: String
-        if AXIsProcessTrusted() {
-            if let selectedText = await SelectedTextService.fetchSelectedText(), !selectedText.isEmpty {
-                selectedTextContext = "\n\n<CURRENTLY_SELECTED_TEXT>\n\(selectedText)\n</CURRENTLY_SELECTED_TEXT>"
-            } else {
-                selectedTextContext = ""
-            }
+        if useSelectedTextContext, AXIsProcessTrusted(),
+           let selectedText = await SelectedTextService.fetchSelectedText(),
+           !selectedText.isEmpty {
+            selectedTextContext = wrapContext(
+                name: "CURRENTLY_SELECTED_TEXT",
+                content: selectedText,
+                maxChars: selectedTextContextMaxChars
+            )
         } else {
             selectedTextContext = ""
         }
 
-        let clipboardContext = if useClipboardContext,
-                              let clipboardText = lastCapturedClipboard,
-                              !clipboardText.isEmpty {
-            "\n\n<CLIPBOARD_CONTEXT>\n\(clipboardText)\n</CLIPBOARD_CONTEXT>"
+        let clipboardContext: String
+        if useClipboardContext,
+           let clipboardText = lastCapturedClipboard,
+           !clipboardText.isEmpty {
+            clipboardContext = wrapContext(
+                name: "CLIPBOARD_CONTEXT",
+                content: clipboardText,
+                maxChars: clipboardContextMaxChars
+            )
         } else {
-            ""
+            clipboardContext = ""
         }
 
-        let screenCaptureContext = if useScreenCaptureContext,
-                                   let capturedText = screenCaptureService.lastCapturedText,
-                                   !capturedText.isEmpty {
-            "\n\n<CURRENT_WINDOW_CONTEXT>\n\(capturedText)\n</CURRENT_WINDOW_CONTEXT>"
+        let screenCaptureContext: String
+        if useScreenCaptureContext,
+           let capturedText = screenCaptureService.lastCapturedText,
+           !capturedText.isEmpty {
+            screenCaptureContext = wrapContext(
+                name: "CURRENT_WINDOW_CONTEXT",
+                content: capturedText,
+                maxChars: screenCaptureContextMaxChars
+            )
         } else {
-            ""
+            screenCaptureContext = ""
         }
 
         let customVocabulary = customVocabularyService.getCustomVocabulary(from: modelContext)
@@ -384,6 +442,22 @@ class AIEnhancementService: ObservableObject {
         } catch {
             throw error
         }
+    }
+
+    /// Wraps a context payload in its XML tag, truncating the content to
+    /// `maxChars` if needed. Truncation happens inside the tag so the LLM still
+    /// sees a well-formed block; an explicit "[truncated]" suffix flags the cut
+    /// for the model. Caps below 1 are treated as "unlimited" so a user typo
+    /// (e.g. clearing the field) does not silently drop the whole context.
+    private func wrapContext(name: String, content: String, maxChars: Int) -> String {
+        let payload: String
+        if maxChars > 0 && content.count > maxChars {
+            payload = String(content.prefix(maxChars)) + "…[truncated]"
+            logger.notice("Context \(name, privacy: .public) truncated from \(content.count, privacy: .public) to \(maxChars, privacy: .public) chars")
+        } else {
+            payload = content
+        }
+        return "\n\n<\(name)>\n\(payload)\n</\(name)>"
     }
 
     func captureScreenContext() async {

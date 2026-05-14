@@ -218,10 +218,20 @@ class VoiceInkEngine: NSObject, ObservableObject {
                                 }
 
                                 if let enhancementService = await self.enhancementService {
-                                    await MainActor.run {
-                                        enhancementService.captureClipboardContext()
+                                    // Only run the captures whose toggles are on. Previously both
+                                    // ran on every recording, which made ScreenCaptureKit + OCR
+                                    // fire (and prompt for permission) even when the user had
+                                    // disabled screen context entirely.
+                                    let shouldCaptureClipboard = await MainActor.run { enhancementService.useClipboardContext }
+                                    let shouldCaptureScreen = await MainActor.run { enhancementService.useScreenCaptureContext }
+                                    if shouldCaptureClipboard {
+                                        await MainActor.run {
+                                            enhancementService.captureClipboardContext()
+                                        }
                                     }
-                                    await enhancementService.captureScreenContext()
+                                    if shouldCaptureScreen {
+                                        await enhancementService.captureScreenContext()
+                                    }
                                 }
                             }
 
