@@ -697,7 +697,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pinhosystems/LLMkit.git";
 			requirement = {
-				branch = "fix/transcription-timeout-and-decoder";
+				branch = main;
 				kind = branch;
 			};
 		};
