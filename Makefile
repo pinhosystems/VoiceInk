@@ -4,7 +4,7 @@ WHISPER_CPP_DIR := $(DEPS_DIR)/whisper.cpp
 FRAMEWORK_PATH := $(WHISPER_CPP_DIR)/build-apple/whisper.xcframework
 LOCAL_DERIVED_DATA := $(CURDIR)/.local-build
 
-.PHONY: all clean whisper setup build local check healthcheck help dev run
+.PHONY: all clean whisper setup build local install-local check healthcheck help dev run
 
 # Default target
 all: check build
@@ -76,6 +76,12 @@ local: check setup
 		exit 1; \
 	fi
 
+# Build, reset stale TCC grants, and replace /Applications/VoiceInk.app in one shot.
+# See scripts/install-local.sh for the rationale and the one manual step left
+# (re-adding the app to Accessibility/Screen Recording in System Settings).
+install-local:
+	@$(CURDIR)/scripts/install-local.sh
+
 # Run application
 run:
 	@if [ -d "$$HOME/Downloads/VoiceInk.app" ]; then \
@@ -107,6 +113,7 @@ help:
 	@echo "  setup              Copy whisper XCFramework to VoiceInk project"
 	@echo "  build              Build the VoiceInk Xcode project"
 	@echo "  local              Build for local use (no Apple Developer certificate needed)"
+	@echo "  install-local      Build, reset stale TCC grants, replace /Applications/VoiceInk.app, launch"
 	@echo "  run                Launch the built VoiceInk app"
 	@echo "  dev                Build and run the app (for development)"
 	@echo "  all                Run full build process (default)"
