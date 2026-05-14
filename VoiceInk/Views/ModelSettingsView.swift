@@ -10,8 +10,12 @@ struct ModelSettingsView: View {
     @AppStorage("AppendTrailingSpace") private var appendTrailingSpace = true
     @AppStorage("PrewarmModelOnWake") private var prewarmModelOnWake = true
     @AppStorage("showLiveTextPreview") private var showLiveTextPreview = false
+    @AppStorage(CloudTranscriptionService.transcriptionTimeoutSecondsKey)
+    private var transcriptionTimeoutSeconds: Double = CloudTranscriptionService.defaultTranscriptionTimeoutSeconds
     @State private var customPrompt: String = ""
     @State private var isEditing: Bool = false
+
+    private static let transcriptionTimeoutOptions: [Double] = [30, 60, 120, 180, 300, 600, 900]
 
     var body: some View {
         Form {
@@ -115,6 +119,20 @@ struct ModelSettingsView: View {
             } header: {
                 Text("Advanced")
             }
+
+            Section {
+                Picker("Timeout duration", selection: $transcriptionTimeoutSeconds) {
+                    ForEach(Self.transcriptionTimeoutOptions, id: \.self) { seconds in
+                        Text(Self.label(forTimeout: seconds)).tag(seconds)
+                    }
+                }
+                .pickerStyle(.menu)
+            } header: {
+                HStack(spacing: 4) {
+                    Text("Transcription Request Timeout")
+                    InfoTip("Total budget for a cloud transcription, covering upload and server processing. Long audio (multi-minute) benefits from higher values. The request fails with a clear error if exceeded.")
+                }
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
@@ -123,5 +141,17 @@ struct ModelSettingsView: View {
                 customPrompt = whisperPrompt.getLanguagePrompt(for: selectedLanguage)
             }
         }
+    }
+
+    private static func label(forTimeout seconds: Double) -> String {
+        if seconds < 60 {
+            return "\(Int(seconds))s"
+        }
+        let minutes = Int(seconds / 60)
+        let remainder = Int(seconds.truncatingRemainder(dividingBy: 60))
+        if remainder == 0 {
+            return "\(minutes) min"
+        }
+        return "\(minutes) min \(remainder)s"
     }
 }
