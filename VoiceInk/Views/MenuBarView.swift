@@ -163,6 +163,19 @@ struct MenuBarView: View {
 
             Menu("Additional") {
                 Button {
+                    enhancementService.useSelectedTextContext.toggle()
+                    menuRefreshTrigger.toggle()
+                } label: {
+                    HStack {
+                        Text("Selected Text Context")
+                        Spacer()
+                        if enhancementService.useSelectedTextContext {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                Button {
                     enhancementService.useClipboardContext.toggle()
                     menuRefreshTrigger.toggle()
                 } label: {
