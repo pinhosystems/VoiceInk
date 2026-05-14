@@ -26,9 +26,6 @@ struct ModelManagementView: View {
     @State private var selectedFilter: ModelFilter = .recommended
     @State private var isShowingSettings = false
 
-    @AppStorage(CloudTranscriptionService.transcriptionTimeoutSecondsKey)
-    private var transcriptionTimeoutSeconds: Double = CloudTranscriptionService.defaultTranscriptionTimeoutSeconds
-
     private let settingsPanelWidth: CGFloat = 400
 
     // State for the unified alert
@@ -52,7 +49,6 @@ struct ModelManagementView: View {
 
                 defaultModelSection
                 languageSelectionSection
-                transcriptionTimeoutSection
                 availableModelsSection
             }
             .padding(40)
@@ -123,42 +119,6 @@ struct ModelManagementView: View {
 
     private var languageSelectionSection: some View {
         LanguageSelectionView(transcriptionModelManager: transcriptionModelManager, displayMode: .full, whisperPrompt: whisperPrompt)
-    }
-
-    private static let transcriptionTimeoutOptions: [Double] = [30, 60, 120, 180, 300, 600, 900]
-
-    private var transcriptionTimeoutSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text("Transcription Request Timeout")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                InfoTip("Total time allowed for a cloud transcription, including upload and server processing. Long audio (multi-minute) benefits from higher values. The request will fail with a clear error if exceeded.")
-            }
-            Picker("", selection: $transcriptionTimeoutSeconds) {
-                ForEach(Self.transcriptionTimeoutOptions, id: \.self) { seconds in
-                    Text(label(forTimeout: seconds)).tag(seconds)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(CardBackground(isSelected: false))
-        .cornerRadius(10)
-    }
-
-    private func label(forTimeout seconds: Double) -> String {
-        if seconds < 60 {
-            return "\(Int(seconds))s"
-        }
-        let minutes = Int(seconds / 60)
-        let remainder = Int(seconds.truncatingRemainder(dividingBy: 60))
-        if remainder == 0 {
-            return "\(minutes) min"
-        }
-        return "\(minutes) min \(remainder)s"
     }
 
     private var availableModelsSection: some View {
