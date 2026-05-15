@@ -48,6 +48,16 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private var renderBuffer: UnsafeMutablePointer<Float32>?
     private var renderBufferSize: UInt32 = 0
 
+    // Stateful linear-interpolation resampler. Tracks fractional input position
+    // across callbacks so we don't drop the residual samples at each buffer
+    // boundary (the previous stateless implementation lost ~0.5% of samples in
+    // 48k → 16k, accumulating ~300 ms of clock drift over a 60 s recording).
+    // `resamplerInputPos` is in *current-buffer* input-sample coordinates; a
+    // value < 0 means the next output sample must be interpolated between the
+    // carry sample (previous buffer's last sample) and inputSamples[0].
+    private var resamplerInputPos: Double = 0.0
+    private var resamplerCarrySample: Float32 = 0.0
+
     /// Called on the audio thread with raw PCM data (16-bit, 16kHz, mono) for streaming.
     var onAudioChunk: ((_ data: Data) -> Void)?
 
@@ -112,14 +122,23 @@ final class CoreAudioRecorder: @unchecked Sendable {
         }
         logger.notice("stopRecording: stopping core audio recorder")
 
-        // Stop and dispose AudioUnit
+        // Stop and dispose AudioUnit.
+        // Order matters: Stop signals "no new callbacks", but Uninitialize is the
+        // actual drain barrier — it blocks until any in-flight HAL I/O render
+        // callback finishes. Without it, an in-flight `ExtAudioFileWrite` could
+        // race with `ExtAudioFileDispose` below, leaving the WAV header reporting
+        // fewer samples than were actually written and silently truncating the
+        // tail of the recording.
         if let unit = audioUnit {
             AudioOutputUnitStop(unit)
+            AudioUnitUninitialize(unit)
             AudioComponentInstanceDispose(unit)
             audioUnit = nil
         }
 
-        // Close audio file
+        // Safe to dispose the file now: no callback can be mid-write.
+        // ExtAudioFileDispose flushes its internal buffer and finalises the
+        // WAV data-chunk size in the header.
         if let file = audioFile {
             ExtAudioFileDispose(file)
             audioFile = nil
@@ -142,6 +161,10 @@ final class CoreAudioRecorder: @unchecked Sendable {
         isRecording = false
         currentDeviceID = 0
         recordingURL = nil
+
+        // Reset resampler state.
+        resamplerInputPos = 0.0
+        resamplerCarrySample = 0.0
 
         // Reset meters
         meterLock.lock()
@@ -261,6 +284,11 @@ final class CoreAudioRecorder: @unchecked Sendable {
         // Update stored format
         deviceFormat = newDeviceFormat
         currentDeviceID = newDeviceID
+
+        // Reset resampler state: the new device may have a different sample
+        // rate, so any carried sample is at the wrong rate now.
+        resamplerInputPos = 0.0
+        resamplerCarrySample = 0.0
 
         // Step 7: Reinitialize and restart
         status = AudioUnitInitialize(unit)
@@ -435,10 +463,16 @@ final class CoreAudioRecorder: @unchecked Sendable {
         renderBuffer = UnsafeMutablePointer<Float32>.allocate(capacity: Int(bufferSamples))
         renderBufferSize = bufferSamples
 
-        // Pre-allocate conversion buffer (output is always smaller due to downsampling)
-        let maxOutputFrames = UInt32(Double(maxFrames) * (outputFormat.mSampleRate / deviceFormat.mSampleRate)) + 1
+        // Pre-allocate conversion buffer. With the stateful resampler each
+        // callback can emit up to ceil(maxFrames * ratio) + 1 output frames
+        // depending on the carry phase, so add a small headroom.
+        let maxOutputFrames = UInt32(ceil(Double(maxFrames) * (outputFormat.mSampleRate / deviceFormat.mSampleRate))) + 2
         conversionBuffer = UnsafeMutablePointer<Int16>.allocate(capacity: Int(maxOutputFrames))
         conversionBufferSize = maxOutputFrames
+
+        // Reset resampler state at the start of every fresh recording.
+        resamplerInputPos = 0.0
+        resamplerCarrySample = 0.0
     }
 
     private func setupInputCallback() throws {
@@ -635,61 +669,98 @@ final class CoreAudioRecorder: @unchecked Sendable {
         let inputSampleRate = deviceFormat.mSampleRate
         let outputSampleRate = outputFormat.mSampleRate
 
-        // Get input samples
         guard let inputData = inputBuffer.mBuffers.mData else { return }
         let inputSamples = inputData.assumingMemoryBound(to: Float32.self)
+        let channelCountInt = Int(inputChannels)
+        let frameCountInt = Int(frameCount)
+        guard frameCountInt > 0, channelCountInt > 0 else { return }
+        let invChannels = Float32(1.0) / Float32(inputChannels)
 
-        // Calculate output frame count after sample rate conversion
-        let ratio = outputSampleRate / inputSampleRate
-        let outputFrameCount = UInt32(Double(frameCount) * ratio)
+        guard let outputBuffer = conversionBuffer else { return }
 
-        guard outputFrameCount > 0,
-              let outputBuffer = conversionBuffer,
-              outputFrameCount <= conversionBufferSize else { return }
+        var outputFrameCount: UInt32 = 0
 
-        // Convert Float32 multi-channel → Int16 mono (with sample rate conversion if needed)
         if inputSampleRate == outputSampleRate {
-            // Direct conversion, just format change and channel mixing
-            for i in 0..<Int(frameCount) {
-                var sample: Float32 = 0
-                // Mix all channels to mono
-                for ch in 0..<Int(inputChannels) {
-                    sample += inputSamples[i * Int(inputChannels) + ch]
+            // Same rate: just downmix to mono and convert to Int16.
+            guard UInt32(frameCountInt) <= conversionBufferSize else { return }
+            for i in 0..<frameCountInt {
+                var sum: Float32 = 0
+                let base = i * channelCountInt
+                for ch in 0..<channelCountInt {
+                    sum += inputSamples[base + ch]
                 }
-                sample /= Float32(inputChannels)
-
-                // Convert to Int16 with clipping
+                let sample = sum * invChannels
                 let scaled = sample * 32767.0
                 let clipped = max(-32768.0, min(32767.0, scaled))
                 outputBuffer[i] = Int16(clipped)
             }
+            outputFrameCount = UInt32(frameCountInt)
         } else {
-            // Sample rate conversion needed - use linear interpolation
-            for i in 0..<Int(outputFrameCount) {
-                let inputIndex = Double(i) / ratio
-                let inputIndexInt = Int(inputIndex)
-                let frac = Float32(inputIndex - Double(inputIndexInt))
+            // Stateful linear-interpolation resampler. `pos` is the fractional
+            // input position; when it would require a sample past the end of
+            // this buffer we stop and carry the residual into the next callback.
+            // An idx of -1 reaches back to the previous buffer's last sample
+            // (`resamplerCarrySample`) so the interpolation is continuous
+            // across the callback boundary.
+            let step = inputSampleRate / outputSampleRate
+            var pos = resamplerInputPos
+            var outIdx = 0
+            let lastIdx = frameCountInt - 1
+            let bufferCap = Int(conversionBufferSize)
 
-                var sample: Float32 = 0
-                let idx1 = min(inputIndexInt, Int(frameCount) - 1)
-                let idx2 = min(inputIndexInt + 1, Int(frameCount) - 1)
+            while true {
+                let idx1 = Int(floor(pos))
+                let idx2 = idx1 + 1
+                if idx2 > lastIdx { break }
+                if outIdx >= bufferCap { break }
 
-                // Mix channels and interpolate
-                for ch in 0..<Int(inputChannels) {
-                    let s1 = inputSamples[idx1 * Int(inputChannels) + ch]
-                    let s2 = inputSamples[idx2 * Int(inputChannels) + ch]
-                    sample += s1 + frac * (s2 - s1)
+                let frac = Float32(pos - Double(idx1))
+
+                let s1: Float32
+                if idx1 < 0 {
+                    s1 = resamplerCarrySample
+                } else {
+                    var sum: Float32 = 0
+                    let base = idx1 * channelCountInt
+                    for ch in 0..<channelCountInt {
+                        sum += inputSamples[base + ch]
+                    }
+                    s1 = sum * invChannels
                 }
-                sample /= Float32(inputChannels)
 
-                // Convert to Int16
+                let s2: Float32
+                if idx2 < 0 {
+                    s2 = resamplerCarrySample
+                } else {
+                    var sum: Float32 = 0
+                    let base = idx2 * channelCountInt
+                    for ch in 0..<channelCountInt {
+                        sum += inputSamples[base + ch]
+                    }
+                    s2 = sum * invChannels
+                }
+
+                let sample = s1 + frac * (s2 - s1)
                 let scaled = sample * 32767.0
                 let clipped = max(-32768.0, min(32767.0, scaled))
-                outputBuffer[i] = Int16(clipped)
+                outputBuffer[outIdx] = Int16(clipped)
+                outIdx += 1
+                pos += step
             }
+
+            // Update carry + rebase position so the next callback resumes seamlessly.
+            var carrySum: Float32 = 0
+            let carryBase = lastIdx * channelCountInt
+            for ch in 0..<channelCountInt {
+                carrySum += inputSamples[carryBase + ch]
+            }
+            resamplerCarrySample = carrySum * invChannels
+            resamplerInputPos = pos - Double(frameCountInt)
+            outputFrameCount = UInt32(outIdx)
         }
 
-        // Write to file
+        guard outputFrameCount > 0 else { return }
+
         var outputBufferList = AudioBufferList(
             mNumberBuffers: 1,
             mBuffers: AudioBuffer(
@@ -704,7 +775,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
             logger.error("🎙️ ExtAudioFileWrite failed with status: \(writeStatus, privacy: .public)")
         }
 
-        // Send the same PCM data to the streaming callback if set
         if let onAudioChunk = onAudioChunk {
             let byteCount = Int(outputFrameCount) * MemoryLayout<Int16>.size
             let data = Data(bytes: outputBuffer, count: byteCount)
