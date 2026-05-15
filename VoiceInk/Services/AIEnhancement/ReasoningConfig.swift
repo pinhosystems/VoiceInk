@@ -49,6 +49,12 @@ struct ReasoningConfig {
         "qwen/qwen3-32b"
     ]
 
+    // Grok 4.3 is xAI's first model with configurable reasoning effort; we
+    // pin it to "none" so transcription enhancement stays low-latency.
+    static let xaiNoneReasoningModels: Set<String> = [
+        "grok-4.3"
+    ]
+
     static func getReasoningParameter(for provider: AIProvider, modelName: String) -> String? {
         switch provider {
         case .gemini:
@@ -63,6 +69,8 @@ struct ReasoningConfig {
         case .groq:
             if groqGPTOSSMinimumReasoningModels.contains(modelName) { return "low" }
             else if groqQwenReasoningModels.contains(modelName) { return "none" }
+        case .xai:
+            if xaiNoneReasoningModels.contains(modelName) { return "none" }
         default:
             return nil
         }

@@ -14,6 +14,7 @@ enum AIProvider: String, CaseIterable {
     case soniox = "Soniox"
     case speechmatics = "Speechmatics"
     case assemblyAI = "AssemblyAI"
+    case xai = "xAI"
     case ollama = "Ollama"
     case localCLI = "Local CLI"
     case custom = "Custom"
@@ -45,6 +46,8 @@ enum AIProvider: String, CaseIterable {
             return "https://asr.api.speechmatics.com/v2"
         case .assemblyAI:
             return "https://api.assemblyai.com/v2/transcript"
+        case .xai:
+            return "https://api.x.ai/v1/chat/completions"
         case .ollama:
             return UserDefaults.standard.string(forKey: "ollamaBaseURL") ?? "http://localhost:11434"
         case .localCLI:
@@ -78,6 +81,8 @@ enum AIProvider: String, CaseIterable {
             return "speechmatics-enhanced"
         case .assemblyAI:
             return "universal-3-pro"
+        case .xai:
+            return "grok-4.3"
         case .ollama:
             return UserDefaults.standard.string(forKey: "ollamaSelectedModel") ?? "mistral"
         case .localCLI:
@@ -151,6 +156,8 @@ enum AIProvider: String, CaseIterable {
             return ["speechmatics-enhanced"]
         case .assemblyAI:
             return ["universal-3-pro"]
+        case .xai:
+            return ["grok-4.3"]
         case .ollama:
             return []
         case .localCLI:
