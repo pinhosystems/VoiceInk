@@ -1,9 +1,16 @@
 import Foundation
 
 class OpenAICompatibleTranscriptionService {
+    /// Chunk size used to stream the audio file into the multipart temp body.
+    /// 1 MiB balances throughput with bounded peak memory usage.
+    private static let multipartReadChunkSize = 1 * 1024 * 1024
+
     func transcribe(audioURL: URL, model: CustomCloudModel, resourceTimeout: TimeInterval) async throws -> String {
         guard let url = URL(string: model.apiEndpoint) else {
             throw NSError(domain: "CustomWhisperTranscriptionService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid API endpoint URL"])
+        }
+        guard FileManager.default.fileExists(atPath: audioURL.path) else {
+            throw CloudTranscriptionError.audioFileNotFound
         }
 
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -12,7 +19,8 @@ class OpenAICompatibleTranscriptionService {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(model.apiKey)", forHTTPHeaderField: "Authorization")
 
-        let body = try buildRequestBody(audioURL: audioURL, modelName: model.modelName, boundary: boundary)
+        let bodyURL = try writeMultipartBody(audioURL: audioURL, modelName: model.modelName, boundary: boundary)
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
@@ -25,7 +33,7 @@ class OpenAICompatibleTranscriptionService {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.upload(for: request, from: body)
+            (data, response) = try await session.upload(for: request, fromFile: bodyURL)
         } catch let error as NSError where error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut {
             throw CloudTranscriptionError.timeout(seconds: resourceTimeout)
         }
@@ -46,43 +54,78 @@ class OpenAICompatibleTranscriptionService {
         }
     }
 
-    private func buildRequestBody(audioURL: URL, modelName: String, boundary: String) throws -> Data {
-        guard let audioData = try? Data(contentsOf: audioURL) else {
-            throw CloudTranscriptionError.audioFileNotFound
+    /// Writes the multipart body to a temp file by streaming the audio file in chunks.
+    ///
+    /// Previously the entire multipart envelope (headers + raw audio bytes + footer)
+    /// was built in a single `Data` in memory. For long recordings this kept the full
+    /// audio resident in process heap during the upload — wasteful and unnecessary,
+    /// since URLSession can already stream from a file via `upload(for:fromFile:)`.
+    private func writeMultipartBody(audioURL: URL, modelName: String, boundary: String) throws -> URL {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voiceink-multipart-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+
+        let writer: FileHandle
+        do {
+            writer = try FileHandle(forWritingTo: tempURL)
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
         }
 
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
-        let prompt = UserDefaults.standard.string(forKey: "TranscriptionPrompt") ?? ""
-        let crlf = "\r\n"
-        var body = Data()
+        do {
+            let crlf = "\r\n"
+            let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
+            let prompt = UserDefaults.standard.string(forKey: "TranscriptionPrompt") ?? ""
 
-        func append(_ string: String) { body.append(string.data(using: .utf8)!) }
-        func field(_ name: String, _ value: String) {
-            append("--\(boundary)\(crlf)")
-            append("Content-Disposition: form-data; name=\"\(name)\"\(crlf)\(crlf)")
-            body.append(value.data(using: .utf8)!)
-            append(crlf)
+            func write(_ string: String) throws {
+                guard let data = string.data(using: .utf8) else {
+                    throw CloudTranscriptionError.dataEncodingError
+                }
+                try writer.write(contentsOf: data)
+            }
+            func writeField(_ name: String, _ value: String) throws {
+                try write("--\(boundary)\(crlf)")
+                try write("Content-Disposition: form-data; name=\"\(name)\"\(crlf)\(crlf)")
+                try write(value)
+                try write(crlf)
+            }
+
+            // Audio file part header
+            try write("--\(boundary)\(crlf)")
+            try write("Content-Disposition: form-data; name=\"file\"; filename=\"\(audioURL.lastPathComponent)\"\(crlf)")
+            try write("Content-Type: audio/wav\(crlf)\(crlf)")
+
+            // Stream the audio bytes from disk in bounded chunks instead of slurping
+            // the whole file into memory.
+            let reader = try FileHandle(forReadingFrom: audioURL)
+            defer { try? reader.close() }
+            while true {
+                let chunk = try reader.read(upToCount: Self.multipartReadChunkSize) ?? Data()
+                if chunk.isEmpty { break }
+                try writer.write(contentsOf: chunk)
+            }
+            try write(crlf)
+
+            // Trailing form fields
+            try writeField("model", modelName)
+            try writeField("response_format", "json")
+            try writeField("temperature", "0")
+            if selectedLanguage != "auto" && !selectedLanguage.isEmpty {
+                try writeField("language", selectedLanguage)
+            }
+            if !prompt.isEmpty {
+                try writeField("prompt", prompt)
+            }
+            try write("--\(boundary)--\(crlf)")
+
+            try writer.close()
+            return tempURL
+        } catch {
+            try? writer.close()
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
         }
-
-        append("--\(boundary)\(crlf)")
-        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(audioURL.lastPathComponent)\"\(crlf)")
-        append("Content-Type: audio/wav\(crlf)\(crlf)")
-        body.append(audioData)
-        append(crlf)
-
-        field("model", modelName)
-        field("response_format", "json")
-        field("temperature", "0")
-
-        if selectedLanguage != "auto" && !selectedLanguage.isEmpty {
-            field("language", selectedLanguage)
-        }
-        if !prompt.isEmpty {
-            field("prompt", prompt)
-        }
-
-        append("--\(boundary)--\(crlf)")
-        return body
     }
 
     private struct TranscriptionResponse: Decodable {
