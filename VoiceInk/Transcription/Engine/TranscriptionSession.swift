@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import os
 
 /// Encapsulates a single recording-to-transcription lifecycle (streaming or file-based).
@@ -96,7 +97,12 @@ final class StreamingTranscriptionSession: TranscriptionSession {
                 logger.notice("Streaming stop/transcribe started model=\(model.displayName, privacy: .public)")
                 let text = try await streamingService.stopAndGetFinalText()
                 logger.notice("Streaming transcript received elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
-                return text
+                if await Self.isSuspiciouslyShort(text: text, audioURL: audioURL) {
+                    logger.warning("Streaming result suspiciously short for audio duration — falling back to batch to verify")
+                    streamingService.cancel()
+                } else {
+                    return text
+                }
             } catch {
                 logger.error("❌ Streaming failed, falling back to batch: \(error.localizedDescription, privacy: .public)")
                 streamingService.cancel()
@@ -110,6 +116,26 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         let text = try await fallbackService.transcribe(audioURL: audioURL, model: model)
         logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
         return text
+    }
+
+    /// Defensive heuristic: streaming providers can return a successful but truncated
+    /// transcript when their server-side flush protocol is sensitive to client timing.
+    /// If the resulting text is too short relative to the recorded audio duration, we
+    /// retry through the batch endpoint to verify (and recover) the full transcription.
+    ///
+    /// Thresholds (intentionally conservative to avoid false positives on silent or
+    /// very short clips):
+    ///   - Only triggers when audio duration ≥ 8 seconds.
+    ///   - Triggers when transcript yields fewer than 5 chars/second of audio.
+    /// Average speech is ~12–17 chars/second, so 5 chars/s is well below any plausible
+    /// real-speech rate even with pauses.
+    private static func isSuspiciouslyShort(text: String, audioURL: URL) async -> Bool {
+        let asset = AVURLAsset(url: audioURL)
+        guard let cmDuration = try? await asset.load(.duration) else { return false }
+        let duration = CMTimeGetSeconds(cmDuration)
+        guard duration.isFinite, duration >= 8.0 else { return false }
+        let charsPerSecond = Double(text.count) / duration
+        return charsPerSecond < 5.0
     }
 
     func cancel() {
