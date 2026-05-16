@@ -112,7 +112,6 @@ class ImportExportService {
     private let keyAudioRetentionPeriod = "AudioRetentionPeriod"
 
     private let keyIsTextFormattingEnabled = "IsTextFormattingEnabled"
-    private let keyRemovePunctuation = "RemovePunctuation"
     private let keyLowercaseTranscription = "LowercaseTranscription"
 
     private init() {
@@ -154,6 +153,7 @@ class ImportExportService {
             exportedWordReplacements = Dictionary(replacements.map { ($0.originalText, $0.replacementText) }, uniquingKeysWith: { _, last in last })
         }
 
+        let punctuationCleanupMode = PunctuationCleanupMode.current()
         let generalSettingsToExport = GeneralBackup(
             toggleMiniRecorderShortcut: KeyboardShortcuts.getShortcut(for: .toggleMiniRecorder),
             toggleMiniRecorderShortcut2: KeyboardShortcuts.getShortcut(for: .toggleMiniRecorder2),
@@ -183,7 +183,8 @@ class ImportExportService {
             isPauseMediaEnabled: playbackController.isPauseMediaEnabled,
             audioResumptionDelay: mediaController.audioResumptionDelay,
             isTextFormattingEnabled: UserDefaults.standard.bool(forKey: keyIsTextFormattingEnabled),
-            removePunctuation: UserDefaults.standard.bool(forKey: keyRemovePunctuation),
+            punctuationCleanupMode: punctuationCleanupMode,
+            removePunctuation: punctuationCleanupMode == .removeAll,
             lowercaseTranscription: UserDefaults.standard.bool(forKey: keyLowercaseTranscription),
             isExperimentalFeaturesEnabled: UserDefaults.standard.bool(forKey: "isExperimentalFeaturesEnabled"),
             restoreClipboardAfterPaste: UserDefaults.standard.bool(forKey: "restoreClipboardAfterPaste"),
