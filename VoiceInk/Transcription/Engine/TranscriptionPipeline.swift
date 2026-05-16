@@ -219,9 +219,9 @@ class TranscriptionPipeline {
 
             let appendSpace = UserDefaults.standard.bool(forKey: "AppendTrailingSpace")
             let pastedText = textToPaste + (appendSpace ? " " : "")
-            let pastePostTask = CursorPaster.startPasteAtCursor(pastedText)
-            SoundManager.shared.playStopSound()
+            CursorPaster.startPasteAtCursor(pastedText)
             let autoSendKey = PowerModeManager.shared.currentActiveConfiguration?.autoSendKey
+            SoundManager.shared.playStopSound()
             await restorePromptDetectionSettingsIfNeeded()
             // Wait for Cmd+V to actually be posted before dismissing the recorder.
             // Previously dismissTask ran in parallel with the paste task, which could
