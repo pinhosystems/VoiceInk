@@ -113,21 +113,33 @@ final class StreamingTranscriptionSession: TranscriptionSession {
 
         let fallbackStart = Date()
         logger.notice("Using batch fallback for \(model.displayName, privacy: .public) file=\(audioURL.lastPathComponent, privacy: .public)")
-        let text = try await fallbackService.transcribe(audioURL: audioURL, model: model)
-        logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
+        let initialText = try await fallbackService.transcribe(audioURL: audioURL, model: model)
+        logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(initialText.count, privacy: .public)")
 
         // If the batch result is *also* suspiciously short, the upstream STT
-        // service is degrading (we have seen this with xAI Grok returning
-        // ~25 chars for ~12s clips on both streaming and batch paths).
-        // Streaming → batch fallback can't fix that — surface a visible warning
-        // so the user knows to retry with a different provider instead of
-        // silently accepting the truncated text.
-        await TranscriptionResultValidator.warnIfSuspiciouslyShort(
-            text: text,
+        // service is degrading (xAI Grok has been observed returning ~25 chars
+        // for 12s clips and ~209 chars for 30s clips on both streaming and
+        // batch paths). Try the chunked recovery path next — submitting the
+        // audio in smaller pieces sometimes bypasses an internal duration
+        // limit on the provider side. If chunking still doesn't recover the
+        // transcript, surface a warning so the user knows to retry with a
+        // different model instead of silently accepting the truncated text.
+        let (text, stillShort) = await TranscriptionResultValidator.attemptRecoveryIfShort(
+            initial: initialText,
             audioURL: audioURL,
-            modelDisplayName: model.displayName,
+            model: model,
+            service: fallbackService,
             logger: logger
         )
+        if stillShort {
+            await MainActor.run {
+                NotificationManager.shared.showNotification(
+                    title: "Transcription appears incomplete from \(model.displayName) — consider retrying with a different model",
+                    type: .warning,
+                    duration: 7.0
+                )
+            }
+        }
         return text
     }
 
