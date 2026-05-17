@@ -6,20 +6,22 @@
 
 Bloqueios para um shipping seguro. Cada item tem efeito visível ao usuário ou risco real de crash/perda de dados.
 
-| # | Item | Arquivo principal | Feature |
-| --- | --- | --- | --- |
-| 1 | Corrigir flush WAV race condition (drain antes do dispose) | `CoreAudioRecorder.swift:128-143` | [01](./features/01-audio-capture.md) |
-| 2 | Substituir `Unmanaged.passUnretained` por `passRetained` no audio callback | `CoreAudioRecorder.swift:485` | [01](./features/01-audio-capture.md) |
-| 3 | Eliminar force-unwrap em `AVAudioFormat(...)!` | `WhisperTranscriptionService.swift:104` | [02](./features/02-whisper-local.md) |
-| 4 | Reescrever `readAudioSamples` em FluidAudio com `AVAudioFile` (mesma fix do Whisper) | `FluidAudioTranscriptionService.swift:134-138` | [05](./features/05-native-fluidaudio.md) |
-| 5 | Trocar `String(format:)` por substituição de token em prompts customizados | `CustomPrompt.swift:130` | [07](./features/07-prompts-templates.md) |
-| 6 | Eliminar shell injection via stdin no LocalCLIService | `LocalCLIService.swift:121-124` | [06](./features/06-ai-enhancement.md) |
-| 7 | Verificar `CGEvent.post` retorno + `AXIsProcessTrusted` antes de pastar | `CursorPaster.swift:120-138` | [12](./features/12-paste-clipboard-media.md) |
-| 8 | Encaminhar `language`/`prompt`/`customVocabulary` em xAI, Mistral, ElevenLabs, Deepgram | múltiplos providers | [03](./features/03-cloud-transcription.md) |
-| 9 | Eliminar `allPrompts.first!` com fallback hardcoded | `AIEnhancementService.swift:257` | [06](./features/06-ai-enhancement.md) |
-| 10 | Trocar lookarounds ASCII por boundary unicode-aware no WordReplacementService | `WordReplacementService.swift:42` | [08](./features/08-dictionary-vocabulary.md) |
-| 11 | Lock em `PowerModeConfig.setActiveConfiguration` + cleanup de observers em PowerModeSessionManager | `PowerModeConfig.swift:346`, `PowerModeSessionManager.swift:70-90` | [09](./features/09-power-mode.md) |
-| 12 | Corrigir hardcoded `"stt-rt-v4"` em Soniox e `customVocabulary: []` em Cartesia | streaming providers | [04](./features/04-streaming-transcription.md) |
+Status: ✅ feito · 🟡 parcial · ⬜ pendente.
+
+| # | Status | Item | Arquivo principal | Feature |
+| --- | --- | --- | --- | --- |
+| 1 | ⬜ | Corrigir flush WAV race condition (drain antes do dispose) | `CoreAudioRecorder.swift:128-143` | [01](./features/01-audio-capture.md) |
+| 2 | ⬜ | Substituir `Unmanaged.passUnretained` por `passRetained` no audio callback | `CoreAudioRecorder.swift:485` | [01](./features/01-audio-capture.md) |
+| 3 | ✅ | Eliminar force-unwrap em `AVAudioFormat(...)!` (PR #10) | `WhisperTranscriptionService.swift` | [02](./features/02-whisper-local.md) |
+| 4 | ✅ | Reescrever `readAudioSamples` em FluidAudio com `AVAudioFile` (PR #10) | `FluidAudioTranscriptionService.swift` | [05](./features/05-native-fluidaudio.md) |
+| 5 | ⬜ | Trocar `String(format:)` por substituição de token em prompts customizados | `CustomPrompt.swift:130` | [07](./features/07-prompts-templates.md) |
+| 6 | ⬜ | Eliminar shell injection via stdin no LocalCLIService | `LocalCLIService.swift:121-124` | [06](./features/06-ai-enhancement.md) |
+| 7 | ⬜ | Verificar `CGEvent.post` retorno + `AXIsProcessTrusted` antes de pastar | `CursorPaster.swift:120-138` | [12](./features/12-paste-clipboard-media.md) |
+| 8 | 🟡 | Encaminhar `customVocabulary` em DeepgramProvider e CartesiaStreamingProvider; `model.name` em SonioxStreamingProvider (PR B). xAI/Mistral/ElevenLabs: ver seção "Bloqueado por LLMkit" abaixo. | múltiplos providers | [03](./features/03-cloud-transcription.md) |
+| 9 | ✅ | Eliminar `allPrompts.first!` com fallback hardcoded (PR #10) | `AIEnhancementService.swift` | [06](./features/06-ai-enhancement.md) |
+| 10 | ⬜ | Trocar lookarounds ASCII por boundary unicode-aware no WordReplacementService | `WordReplacementService.swift:42` | [08](./features/08-dictionary-vocabulary.md) |
+| 11 | ⬜ | Lock em `PowerModeConfig.setActiveConfiguration` + cleanup de observers em PowerModeSessionManager | `PowerModeConfig.swift:346`, `PowerModeSessionManager.swift:70-90` | [09](./features/09-power-mode.md) |
+| 12 | ✅ | Corrigir hardcoded `"stt-rt-v4"` em Soniox e `customVocabulary: []` em Cartesia (PR B) | streaming providers | [04](./features/04-streaming-transcription.md) |
 
 ## Em breve (próximo ciclo, 1-2 sprints)
 
@@ -69,6 +71,18 @@ LOW prioridade — limpeza, naming, dívida cosmética.
 - Remover dead code em `AnnouncementManager.swift:83`.
 - Renomear log identifiers privados/públicos com critério (audit completo).
 - Localização das Siri Phrases em `AppShortcuts`.
+
+## Bloqueado por dependências externas (LLMkit)
+
+A investigação durante a PR B revelou que alguns "parameter forwarding bugs" originalmente listados no item #8 são limitações do package `LLMkit` (vendor externo via SPM), não do VoiceInk. O cliente Swift do LLMkit precisa expor os parâmetros antes do provider poder repassá-los.
+
+| Item | Status | O que falta |
+| --- | --- | --- |
+| `MistralProvider` enviar `language` ao client | bloqueado | `MistralTranscriptionClient.transcribe` não tem parâmetro `language` (a API Mistral suporta). Abrir PR no LLMkit. |
+| `XAIProvider` enviar `prompt`/`customVocabulary` ao client | inviável upstream | API xAI STT (`POST /v1/stt`) não documenta suporte a esses parâmetros — `language`+`format` são os únicos. Provavelmente não há fix possível. |
+| `ElevenLabsProvider` "não envia language" | inválido | Já envia. Auditoria estava errada na linha 52 do provider. |
+
+Recomendação: abrir issue no repo do LLMkit pedindo `MistralTranscriptionClient.transcribe(... language: String? = nil ...)`; quando publicarem a versão, bumpar o pin do package aqui.
 
 ## Não fazer
 

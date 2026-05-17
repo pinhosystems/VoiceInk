@@ -29,16 +29,40 @@ final class CartesiaStreamingProvider: StreamingTranscriptionProvider {
             throw StreamingTranscriptionError.missingAPIKey
         }
 
+        let vocabulary = getCustomDictionaryTerms()
+
         forwardingTask?.cancel()
         startEventForwarding()
 
         do {
-            try await client.connect(apiKey: apiKey, model: model.name, language: language, customVocabulary: [])
+            // Previously customVocabulary was hardcoded to []; the dictionary
+            // the user configured in Settings was silently dropped before
+            // reaching the Cartesia WebSocket.
+            try await client.connect(apiKey: apiKey, model: model.name, language: language, customVocabulary: vocabulary)
         } catch {
             forwardingTask?.cancel()
             forwardingTask = nil
             throw mapError(error)
         }
+    }
+
+    private func getCustomDictionaryTerms() -> [String] {
+        let descriptor = FetchDescriptor<VocabularyWord>(sortBy: [SortDescriptor(\.word)])
+        guard let vocabularyWords = try? modelContext.fetch(descriptor) else {
+            return []
+        }
+        var seen = Set<String>()
+        var unique: [String] = []
+        for word in vocabularyWords {
+            let trimmed = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.lowercased()
+            if !seen.contains(key) {
+                seen.insert(key)
+                unique.append(trimmed)
+            }
+        }
+        return unique
     }
 
     func sendAudioChunk(_ data: Data) async throws {

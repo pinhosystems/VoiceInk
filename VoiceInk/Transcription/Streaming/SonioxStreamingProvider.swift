@@ -36,7 +36,10 @@ final class SonioxStreamingProvider: StreamingTranscriptionProvider {
         startEventForwarding()
 
         do {
-            try await client.connect(apiKey: apiKey, model: "stt-rt-v4", language: language, customVocabulary: vocabulary)
+            // Previously the model name was hardcoded as "stt-rt-v4", which silently
+            // ignored whatever the user (or model registry) configured. Forward the
+            // real `model.name` so swapping models in Settings actually takes effect.
+            try await client.connect(apiKey: apiKey, model: model.name, language: language, customVocabulary: vocabulary)
         } catch {
             // Clean up forwarding task on connection failure
             forwardingTask?.cancel()

@@ -40,11 +40,15 @@ struct DeepgramProvider: CloudProvider {
     ]}
 
     func transcribe(audioData: Data, fileName: String, apiKey: String, model: String, language: String?, prompt: String?, customVocabulary: [String], resourceTimeout: TimeInterval) async throws -> String {
+        // Deepgram boosts recognition of `customVocabulary` terms via the `keyterm`
+        // query parameter (see DeepgramClient.transcribe). Previously the vocabulary
+        // configured by the user was silently dropped on the way to the client.
         return try await DeepgramClient.transcribe(
             audioData: audioData,
             apiKey: apiKey,
             model: model,
             language: language,
+            customVocabulary: customVocabulary,
             resourceTimeout: resourceTimeout
         )
     }
