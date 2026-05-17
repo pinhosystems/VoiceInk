@@ -85,63 +85,93 @@ enum BrowserURLError: Error {
 
 class BrowserURLService {
     static let shared = BrowserURLService()
-    
+
+    /// Hard timeout for AppleScript URL extraction. Browsers occasionally hang
+    /// (e.g., during heavy startup or when blocked on a system prompt), and
+    /// `task.waitUntilExit()` will sit forever. 3 seconds is plenty for a
+    /// well-behaved browser to return its active tab URL and short enough that
+    /// a stall does not freeze Power Mode application.
+    private static let appleScriptTimeoutSeconds: TimeInterval = 3.0
+
     private let logger = Logger(
         subsystem: "com.prakashjoshipax.voiceink",
         category: "browser.applescript"
     )
-    
+
     private init() {}
-    
+
     func getCurrentURL(from browser: BrowserType) async throws -> String {
         guard let scriptURL = Bundle.main.url(forResource: browser.scriptName, withExtension: "scpt") else {
             logger.error("❌ AppleScript file not found: \(browser.scriptName, privacy: .public).scpt")
             throw BrowserURLError.scriptNotFound
         }
-        
+
         logger.debug("🔍 Attempting to execute AppleScript for \(browser.displayName, privacy: .public)")
-        
-        // Check if browser is running
+
         if !isRunning(browser) {
             logger.error("❌ Browser not running: \(browser.displayName, privacy: .public)")
             throw BrowserURLError.browserNotRunning
         }
-        
-        let task = Process()
-        task.launchPath = "/usr/bin/osascript"
-        task.arguments = [scriptURL.path]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        
-        do {
-            logger.debug("▶️ Executing AppleScript for \(browser.displayName, privacy: .public)")
-            try task.run()
-            task.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-                if output.isEmpty {
-                    logger.error("❌ Empty output from AppleScript for \(browser.displayName, privacy: .public)")
-                    throw BrowserURLError.noActiveTab
-                }
-                
-                // Check if output contains error messages
-                if output.lowercased().contains("error") {
-                    logger.error("❌ AppleScript error for \(browser.displayName, privacy: .public): \(output, privacy: .public)")
-                    throw BrowserURLError.executionFailed
-                }
-                
-                logger.debug("✅ Successfully retrieved URL from \(browser.displayName, privacy: .public): \(output, privacy: .public)")
-                return output
-            } else {
-                logger.error("❌ Failed to decode output from AppleScript for \(browser.displayName, privacy: .public)")
-                throw BrowserURLError.executionFailed
-            }
-        } catch {
-            logger.error("❌ AppleScript execution failed for \(browser.displayName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+
+        let output = try await runAppleScriptWithTimeout(at: scriptURL, label: browser.displayName)
+
+        if output.isEmpty {
+            logger.error("❌ Empty output from AppleScript for \(browser.displayName, privacy: .public)")
+            throw BrowserURLError.noActiveTab
+        }
+        if output.lowercased().contains("error") {
+            logger.error("❌ AppleScript error for \(browser.displayName, privacy: .public): \(output, privacy: .public)")
             throw BrowserURLError.executionFailed
+        }
+        logger.debug("✅ Successfully retrieved URL from \(browser.displayName, privacy: .public): \(output, privacy: .public)")
+        return output
+    }
+
+    /// Runs `osascript <scriptURL>` off the calling cooperative thread with a
+    /// bounded wait. Times out and terminates the subprocess after
+    /// `appleScriptTimeoutSeconds` so a hung browser cannot stall Power Mode
+    /// application indefinitely.
+    private func runAppleScriptWithTimeout(at scriptURL: URL, label: String) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async { [logger] in
+                let task = Process()
+                task.launchPath = "/usr/bin/osascript"
+                task.arguments = [scriptURL.path]
+
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+
+                let semaphore = DispatchSemaphore(value: 0)
+                task.terminationHandler = { _ in semaphore.signal() }
+
+                do {
+                    try task.run()
+                } catch {
+                    logger.error("❌ AppleScript spawn failed for \(label, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    continuation.resume(throwing: BrowserURLError.executionFailed)
+                    return
+                }
+
+                let waitResult = semaphore.wait(timeout: .now() + Self.appleScriptTimeoutSeconds)
+                if waitResult == .timedOut {
+                    if task.isRunning {
+                        task.terminate()
+                        _ = semaphore.wait(timeout: .now() + 1)
+                    }
+                    logger.error("❌ AppleScript timed out after \(Self.appleScriptTimeoutSeconds, privacy: .public)s for \(label, privacy: .public)")
+                    continuation.resume(throwing: BrowserURLError.executionFailed)
+                    return
+                }
+
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard let raw = String(data: data, encoding: .utf8) else {
+                    logger.error("❌ Failed to decode AppleScript output for \(label, privacy: .public)")
+                    continuation.resume(throwing: BrowserURLError.executionFailed)
+                    return
+                }
+                continuation.resume(returning: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
         }
     }
     
