@@ -96,12 +96,14 @@ class WhisperTranscriptionService: TranscriptionService {
         }
         try audioFile.read(into: buffer)
 
-        let target = AVAudioFormat(
+        guard let target = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16_000,
             channels: 1,
             interleaved: false
-        )!
+        ) else {
+            throw VoiceInkEngineError.unsupportedAudioFormat
+        }
 
         // Fast path: already 16 kHz Float32. Mix to mono if needed and return.
         if fileFormat.sampleRate == target.sampleRate,
