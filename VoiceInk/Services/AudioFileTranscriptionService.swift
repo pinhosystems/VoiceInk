@@ -47,30 +47,6 @@ class AudioTranscriptionService: ObservableObject {
             let transcriptionStart = Date()
             var text = try await serviceRegistry.transcribe(audioURL: url, model: model)
             let transcriptionDuration = Date().timeIntervalSince(transcriptionStart)
-
-            // The retry path bypasses the streaming session entirely (it goes
-            // straight to the batch endpoint via the service registry), so the
-            // same heuristic that catches truncated streaming results in
-            // `StreamingTranscriptionSession.transcribe` never runs here.
-            // Run the same recovery path explicitly — try chunked re-submission
-            // when the initial result looks short, and only surface a warning
-            // when chunking also fails to recover the transcript.
-            let recovered = await TranscriptionResultValidator.attemptRecoveryIfShort(
-                initial: text,
-                audioURL: url,
-                model: model,
-                service: serviceRegistry.service(for: model.provider),
-                logger: logger
-            )
-            text = recovered.text
-            if recovered.stillShort {
-                NotificationManager.shared.showNotification(
-                    title: "Transcription appears incomplete from \(model.displayName) — consider retrying with a different model",
-                    type: .warning,
-                    duration: 7.0
-                )
-            }
-
             text = TranscriptionOutputFilter.filter(text)
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 

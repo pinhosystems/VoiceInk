@@ -25,6 +25,15 @@ Status: ✅ feito · 🟡 parcial · ❌ falso positivo verificado · ⬜ penden
 
 **Lista "Agora" zerada de itens pendentes acionáveis.** Os falsos positivos verificados (#1, #2, #5, #6) estão documentados nos features/. Restam apenas itens upstream (LLMkit) listados na seção dedicada abaixo.
 
+### Revertido: recovery ladder do xAI
+
+PRs #15 e #17 introduziram `ChunkedTranscriber` + `TranscriptionResultValidator` (recovery ladder com retry-once → chunking → toast warning) pra contornar truncamento do servidor xAI em áudios específicos. Após revisão: ~290 linhas de código permanente pra contornar um bug temporário de provider externo. Revertido em prol de simplicidade. O que sobrou (e basta):
+
+- `StreamingTranscriptionSession` mantém a heurística simples (`isSuspiciouslyShort`, inline, 8 chars/s) que dispara `streaming → batch` fallback quando o streaming termina com texto curto. Cobre o caso genérico de falha transiente de streaming — não é provider-específico.
+- Sem chunking, sem retry-once, sem toast. Se o batch endpoint do provider devolver texto curto, o usuário vê o resultado e decide se troca de provider.
+
+Filosofia: o app manda o arquivo, transcreve e devolve. Bug do servidor de provider é problema do provider.
+
 ## Em breve (próximo ciclo, 1-2 sprints)
 
 Bugs HIGH restantes + investimento estrutural que paga rápido.
