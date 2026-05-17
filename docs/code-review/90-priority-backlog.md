@@ -33,16 +33,16 @@ Bugs HIGH restantes + investimento estrutural que paga rápido.
 | --- | --- | --- | --- |
 | 14 | ⬜ | Setup de testes automatizados de áudio/transcrição com fixtures (ver [99-testing-strategy.md](./99-testing-strategy.md)) | cross-cutting |
 | 15 | ⬜ | Refactor flush de streaming: cada provider decide quando seu fluxo terminou | [04](./features/04-streaming-transcription.md) |
-| 16 | ⬜ | Cache de SelectedTextService por sessão | [06](./features/06-ai-enhancement.md) |
-| 17 | ❌ | Bounds check em `allPrompts[index]` no MiniRecorderShortcutManager — **verificado**: o check já existe na linha 269 do arquivo atual (`if index < availablePrompts.count`). | [10](./features/10-hotkeys-intents.md) |
-| 18 | ⬜ | Match de URL via `URLComponents` (não substring) em PowerMode | [09](./features/09-power-mode.md) |
-| 19 | ✅ | Timeout de 3s em AppleScript do BrowserURLService (PR F) | [09](./features/09-power-mode.md) |
-| 20 | ⬜ | Detectar e avisar quando vocabulário é truncado (Deepgram) | [04](./features/04-streaming-transcription.md) |
-| 21 | ✅ | Cache de regex compiladas em `WordReplacementService` (per-process) e pré-compilação em `AIEnhancementOutputFilter` (PR F) | [06](./features/06-ai-enhancement.md), [08](./features/08-dictionary-vocabulary.md) |
+| 16 | ❌ | Cache de SelectedTextService por sessão — **verificado**: `fetchSelectedText()` é chamado uma única vez no codebase (AIEnhancementService:194). A reclamação de "3x em série" era erro da auditoria. Sem ação. | [06](./features/06-ai-enhancement.md) |
+| 17 | ❌ | Bounds check `allPrompts[index]` — verificado em PR #14 (já existe na linha 269). | [10](./features/10-hotkeys-intents.md) |
+| 18 | ✅ | URL matching via `URLComponents` em PowerMode com host-suffix matching (PR #16) | [09](./features/09-power-mode.md) |
+| 19 | ✅ | Timeout de 3s em AppleScript do BrowserURLService (PR #14) | [09](./features/09-power-mode.md) |
+| 20 | ✅ | Aviso (log + toast one-shot) quando Deepgram trunca vocabulário > 50 termos (PR #16) | [04](./features/04-streaming-transcription.md) |
+| 21 | ✅ | Cache de regex compiladas em `WordReplacementService` e `AIEnhancementOutputFilter` (PR #14) | [06](./features/06-ai-enhancement.md), [08](./features/08-dictionary-vocabulary.md) |
 | 22 | ⬜ | Revalidação periódica de license activation | [15](./features/15-licensing.md) |
-| 23 | ✅ | `NSScreen.screens.first` em vez de `[0]` (NotificationManager, AnnouncementManager, DictionaryQuickAddPanel) (PR F) | [19](./features/19-recorder-ui.md), [20](./features/20-notifications.md) |
-| 24 | ✅ | `print()` → `Logger` no BackupImporter (PR F) | [16](./features/16-backup-import-export.md) |
-| 25 | ❌ | Lookup de PATH dinâmico no LocalCLIService — **verificado**: já implementado em `discoverPATHFromInteractiveLoginShell()` (linhas 188-254 do arquivo atual). | [06](./features/06-ai-enhancement.md) |
+| 23 | ✅ | `NSScreen.screens.first` em vez de `[0]` (PR #14) | [19](./features/19-recorder-ui.md), [20](./features/20-notifications.md) |
+| 24 | ✅ | `print()` → `Logger` no BackupImporter (PR #14) | [16](./features/16-backup-import-export.md) |
+| 25 | ❌ | Lookup de PATH dinâmico no LocalCLIService — verificado em PR #14 (já implementado). | [06](./features/06-ai-enhancement.md) |
 
 ## Depois (quando tocar a área)
 

@@ -235,20 +235,62 @@ class PowerModeManager: ObservableObject {
     }
 
     func getConfigurationForURL(_ url: String) -> PowerModeConfig? {
-        let cleanedURL = cleanURL(url)
-        
         for config in configurations.filter({ $0.isEnabled }) {
             if let urlConfigs = config.urlConfigs {
-                for urlConfig in urlConfigs {
-                    let configURL = cleanURL(urlConfig.url)
-                    
-                    if cleanedURL.contains(configURL) {
-                        return config
-                    }
+                for urlConfig in urlConfigs where Self.urlMatches(actual: url, configured: urlConfig.url) {
+                    return config
                 }
             }
         }
         return nil
+    }
+
+    /// True when a Power Mode URL trigger should fire for the actively
+    /// visited URL. The previous implementation compared `cleanURL`-normalized
+    /// strings with `String.contains`, which incorrectly matched any URL whose
+    /// cleaned form contained the trigger as a substring — e.g. a trigger of
+    /// `"amazon.com"` would fire on `"amazon.com.br"`, on `"amazon.com.fake.io"`,
+    /// or on a totally unrelated URL with `amazon.com` in the path.
+    ///
+    /// Now compares hosts with component-boundary suffix matching:
+    /// `"amazon.com"` matches `"amazon.com"`, `"www.amazon.com"` and
+    /// `"shop.amazon.com"` but not `"amazon.com.br"`. Falls back to substring
+    /// on cleaned strings when one side does not parse as a URL (covers
+    /// path-only or otherwise non-URL trigger strings the user may have
+    /// configured in earlier versions).
+    static func urlMatches(actual: String, configured: String) -> Bool {
+        if let actualHost = canonicalHost(from: actual),
+           let configHost = canonicalHost(from: configured) {
+            return actualHost == configHost || actualHost.hasSuffix("." + configHost)
+        }
+        let cleanedActual = staticCleanURL(actual)
+        let cleanedConfigured = staticCleanURL(configured)
+        return cleanedActual.contains(cleanedConfigured)
+    }
+
+    private static func canonicalHost(from rawURL: String) -> String? {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+        // URLComponents needs a scheme to recognize the host. Add a default
+        // one when missing so plain triggers like "github.com" parse correctly.
+        let withScheme = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let components = URLComponents(string: withScheme),
+              var host = components.host?.lowercased(),
+              !host.isEmpty else {
+            return nil
+        }
+        if host.hasPrefix("www.") {
+            host = String(host.dropFirst(4))
+        }
+        return host
+    }
+
+    private static func staticCleanURL(_ url: String) -> String {
+        url.lowercased()
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .replacingOccurrences(of: "www.", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     func getConfigurationForApp(_ bundleId: String) -> PowerModeConfig? {
