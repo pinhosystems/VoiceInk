@@ -92,6 +92,19 @@ class StreamingTranscriptionService {
     private var stopStartedAt: Date?
     private var firstPartialLogged = false
     private var firstCommitLogged = false
+    /// Timestamp of the last `.committed` event received. Used after `commit()` to detect
+    /// when the server has stopped sending final segments (quiet-period debounce).
+    private var lastCommittedAt: Date?
+    /// Timestamp of when `provider.commit()` was sent. Committed events that arrive
+    /// BEFORE this point are part of the live stream (the server emits segments at
+    /// pauses) and must not satisfy the quiet-period check — only events that arrive
+    /// AFTER `commit()` represent the server's final flush.
+    private var commitSentAt: Date?
+    /// Total number of `.committed` events observed across the session. Logged at
+    /// teardown for visibility — helps diagnose truncation regressions later.
+    private var totalCommittedEvents: Int = 0
+    /// Subset of `totalCommittedEvents` that arrived after `commitSentAt`.
+    private var postCommitCommittedEvents: Int = 0
 
     init(modelContext: ModelContext, fluidAudioService: FluidAudioTranscriptionService? = nil, onPartialTranscript: ((String) -> Void)? = nil) {
         self.modelContext = modelContext
@@ -104,11 +117,7 @@ class StreamingTranscriptionService {
         sendTask?.cancel()
         eventConsumerTask?.cancel()
         chunkSource.finish()
-        commitSignal?.finish()
     }
-
-    /// Signal used to notify `waitForFinalCommit` when a new committed segment arrives.
-    private var commitSignal: AsyncStream<Void>.Continuation?
 
     /// Whether the streaming connection is fully established and actively sending.
     var isActive: Bool { state == .streaming || state == .committing }
@@ -121,6 +130,10 @@ class StreamingTranscriptionService {
         metrics.reset()
         firstPartialLogged = false
         firstCommitLogged = false
+        lastCommittedAt = nil
+        commitSentAt = nil
+        totalCommittedEvents = 0
+        postCommitCommittedEvents = 0
 
         let provider = createProvider(for: model)
         self.provider = provider
@@ -164,26 +177,25 @@ class StreamingTranscriptionService {
         // Finish the chunk source so the send loop drains remaining chunks and exits naturally.
         await drainRemainingChunks()
 
-        // Set up the commit signal BEFORE sending commit to avoid a race with the response.
-        let (signalStream, signalContinuation) = AsyncStream.makeStream(of: Void.self)
-        self.commitSignal = signalContinuation
+        // Mark the boundary BEFORE sending commit so the debounce in `waitForFinalCommit`
+        // only honors committed events that arrive after this point — events that arrived
+        // earlier are part of the live stream, not the server's final flush.
+        commitSentAt = Date()
 
         // Send commit to finalize any remaining audio
         do {
             try await provider.commit()
         } catch {
-            commitSignal?.finish()
-            commitSignal = nil
             logger.error("Failed to send commit: \(error.localizedDescription, privacy: .public)")
             state = .failed
             await cleanupStreaming()
             throw error
         }
 
-        // Wait for the server to acknowledge our commit (or timeout)
-        let finalText = await waitForFinalCommit(signalStream: signalStream)
+        // Wait for the server to finish emitting committed segments (quiet-period debounce + total timeout)
+        let finalText = await waitForFinalCommit()
         if let stopStartedAt {
-            logger.notice("Streaming stop completed elapsed=\(Date().timeIntervalSince(stopStartedAt), format: .fixed(precision: 3), privacy: .public)s finalChars=\(finalText.count, privacy: .public)")
+            logger.notice("Streaming stop completed elapsed=\(Date().timeIntervalSince(stopStartedAt), format: .fixed(precision: 3), privacy: .public)s finalChars=\(finalText.count, privacy: .public) totalCommitted=\(self.totalCommittedEvents, privacy: .public) postCommitCommitted=\(self.postCommitCommittedEvents, privacy: .public) segments=\(self.committedSegments.count, privacy: .public)")
         }
 
         state = .done
@@ -201,10 +213,6 @@ class StreamingTranscriptionService {
         sendTask?.cancel()
         sendTask = nil
         chunkSource.finish()
-
-        // Clean up commit signal if waiting
-        commitSignal?.finish()
-        commitSignal = nil
 
         let providerToDisconnect = provider
         provider = nil
@@ -284,13 +292,17 @@ class StreamingTranscriptionService {
                         if !trimmed.isEmpty {
                             self.committedSegments.append(trimmed)
                         }
+                        self.totalCommittedEvents += 1
+                        if let commitTime = self.commitSentAt, Date() >= commitTime {
+                            self.postCommitCommittedEvents += 1
+                        }
+                        // Bump the freshness timestamp so the quiet-period debounce in
+                        // `waitForFinalCommit` measures from the most recent server segment.
+                        self.lastCommittedAt = Date()
                         // Refresh the live preview so it keeps showing the full running transcript
                         // after a commit (instead of resetting to empty until the next partial).
                         if self.state == .streaming {
                             self.onPartialTranscript?(self.committedSegments.joined(separator: " "))
-                        }
-                        if self.state == .committing {
-                            self.commitSignal?.yield()
                         }
                     }
                 case .partial(let text):
@@ -324,36 +336,47 @@ class StreamingTranscriptionService {
         }
     }
 
-    /// Waits for the server to acknowledge our explicit commit, with a 10-second timeout.
-    private func waitForFinalCommit(signalStream: AsyncStream<Void>) async -> String {
-        // Race: wait for commit acknowledgment vs timeout
-        let receivedInTime = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { @MainActor in
-                for await _ in signalStream {
-                    return true
-                }
-                return false
+    /// Waits for the server to finish emitting committed segments after our explicit commit.
+    ///
+    /// Strategy: after `commit()` the server typically emits one or more final `.committed`
+    /// segments (utterances that were still buffered as partials). We need to wait for that
+    /// burst to settle.
+    ///
+    /// Important: streaming providers (e.g. xAI Grok) also emit `.committed` segments
+    /// DURING live streaming whenever the speaker pauses. The quiet-period check must
+    /// therefore only count events that arrived AFTER `commitSentAt` — otherwise an
+    /// old mid-stream committed event makes the debounce trivially satisfied and we
+    /// return before the server's final flush arrives. If no post-commit committed
+    /// event arrives within `overallTimeout`, we return what we have.
+    private func waitForFinalCommit() async -> String {
+        let quietPeriod: TimeInterval = 2.0
+        let overallTimeout: TimeInterval = 10.0
+        let pollInterval: UInt64 = 100_000_000 // 100ms in nanoseconds
+        let startedAt = Date()
+
+        while Date().timeIntervalSince(startedAt) < overallTimeout {
+            if state == .cancelled || state == .failed {
+                break
             }
-
-            group.addTask {
-                try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
-                return false
+            if let last = lastCommittedAt,
+               let commitTime = commitSentAt,
+               last >= commitTime,
+               Date().timeIntervalSince(last) >= quietPeriod {
+                logger.notice("Streaming final wait satisfied via quiet period segments=\(self.committedSegments.count, privacy: .public) elapsed=\(Date().timeIntervalSince(startedAt), format: .fixed(precision: 3), privacy: .public)s")
+                return committedSegments.isEmpty ? "" : committedSegments.joined(separator: " ")
             }
-
-            let result = await group.next() ?? false
-            group.cancelAll()
-            return result
-        }
-        logger.notice("Streaming final wait finished received=\(receivedInTime, privacy: .public) segments=\(self.committedSegments.count, privacy: .public)")
-
-        // Clean up the signal
-        commitSignal?.finish()
-        commitSignal = nil
-
-        if !receivedInTime && committedSegments.isEmpty {
-            logger.warning("No transcript received from streaming")
+            try? await Task.sleep(nanoseconds: pollInterval)
         }
 
+        let receivedPostCommit: Bool = {
+            guard let last = lastCommittedAt, let commitTime = commitSentAt else { return false }
+            return last >= commitTime
+        }()
+        if !receivedPostCommit {
+            logger.warning("Streaming final wait hit overall timeout WITHOUT any post-commit segment segments=\(self.committedSegments.count, privacy: .public)")
+        } else {
+            logger.warning("Streaming final wait hit overall timeout segments=\(self.committedSegments.count, privacy: .public)")
+        }
         return committedSegments.isEmpty ? "" : committedSegments.joined(separator: " ")
     }
 
@@ -364,8 +387,6 @@ class StreamingTranscriptionService {
         sendTask?.cancel()
         sendTask = nil
         chunkSource.finish()
-        commitSignal?.finish()
-        commitSignal = nil
         await provider?.disconnect()
         provider = nil
         state = .idle

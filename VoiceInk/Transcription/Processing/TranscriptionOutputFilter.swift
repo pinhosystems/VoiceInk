@@ -26,15 +26,13 @@ struct TranscriptionOutputFilter {
     static func filter(_ text: String) -> String {
         var filteredText = text
 
-        // Remove <TAG>...</TAG> blocks
-        let tagBlockPattern = #"<([A-Za-z][A-Za-z0-9:_-]*)[^>]*>[\s\S]*?</\1>"#
-        if let regex = try? NSRegularExpression(pattern: tagBlockPattern) {
-            let range = NSRange(filteredText.startIndex..., in: filteredText)
-            filteredText = regex.stringByReplacingMatches(in: filteredText, options: [], range: range, withTemplate: "")
-        }
-
         // Remove only bracketed/parenthesized Whisper hallucinations whose content
         // matches a known non-verbal annotation. Legitimate parentheticals survive.
+        //
+        // Note: a previous version of this filter also stripped any <TAG>...</TAG>
+        // block via regex. That happens BEFORE AI enhancement (which has its own
+        // <thinking>/<think>/<reasoning> filter), so it ended up silently deleting
+        // legitimate dictated content such as HTML, JSX, or XML samples.
         filteredText = removeKnownAnnotations(in: filteredText)
 
         // Remove filler words (if enabled)

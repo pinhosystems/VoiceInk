@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 import LLMkit
 
 enum CloudTranscriptionError: Error, LocalizedError {
@@ -45,8 +46,14 @@ class CloudTranscriptionService: TranscriptionService {
     /// UserDefaults key for the user-configurable transcription resource timeout.
     static let transcriptionTimeoutSecondsKey = "TranscriptionTimeoutSeconds"
 
+    /// Max attempts (including the initial one) before surfacing the last error to the caller.
+    private static let maxTranscriptionAttempts = 3
+    /// Backoff delays applied BEFORE attempts 2..N (nanoseconds). Length governs maxAttempts.
+    private static let retryBackoffsNanos: [UInt64] = [500_000_000, 1_500_000_000]
+
     private let modelContext: ModelContext
     private lazy var openAICompatibleService = OpenAICompatibleTranscriptionService()
+    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "CloudTranscriptionService")
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
@@ -58,6 +65,38 @@ class CloudTranscriptionService: TranscriptionService {
         let language = selectedLanguage()
         let resourceTimeout = Self.configuredResourceTimeout()
 
+        var lastError: CloudTranscriptionError?
+        for attempt in 1...Self.maxTranscriptionAttempts {
+            do {
+                return try await performTranscribe(
+                    audioURL: audioURL,
+                    audioData: audioData,
+                    fileName: fileName,
+                    model: model,
+                    language: language,
+                    resourceTimeout: resourceTimeout
+                )
+            } catch let error as CloudTranscriptionError {
+                lastError = error
+                guard attempt < Self.maxTranscriptionAttempts, Self.isRetryable(error) else {
+                    throw error
+                }
+                let delay = Self.retryBackoffsNanos[attempt - 1]
+                logger.warning("Cloud transcription attempt \(attempt, privacy: .public)/\(Self.maxTranscriptionAttempts, privacy: .public) failed (\(error.localizedDescription, privacy: .public)); retrying in \(Double(delay) / 1_000_000_000, format: .fixed(precision: 2), privacy: .public)s")
+                try? await Task.sleep(nanoseconds: delay)
+            }
+        }
+        throw lastError ?? CloudTranscriptionError.networkError(URLError(.unknown))
+    }
+
+    private func performTranscribe(
+        audioURL: URL,
+        audioData: Data,
+        fileName: String,
+        model: any TranscriptionModel,
+        language: String?,
+        resourceTimeout: TimeInterval
+    ) async throws -> String {
         do {
             if model.provider == .custom {
                 guard let customModel = model as? CustomCloudModel else {
@@ -93,6 +132,27 @@ class CloudTranscriptionService: TranscriptionService {
         }
     }
 
+    /// Whether a cloud transcription error is worth retrying. Keep this conservative:
+    /// only transient server/network conditions. Client misconfiguration (4xx auth,
+    /// missing API key, unsupported provider), local encoding issues, and timeouts
+    /// (already long by definition) are not retried.
+    private static func isRetryable(_ error: CloudTranscriptionError) -> Bool {
+        switch error {
+        case .apiRequestFailed(let statusCode, _):
+            return (500...599).contains(statusCode) || statusCode == 408 || statusCode == 429
+        case .networkError:
+            return true
+        case .timeout,
+             .noTranscriptionReturned,
+             .dataEncodingError,
+             .audioFileNotFound,
+             .unsupportedProvider,
+             .missingAPIKey,
+             .invalidAPIKey:
+            return false
+        }
+    }
+
     /// Reads the user-configured transcription resource timeout, falling back to a
     /// sensible default when the setting is missing or out of range.
     static func configuredResourceTimeout() -> TimeInterval {
@@ -107,7 +167,12 @@ class CloudTranscriptionService: TranscriptionService {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw CloudTranscriptionError.audioFileNotFound
         }
-        return try Data(contentsOf: url)
+        // Memory-map the audio file so its pages stay backed by the kernel page cache
+        // instead of being copied into anonymous heap. For long recordings (tens of MB)
+        // this keeps the process resident set small and lets the kernel reclaim pages
+        // under memory pressure. A further win would be extending LLMkit's transcription
+        // API to take a file URL and stream directly from disk into the HTTP body.
+        return try Data(contentsOf: url, options: .mappedIfSafe)
     }
 
     private func requireAPIKey(forProvider provider: String) throws -> String {

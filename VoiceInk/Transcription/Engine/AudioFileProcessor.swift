@@ -117,28 +117,29 @@ class AudioProcessor {
         guard let channelData = buffer.floatChannelData else {
             return []
         }
-        
+
         let channelCount = Int(buffer.format.channelCount)
         let frameLength = Int(buffer.frameLength)
         var samples = Array(repeating: Float(0), count: frameLength)
-        
+
         if channelCount == 1 {
             samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
         } else {
+            let invChannels = 1.0 / Float(channelCount)
             for frame in 0..<frameLength {
                 var sum: Float = 0
                 for channel in 0..<channelCount {
                     sum += channelData[channel][frame]
                 }
-                samples[frame] = sum / Float(channelCount)
+                samples[frame] = sum * invChannels
             }
         }
-        
-        let maxSample = samples.map(abs).max() ?? 1
-        if maxSample > 0 {
-            samples = samples.map { $0 / maxSample }
-        }
-        
+
+        // Intentionally no peak normalization here. A previous version divided each
+        // chunk by its own `max(abs)`, which (a) normalized chunks independently —
+        // breaking signal continuity across chunk boundaries — and (b) distorted the
+        // distribution Whisper was trained on. The model handles raw PCM in the
+        // [-1.0, 1.0] range natively.
         return samples
     }
     func saveSamplesAsWav(samples: [Float], to url: URL) throws {

@@ -5,6 +5,7 @@ enum VoiceInkEngineError: Error, Identifiable {
     case transcriptionFailed
     case whisperCoreFailed
     case unzipFailed
+    case unsupportedAudioFormat
     case unknownError
 
     var id: String { UUID().uuidString }
@@ -21,6 +22,8 @@ extension VoiceInkEngineError: LocalizedError {
             return "The core transcription engine failed."
         case .unzipFailed:
             return "Failed to unzip the downloaded Core ML model."
+        case .unsupportedAudioFormat:
+            return "The audio file format is not supported by the transcription engine."
         case .unknownError:
             return "An unknown error occurred."
         }
@@ -36,6 +39,8 @@ extension VoiceInkEngineError: LocalizedError {
             return "This can happen due to an issue with the audio recording or insufficient system resources. Please try again, or restart the app."
         case .unzipFailed:
             return "The downloaded Core ML model archive might be corrupted. Try deleting the model and downloading it again. Check available disk space."
+        case .unsupportedAudioFormat:
+            return "Try re-recording with the built-in recorder, or convert the file to a 16 kHz mono WAV."
         case .unknownError:
             return "Please restart the application. If the problem persists, contact support."
         }
