@@ -37,6 +37,7 @@ struct PowerModeValidator {
         self.powerModeManager = powerModeManager
     }
     
+    @MainActor
     func validateForSave(config: PowerModeConfig, mode: ConfigurationMode) -> [PowerModeValidationError] {
         var errors: [PowerModeValidationError] = []
         
