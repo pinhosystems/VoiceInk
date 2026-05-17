@@ -82,7 +82,13 @@ class NotificationManager {
 
     @MainActor
     private func positionWindow(_ window: NSWindow) {
-        let activeScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        // NSScreen.screens can be empty when the display is fully detached
+        // (e.g., a sleeping clamshell-mode MacBook between displays). Falling
+        // back to `screens[0]` in that state crashed the notification path;
+        // use `.first` and bail out gracefully when there is no screen.
+        guard let activeScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first else {
+            return
+        }
         let screenRect = activeScreen.visibleFrame
         let notificationRect = window.frame
         
