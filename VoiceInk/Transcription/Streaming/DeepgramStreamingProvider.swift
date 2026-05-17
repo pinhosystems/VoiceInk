@@ -1,9 +1,25 @@
 import Foundation
 import SwiftData
 import LLMkit
+import os
 
 /// Deepgram streaming provider wrapping `LLMkit.DeepgramStreamingClient`.
 final class DeepgramStreamingProvider: StreamingTranscriptionProvider {
+
+    /// Deepgram's `keyterm` query parameter has a documented cap. We trim
+    /// the user's vocabulary to this many entries before sending; anything
+    /// beyond gets logged and surfaced to the user as a one-shot warning.
+    private static let maxKeytermCount = 50
+
+    /// `true` once we've shown the truncation warning notification this
+    /// process; prevents spamming the user on every recording when their
+    /// dictionary exceeds the cap.
+    private static let warnedAboutTruncation = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+    private static let logger = Logger(
+        subsystem: "com.prakashjoshipax.voiceink",
+        category: "DeepgramStreamingProvider"
+    )
 
     private let client = LLMkit.DeepgramStreamingClient()
     private var eventsContinuation: AsyncStream<StreamingTranscriptionEvent>.Continuation?
@@ -104,7 +120,27 @@ final class DeepgramStreamingProvider: StreamingTranscriptionProvider {
                 unique.append(trimmed)
             }
         }
-        return Array(unique.prefix(50))
+
+        if unique.count > Self.maxKeytermCount {
+            Self.logger.warning("Deepgram custom vocabulary truncated: \(unique.count, privacy: .public) configured → \(Self.maxKeytermCount, privacy: .public) sent (alphabetical order)")
+            let shouldNotify = Self.warnedAboutTruncation.withLock { hasWarned -> Bool in
+                let firstTime = !hasWarned
+                hasWarned = true
+                return firstTime
+            }
+            if shouldNotify {
+                let configuredCount = unique.count
+                Task { @MainActor in
+                    NotificationManager.shared.showNotification(
+                        title: "Deepgram uses only the first \(Self.maxKeytermCount) of your \(configuredCount) vocabulary terms",
+                        type: .warning,
+                        duration: 6.0
+                    )
+                }
+            }
+            return Array(unique.prefix(Self.maxKeytermCount))
+        }
+        return unique
     }
 
     private func mapError(_ error: Error) -> Error {
