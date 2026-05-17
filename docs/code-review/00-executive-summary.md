@@ -6,29 +6,36 @@ VoiceInk tem **arquitetura razoável** (camadas claras, protocolos para abstraç
 
 A app funciona, mas opera no limite da segurança: cada mudança de provider, cada update de SDK, e cada refactor pequeno corre risco real de regressão silenciosa.
 
-## Top 10 riscos atuais
+## Top riscos atuais (após revisão pós-PRs)
 
-Ordem aproximada por impacto. Detalhes em `features/`.
+Ordem aproximada por impacto. Status atualizado conforme PRs mergeadas.
 
 1. **CRITICAL — Race condition em audio callback**. `CoreAudioRecorder.swift:485` usa `Unmanaged.passUnretained(self)` no callback de áudio. Se o objeto for desalocado durante o callback, é crash. Sem sincronização que garanta ciclo de vida. → `features/01-audio-capture.md`
 
 2. **CRITICAL — Race condition em flush WAV**. `CoreAudioRecorder.swift:128-143` admite (em comentário) que `ExtAudioFileWrite` pode estar em andamento quando `ExtAudioFileDispose` é chamado em `stopRecording`. Pode corromper o header WAV (tamanho menor que payload). → `features/01-audio-capture.md`
 
-3. **CRITICAL — Code injection via `String(format:)` em prompts do usuário**. `CustomPrompt.swift:130` faz `String(format: prompt, ...)` com prompt fornecido pelo usuário. Conteúdo com `%x`/`%s` causa crash ou leitura de memória adjacente. → `features/07-prompts-templates.md`
+3. ~~**CRITICAL — Force-unwrap em `AVAudioFormat`**~~ — **resolvido em PR #10**.
 
-4. **CRITICAL — Force-unwrap em `AVAudioFormat`**. `WhisperTranscriptionService.swift:104` faz `AVAudioFormat(...)!` — pode crash se o áudio do usuário tiver canal/sample-rate fora do padrão. → `features/02-whisper-local.md`
+4. ~~**CRITICAL — Header WAV hardcoded em FluidAudio**~~ — **resolvido em PR #10**.
 
-5. **CRITICAL — Header WAV hardcoded em FluidAudio**. `FluidAudioTranscriptionService.swift:134-138` faz `stride(from: 44, ...)` assumindo header canônico — mesmo bug que já corrigimos no Whisper. WAVs com chunks LIST/bext serão lidos incorretamente. → `features/05-native-fluidaudio.md`
+5. **HIGH — Parâmetros do usuário descartados silenciosamente em providers** (parcial). Soniox (`stt-rt-v4` hardcoded), Cartesia (`customVocabulary: []`) e Deepgram (`customVocabulary` não encaminhado) — **resolvidos em PR #11**. Mistral `language` e xAI `prompt`/`vocab` ficaram bloqueados em mudança upstream no LLMkit (ver backlog). → `features/03-cloud-transcription.md`, `features/04-streaming-transcription.md`
 
-6. **HIGH — Parâmetros do usuário descartados silenciosamente em providers**. xAI, Mistral, ElevenLabs, Deepgram, Soniox, Cartesia: pelo menos um de `language`/`prompt`/`customVocabulary`/`model.name` não é encaminhado ao client. Configuração do usuário some sem aviso. → `features/03-cloud-transcription.md`, `features/04-streaming-transcription.md`
+6. ~~**HIGH — Force-unwrap em `allPrompts.first!`**~~ — **resolvido em PR #10**.
 
-7. **HIGH — Force-unwrap em `allPrompts.first!`**. `AIEnhancementService.swift:257` — se a lista de prompts estiver vazia (estado migrado mal, primeira inicialização edge case), crash. → `features/06-ai-enhancement.md`
+7. **HIGH — WordReplacement quebrado para palavras com acento** — **resolvido em PR C** (`\b` + `useUnicodeWordBoundaries`). → `features/08-dictionary-vocabulary.md`
 
-8. **HIGH — WordReplacement quebrado para palavras com acento**. `WordReplacementService.swift:42` usa lookarounds `(?<![a-zA-Z0-9])` que não consideram unicode. "café" não dispara o replace; falha silenciosa em português, espanhol, alemão, francês. → `features/08-dictionary-vocabulary.md`
+8. **HIGH — CGEvent sem verificação de retorno**. `CursorPaster.swift:120-138` faz `CGEvent.post` sem checar sucesso. Paste silencioso de falha quando o usuário não concedeu Accessibility ainda — bug recorrente reportado em issues. → `features/12-paste-clipboard-media.md`
 
-9. **HIGH — Shell injection em LocalCLIService**. `LocalCLIService.swift:121-124` interpola `systemPrompt`/`userPrompt` direto em comando shell. Conteúdo com `$`, backticks ou aspas pode executar. → `features/06-ai-enhancement.md`
+9. **HIGH — Race condition em PowerMode**. `PowerModeConfig.swift:346` (`setActiveConfiguration`) sem lock + observers desbalanceados em `PowerModeSessionManager.swift:70-90`. → `features/09-power-mode.md`
 
-10. **HIGH — CGEvent sem verificação de retorno**. `CursorPaster.swift:120-138` faz `CGEvent.post` sem checar sucesso. Paste silencioso de falha quando o usuário não concedeu Accessibility ainda — bug recorrente reportado em issues. → `features/12-paste-clipboard-media.md`
+## Falsos positivos reidentificados durante a remediação
+
+A auditoria inicial superestimou algumas severidades. Após verificação:
+
+- **`CustomPrompt.swift:130` String(format:) injection** — não procede. A format string é fixa em `AIPrompts.customPromptTemplate` (compilada no source). O valor do usuário entra como argumento de substituição `%@`, que NSString/CFString não re-interpretam como format codes. Tokenização ainda recomendada como melhoria de robustez (não de segurança).
+- **`LocalCLIService.swift` shell injection** — não procede. Prompts viajam via env vars (`VOICEINK_*`) e os templates usam `"$VAR"` (aspas duplas); zsh não re-interpreta o conteúdo dessas variáveis. A única exploração possível é o usuário escrever um template `eval`-style, o que é o usuário se atacar.
+- **`TranscriptionModel.swift` `let id = UUID()`** — não procede para uso runtime; persistência usa `name`, não `id`. Riscos residuais movidos para LOW (backup/restore).
+- **Vários "parâmetros descartados" em xAI, Mistral, ElevenLabs** — análise revelou que parte é limitação upstream do LLMkit, parte é API que não suporta os parâmetros, parte foi erro de leitura da auditoria. Ver seção "Bloqueado por dependências externas" no backlog.
 
 ## Padrões transversais detectados
 
@@ -72,4 +79,4 @@ A documentação em `99-testing-strategy.md` detalha o esqueleto recomendado.
 - **Depois**: MEDIUM agrupados por feature, refactor de duplicação entre providers, normalização de naming.
 - **Quando sobrar tempo**: LOW.
 
-Vale ressaltar: o produto está usável hoje e os bugs CRITICAL não são todos disparados em uso normal — vários precisam de edge case específico (audio device trocado durante gravação, prompt do usuário com `%s`, WAV não-canônico). Mas todos são **deterministicamente disparáveis** por quem souber, e três deles podem causar crash visível.
+Vale ressaltar: o produto está usável hoje. Após PR #10, #11 e a PR C, os achados CRITICAL restantes (race conditions no `CoreAudioRecorder`) são edge-cases que dependem de timing específico durante gravação — não são triviais de disparar em uso normal, mas existem e merecem fix antes da próxima release pública.
