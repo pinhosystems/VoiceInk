@@ -49,16 +49,31 @@ enum TranscriptionResultValidator {
         )
     }
 
-    /// Runs the heuristic. If the result looks truncated, attempts to recover
-    /// by re-submitting the audio in smaller chunks via the same service. The
-    /// chunked result is returned **only** if it is meaningfully longer than
-    /// the initial attempt — otherwise the initial attempt is kept (chunking
-    /// did not help, presumably the upstream bug is content-specific rather
-    /// than duration-based).
+    /// Multiplier the recovered result must beat the initial result by to be
+    /// adopted. 1.25× is a low bar but avoids replacing a real (just slow)
+    /// transcript with a recovery attempt that happened to pick up boundary
+    /// noise or coincidentally returned a similar length.
+    private static let recoveryImprovementRatio: Double = 1.25
+
+    /// Runs the heuristic. If the result looks truncated, walks a two-step
+    /// recovery ladder via the same service:
     ///
-    /// - Returns: A tuple of the best text to use and a flag indicating
-    ///   whether the heuristic considered the *final* text still short.
-    ///   Callers should surface a notification when `stillShort` is true.
+    ///   1. **Retry once** with a fresh request. The most common xAI failure
+    ///      mode in production is a transient `socket disconnect` mid-stream
+    ///      that leaves the result short; the batch endpoint usually answers
+    ///      a fresh submission correctly. Works for any audio duration
+    ///      (including the 8–12 s window where chunking is a no-op).
+    ///
+    ///   2. **Chunked re-submission** when the retry didn't improve and the
+    ///      audio is long enough to benefit from splitting (see
+    ///      `ChunkedTranscriber.minimumDurationToChunk`). Helps when the
+    ///      upstream bug is duration-based rather than transient.
+    ///
+    /// At each step, the new text is adopted only if it is meaningfully
+    /// longer than the best we have so far (see `recoveryImprovementRatio`).
+    /// Whatever text the ladder ends with — original, retried, or chunked —
+    /// is returned along with a `stillShort` flag so callers can surface a
+    /// user-visible warning when no recovery path managed to fix it.
     static func attemptRecoveryIfShort(
         initial: String,
         audioURL: URL,
@@ -69,27 +84,49 @@ enum TranscriptionResultValidator {
         guard await isSuspiciouslyShort(text: initial, audioURL: audioURL) else {
             return (initial, false)
         }
-        logger.warning("Initial transcript looks truncated (chars=\(initial.count, privacy: .public)) — attempting chunked recovery")
+        logger.warning("Initial transcript looks truncated (chars=\(initial.count, privacy: .public)) — running recovery ladder")
 
+        var best = initial
+        let initialThreshold = Int(Double(initial.count) * recoveryImprovementRatio)
+
+        // Step 1: retry once. Cheap (~1–2s) and covers the common transient
+        // failure that no amount of chunking would address.
+        do {
+            let retried = try await service.transcribe(audioURL: audioURL, model: model)
+            if retried.count > initialThreshold {
+                logger.notice("Same-provider retry recovered \(retried.count, privacy: .public) chars vs \(initial.count, privacy: .public) — adopting")
+                best = retried
+            } else {
+                logger.notice("Same-provider retry did not improve (initial=\(initial.count, privacy: .public), retried=\(retried.count, privacy: .public)) — trying chunking")
+            }
+        } catch {
+            logger.error("Same-provider retry failed: \(error.localizedDescription, privacy: .public) — trying chunking")
+        }
+
+        // If the retry already fixed it, short-circuit the chunking attempt.
+        if !(await isSuspiciouslyShort(text: best, audioURL: audioURL)) {
+            return (best, false)
+        }
+
+        // Step 2: chunked re-submission. Skips internally for very short clips.
         let chunked: String
         do {
             chunked = try await ChunkedTranscriber.transcribe(audioURL: audioURL, model: model, via: service)
         } catch {
-            logger.error("Chunked recovery failed: \(error.localizedDescription, privacy: .public) — keeping original short result")
-            return (initial, true)
+            logger.error("Chunked recovery failed: \(error.localizedDescription, privacy: .public) — keeping best so far")
+            let stillShort = await isSuspiciouslyShort(text: best, audioURL: audioURL)
+            return (best, stillShort)
         }
 
-        // Only adopt the chunked result if it actually recovered something
-        // beyond what we already had. 1.25× is a low bar but avoids replacing
-        // a real (just slow) transcript with a chunked one that happened to
-        // pick up boundary noise.
-        if chunked.count > Int(Double(initial.count) * 1.25) {
+        let bestThreshold = Int(Double(best.count) * recoveryImprovementRatio)
+        if chunked.count > bestThreshold {
             let stillShort = await isSuspiciouslyShort(text: chunked, audioURL: audioURL)
-            logger.notice("Chunked recovery returned \(chunked.count, privacy: .public) chars vs \(initial.count, privacy: .public) — adopting (stillShort=\(stillShort, privacy: .public))")
+            logger.notice("Chunked recovery returned \(chunked.count, privacy: .public) chars vs \(best.count, privacy: .public) — adopting (stillShort=\(stillShort, privacy: .public))")
             return (chunked, stillShort)
         }
 
-        logger.warning("Chunked recovery did not improve length (initial=\(initial.count, privacy: .public), chunked=\(chunked.count, privacy: .public)) — keeping original")
-        return (initial, true)
+        let stillShort = await isSuspiciouslyShort(text: best, audioURL: audioURL)
+        logger.warning("Chunked recovery did not improve length (best=\(best.count, privacy: .public), chunked=\(chunked.count, privacy: .public)) — keeping best (stillShort=\(stillShort, privacy: .public))")
+        return (best, stillShort)
     }
 }
