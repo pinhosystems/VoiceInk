@@ -111,7 +111,18 @@ class CursorPaster {
     // Posts Cmd+V via CGEvent without modifying the active input source.
     private static func pasteFromClipboard() {
         guard AXIsProcessTrusted() else {
+            // Without Accessibility permission, posting CGEvents silently no-ops —
+            // the user sees the transcript appear in the recorder UI but nothing
+            // pastes into the focused app. Surface that as an actionable
+            // notification so the user can grant the permission and try again.
             logger.error("Accessibility not trusted — cannot paste")
+            Task { @MainActor in
+                NotificationManager.shared.showNotification(
+                    title: "Grant Accessibility access in System Settings to enable paste",
+                    type: .error,
+                    duration: 6.0
+                )
+            }
             return
         }
 
@@ -144,7 +155,13 @@ class CursorPaster {
 
     static func performAutoSend(_ key: AutoSendKey) {
         guard key.isEnabled else { return }
-        guard AXIsProcessTrusted() else { return }
+        guard AXIsProcessTrusted() else {
+            // Auto-send relies on the same CGEvent + Accessibility path as paste.
+            // The user already saw a notification when paste failed; suppress a
+            // second one for the same root cause and just log.
+            logger.error("Accessibility not trusted — skipping auto-send")
+            return
+        }
 
         let source = CGEventSource(stateID: .privateState)
         let enterDown = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: true)
