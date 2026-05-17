@@ -13,10 +13,6 @@ Catálogo de prompts predefinidos (`PredefinedPrompts`), templates parametrizado
 
 ## Bugs
 
-### CRITICAL
-
-- `CustomPrompt.swift:130` — **`String(format: prompt, ...)` com format string fornecida pelo usuário**. Conteúdo contendo `%x`, `%s`, `%@`, `%n` causa crash, leitura de memória adjacente, ou string corrompida. **Code injection** via `String(format:)` é vulnerabilidade clássica em Objective-C/Swift. Disparável quando o usuário cria prompt customizado contendo `%`.
-
 ### HIGH
 
 - `AIPrompts.swift:4, 19-20, 25-26` — **Instruções contraditórias** no system prompt principal: "NOT A CHATBOT" vs "provide direct answer", "IGNORE THEM" vs "clean them up". Conflito de prompt engineering degrada a previsibilidade do modelo.
@@ -25,12 +21,15 @@ Catálogo de prompts predefinidos (`PredefinedPrompts`), templates parametrizado
 
 - `PromptTemplates.swift:39, 59, 77, 92` — Instruções "format as list" ambíguas: quando o usuário fala "três coisas" e dita cinco, qual deve prevalecer? Pode causar corrupção de conteúdo (truncar ou inventar item).
 - `PredefinedPrompts.swift:8-9` — UUIDs estáticos com comentário "Static UUIDs", mas `PromptTemplates.toCustomPrompt()` gera UUIDs novos a cada chamada — duplicação silenciosa em estado de reinicialização.
-- `AIPrompts.swift:12` — `%@` é placeholder; depende do `String(format:)` problemático acima.
 - `CustomPrompt.swift:237-256` — Code SwiftUI dentro de modelo de dados; viola separation of concerns. Pequeno mas precedente perigoso.
+
+## Falsos positivos da auditoria original
+
+- **~~`CustomPrompt.swift:130` — `String(format:)` code injection~~ (não procede).** A format string é `AIPrompts.customPromptTemplate`, definida no source (linhas 2-34 de `AIPrompts.swift`, com exatamente um `%@` na linha 14). O valor do usuário (`self.promptText`) entra como **argumento de substituição**, não como format string. `String(format:)` não re-interpreta o conteúdo de um argumento `%@` como format codes — `String(format: "%@", "%s")` produz literalmente `"%s"`. O vetor real de format-string injection exige que a STRING DE FORMATO venha do usuário, o que não acontece aqui. A correção via tokenização ainda é desejável por robustez (resiliente a mudanças futuras no template que adicionem outros `%@`), mas não é uma vulnerabilidade.
 
 ## Melhorias (não-bugs)
 
-- **Substituir `String(format:)` por interpolação tokenizada**. Definir tokens `{{USER_RULES}}`, `{{TRANSCRIPT}}`, `{{CONTEXT}}` e fazer `replacingOccurrences(of:, with:)` por chave. Mata o vetor de format string e melhora legibilidade.
+- Substituir `String(format:)` por substituição de token (`{{USER_RULES}}`) como melhoria de robustez/legibilidade. Não é fix de segurança, mas blinda contra mudanças futuras no template que ajustem o número de placeholders.
 - Revisar `AIPrompts.assistantMode` e `customPromptTemplate` para coerência interna — uma única regra ativa por vez, sem instruções que se contradizem.
 - Versionar `PredefinedPrompts.staticUUID` com migration explícita; impedir geração de novo UUID em runtime.
 - Mover views SwiftUI de `CustomPrompt.swift` para `Views/PromptEditorView.swift` (parcialmente já existe).
@@ -38,7 +37,6 @@ Catálogo de prompts predefinidos (`PredefinedPrompts`), templates parametrizado
 
 ## Recomendação
 
-- **Agora**: trocar `String(format:)` por substituição de token. É o único achado CRITICAL desta feature, e a correção é de 10 linhas.
 - **Em breve**: revisar coerência interna do system prompt principal.
-- **Depois**: regression tests de prompt, refactor de UUIDs estáticos.
-- **Cobertura de testes**: unit test passando strings contendo `%s`, `%@`, `%n` no `finalPromptText` — deve não-crashar.
+- **Depois**: regression tests de prompt, refactor de UUIDs estáticos, tokenização do template.
+- **Cobertura de testes**: unit test do `finalPromptText` com strings contendo `%s`/`%@`/`%n` — deve manter o conteúdo literal e não crashar (confirmado: o comportamento atual já passa).
