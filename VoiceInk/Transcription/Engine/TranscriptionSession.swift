@@ -97,7 +97,7 @@ final class StreamingTranscriptionSession: TranscriptionSession {
                 logger.notice("Streaming stop/transcribe started model=\(model.displayName, privacy: .public)")
                 let text = try await streamingService.stopAndGetFinalText()
                 logger.notice("Streaming transcript received elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
-                if await Self.isSuspiciouslyShort(text: text, audioURL: audioURL) {
+                if await TranscriptionResultValidator.isSuspiciouslyShort(text: text, audioURL: audioURL) {
                     logger.warning("Streaming result suspiciously short for audio duration — falling back to batch to verify")
                     streamingService.cancel()
                 } else {
@@ -113,29 +113,34 @@ final class StreamingTranscriptionSession: TranscriptionSession {
 
         let fallbackStart = Date()
         logger.notice("Using batch fallback for \(model.displayName, privacy: .public) file=\(audioURL.lastPathComponent, privacy: .public)")
-        let text = try await fallbackService.transcribe(audioURL: audioURL, model: model)
-        logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
-        return text
-    }
+        let initialText = try await fallbackService.transcribe(audioURL: audioURL, model: model)
+        logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(initialText.count, privacy: .public)")
 
-    /// Defensive heuristic: streaming providers can return a successful but truncated
-    /// transcript when their server-side flush protocol is sensitive to client timing.
-    /// If the resulting text is too short relative to the recorded audio duration, we
-    /// retry through the batch endpoint to verify (and recover) the full transcription.
-    ///
-    /// Thresholds (intentionally conservative to avoid false positives on silent or
-    /// very short clips):
-    ///   - Only triggers when audio duration ≥ 8 seconds.
-    ///   - Triggers when transcript yields fewer than 5 chars/second of audio.
-    /// Average speech is ~12–17 chars/second, so 5 chars/s is well below any plausible
-    /// real-speech rate even with pauses.
-    private static func isSuspiciouslyShort(text: String, audioURL: URL) async -> Bool {
-        let asset = AVURLAsset(url: audioURL)
-        guard let cmDuration = try? await asset.load(.duration) else { return false }
-        let duration = CMTimeGetSeconds(cmDuration)
-        guard duration.isFinite, duration >= 8.0 else { return false }
-        let charsPerSecond = Double(text.count) / duration
-        return charsPerSecond < 5.0
+        // If the batch result is *also* suspiciously short, the upstream STT
+        // service is degrading (xAI Grok has been observed returning ~25 chars
+        // for 12s clips and ~209 chars for 30s clips on both streaming and
+        // batch paths). Try the chunked recovery path next — submitting the
+        // audio in smaller pieces sometimes bypasses an internal duration
+        // limit on the provider side. If chunking still doesn't recover the
+        // transcript, surface a warning so the user knows to retry with a
+        // different model instead of silently accepting the truncated text.
+        let (text, stillShort) = await TranscriptionResultValidator.attemptRecoveryIfShort(
+            initial: initialText,
+            audioURL: audioURL,
+            model: model,
+            service: fallbackService,
+            logger: logger
+        )
+        if stillShort {
+            await MainActor.run {
+                NotificationManager.shared.showNotification(
+                    title: "Transcription appears incomplete from \(model.displayName) — consider retrying with a different model",
+                    type: .warning,
+                    duration: 7.0
+                )
+            }
+        }
+        return text
     }
 
     func cancel() {
