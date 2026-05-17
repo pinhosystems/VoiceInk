@@ -97,7 +97,7 @@ final class StreamingTranscriptionSession: TranscriptionSession {
                 logger.notice("Streaming stop/transcribe started model=\(model.displayName, privacy: .public)")
                 let text = try await streamingService.stopAndGetFinalText()
                 logger.notice("Streaming transcript received elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
-                if await Self.isSuspiciouslyShort(text: text, audioURL: audioURL) {
+                if await TranscriptionResultValidator.isSuspiciouslyShort(text: text, audioURL: audioURL) {
                     logger.warning("Streaming result suspiciously short for audio duration — falling back to batch to verify")
                     streamingService.cancel()
                 } else {
@@ -122,44 +122,13 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         // Streaming → batch fallback can't fix that — surface a visible warning
         // so the user knows to retry with a different provider instead of
         // silently accepting the truncated text.
-        if await Self.isSuspiciouslyShort(text: text, audioURL: audioURL) {
-            logger.warning("Batch fallback result also suspiciously short — surfacing notification")
-            await MainActor.run {
-                NotificationManager.shared.showNotification(
-                    title: "Transcription appears incomplete from \(model.displayName) — consider retrying with a different model",
-                    type: .warning,
-                    duration: 7.0
-                )
-            }
-        }
+        await TranscriptionResultValidator.warnIfSuspiciouslyShort(
+            text: text,
+            audioURL: audioURL,
+            modelDisplayName: model.displayName,
+            logger: logger
+        )
         return text
-    }
-
-    /// Defensive heuristic: streaming providers (and occasionally the matching
-    /// batch endpoint) return a successful but truncated transcript when the
-    /// upstream service degrades. If the resulting text is too short relative
-    /// to the recorded audio duration, retry through the batch endpoint to
-    /// verify (and recover) the full transcription.
-    ///
-    /// Thresholds — kept conservative to avoid false positives on silent or
-    /// very short clips, but tuned high enough to catch the xAI failure mode
-    /// observed in production (29.8s audio → 209 chars = 7 chars/s):
-    ///   - Only triggers when audio duration ≥ 8 seconds.
-    ///   - Triggers when transcript yields fewer than 8 chars/second of audio.
-    /// Normal Portuguese / Spanish / English speech rates are ~12–17 chars/s.
-    /// 8 chars/s leaves room for slow speakers or pauses but is well below any
-    /// realistic rate for continuous dictation. The previous value (5 chars/s)
-    /// missed mid-degradation cases like the one above.
-    private static let suspiciouslyShortCharsPerSecond: Double = 8.0
-    private static let suspiciouslyShortMinDuration: Double = 8.0
-
-    private static func isSuspiciouslyShort(text: String, audioURL: URL) async -> Bool {
-        let asset = AVURLAsset(url: audioURL)
-        guard let cmDuration = try? await asset.load(.duration) else { return false }
-        let duration = CMTimeGetSeconds(cmDuration)
-        guard duration.isFinite, duration >= suspiciouslyShortMinDuration else { return false }
-        let charsPerSecond = Double(text.count) / duration
-        return charsPerSecond < suspiciouslyShortCharsPerSecond
     }
 
     func cancel() {

@@ -50,6 +50,20 @@ class AudioTranscriptionService: ObservableObject {
             text = TranscriptionOutputFilter.filter(text)
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
+            // The retry path bypasses the streaming session entirely (it goes
+            // straight to the batch endpoint via the service registry), so the
+            // same heuristic that catches truncated streaming results in
+            // `StreamingTranscriptionSession.transcribe` never runs here.
+            // Run it explicitly so that re-clicking "Retry" on an already-short
+            // transcription surfaces a visible warning instead of silently
+            // producing the same short text.
+            await TranscriptionResultValidator.warnIfSuspiciouslyShort(
+                text: text,
+                audioURL: url,
+                modelDisplayName: model.displayName,
+                logger: logger
+            )
+
             let powerModeManager = PowerModeManager.shared
             let activePowerModeConfig = powerModeManager.currentActiveConfiguration
             let powerModeName = (activePowerModeConfig?.isEnabled == true) ? activePowerModeConfig?.name : nil
