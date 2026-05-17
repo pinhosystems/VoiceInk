@@ -254,7 +254,18 @@ class AIEnhancementService: ObservableObject {
                 return activePrompt.finalPromptText + finalContextSection
             }
         } else {
-            let defaultPrompt = allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId }) ?? allPrompts.first!
+            // Fallback chain, in order of preference:
+            //   1. The canonical "Default" predefined prompt by stable UUID.
+            //   2. Any prompt that happens to exist in `allPrompts`.
+            //   3. The hard-coded predefined prompts (always non-empty at the source).
+            // We avoid force-unwrap because allPrompts can be empty in degenerate
+            // states (corrupted persistence, migration failure, first launch race).
+            let fallback = allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId })
+                ?? allPrompts.first
+                ?? PredefinedPrompts.createDefaultPrompts().first
+            guard let defaultPrompt = fallback else {
+                return finalContextSection
+            }
             return defaultPrompt.finalPromptText + finalContextSection
         }
     }
