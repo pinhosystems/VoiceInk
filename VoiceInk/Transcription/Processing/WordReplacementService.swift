@@ -37,10 +37,18 @@ class WordReplacementService {
                 let usesBoundaries = usesWordBoundaries(for: original)
 
                 if usesBoundaries {
-                    // Lookarounds instead of \b so punctuation acts as a word boundary
+                    // Use \b with .useUnicodeWordBoundaries so the boundary follows
+                    // Unicode TR#29 — accented letters (é, ñ, ü, ã, ç, ...) and other
+                    // letter-class characters count as part of a "word". The previous
+                    // implementation used ASCII-only lookarounds (`[a-zA-Z0-9]`), which
+                    // treated accented letters as boundaries and over-matched on
+                    // adjacency: e.g., replacing "açai" would (incorrectly) fire inside
+                    // "açaié" because "é" was not [a-zA-Z0-9]. With Unicode word
+                    // boundaries, punctuation and whitespace still serve as boundaries,
+                    // exactly as intended in the original comment.
                     let escaped = NSRegularExpression.escapedPattern(for: original)
-                    let pattern = "(?<![a-zA-Z0-9])\(escaped)(?![a-zA-Z0-9])"
-                    if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                    let pattern = "\\b\(escaped)\\b"
+                    if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .useUnicodeWordBoundaries]) {
                         let range = NSRange(modifiedText.startIndex..., in: modifiedText)
                         modifiedText = regex.stringByReplacingMatches(
                             in: modifiedText,
