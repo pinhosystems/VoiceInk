@@ -2,6 +2,9 @@ import Foundation
 import KeyboardShortcuts
 import LaunchAtLogin
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "BackupImporter")
 
 enum BackupImportError: LocalizedError {
     case saveFailed(String, Error)
@@ -45,7 +48,7 @@ enum BackupImporter {
         if categories.contains(.prompts) {
             let predefinedPrompts = enhancementService.customPrompts.filter { $0.isPredefined }
             enhancementService.customPrompts = predefinedPrompts + backup.customPrompts
-            print("Successfully imported \(backup.customPrompts.count) custom prompts.")
+            logger.notice("Imported \(backup.customPrompts.count, privacy: .public) custom prompts")
         }
 
         if categories.contains(.powerMode) {
@@ -67,7 +70,7 @@ enum BackupImporter {
                     _ = emojiManager.addCustomEmoji(emoji)
                 }
             }
-            print("Successfully imported \(backup.powerModeConfigs.count) Power Mode configurations.")
+            logger.notice("Imported \(backup.powerModeConfigs.count, privacy: .public) Power Mode configurations")
         }
 
         if categories.contains(.customModels) {
@@ -78,7 +81,7 @@ enum BackupImporter {
     @MainActor
     private static func importGeneral(_ general: GeneralBackup?, hotkeyManager: HotkeyManager, menuBarManager: MenuBarManager, mediaController: MediaController, playbackController: PlaybackController, soundManager: SoundManager, recorderUIManager: RecorderUIManager) {
         guard let general else {
-            print("No general settings found in the imported file.")
+            logger.notice("No general settings found in the imported file")
             return
         }
 
@@ -192,7 +195,7 @@ enum BackupImporter {
             UserDefaults.standard.set(appleScriptPaste, forKey: "useAppleScriptPaste")
         }
 
-        print("Successfully imported general settings.")
+        logger.notice("Imported general settings")
     }
 
     @MainActor
@@ -218,7 +221,7 @@ enum BackupImporter {
                 }
             }
         } else {
-            print("No vocabulary words found in the imported file. Existing items remain unchanged.")
+            logger.notice("No vocabulary words found in the imported file; existing items remain unchanged")
         }
 
         if let replacements = backup.wordReplacements {
@@ -248,22 +251,22 @@ enum BackupImporter {
                 }
             }
         } else {
-            print("No word replacements found in the imported file. Existing replacements remain unchanged.")
+            logger.notice("No word replacements found in the imported file; existing replacements remain unchanged")
         }
 
         guard insertedWords > 0 || insertedReplacements > 0 else {
-            print("No new dictionary entries were imported.")
+            logger.notice("No new dictionary entries were imported")
             if skippedInvalidReplacements > 0 {
-                print("Skipped \(skippedInvalidReplacements) invalid word replacements from the imported file.")
+                logger.notice("Skipped \(skippedInvalidReplacements, privacy: .public) invalid word replacements from the imported file")
             }
             return
         }
 
         do {
             try modelContext.save()
-            print("Successfully imported \(insertedWords) vocabulary words and \(insertedReplacements) word replacements to SwiftData.")
+            logger.notice("Imported \(insertedWords, privacy: .public) vocabulary words and \(insertedReplacements, privacy: .public) word replacements")
             if skippedInvalidReplacements > 0 {
-                print("Skipped \(skippedInvalidReplacements) invalid word replacements from the imported file.")
+                logger.notice("Skipped \(skippedInvalidReplacements, privacy: .public) invalid word replacements from the imported file")
             }
         } catch {
             modelContext.rollback()
@@ -274,7 +277,7 @@ enum BackupImporter {
     @MainActor
     private static func importCustomModels(_ models: [CustomModelBackup]?, transcriptionModelManager: TranscriptionModelManager) {
         guard let models else {
-            print("No custom models found in the imported file.")
+            logger.notice("No custom models found in the imported file")
             return
         }
 
@@ -282,7 +285,7 @@ enum BackupImporter {
         customModelManager.customModels = models.map { $0.makeModel() }
         customModelManager.saveCustomModels()
         transcriptionModelManager.refreshAllAvailableModels()
-        print("Successfully imported \(models.count) custom model definitions.")
+        logger.notice("Imported \(models.count, privacy: .public) custom model definitions")
     }
 
     private static func tokens(from text: String) -> [String] {
