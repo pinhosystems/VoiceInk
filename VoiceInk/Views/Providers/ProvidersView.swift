@@ -18,6 +18,7 @@ struct ProvidersView: View {
 
     @State private var selectedFilter: ProviderFilter = .all
     @State private var searchText: String = ""
+    @State private var capabilityFilter: Set<ProviderCapability> = []
     @State private var expandedIDs: Set<ProviderID> = []
     @State private var expandedCustomIDs: Set<UUID> = []
 
@@ -94,7 +95,22 @@ struct ProvidersView: View {
                 expandCollapseButtons
             }
 
-            searchField
+            HStack(spacing: 10) {
+                searchField
+                capabilityChips
+            }
+        }
+    }
+
+    private var capabilityChips: some View {
+        HStack(spacing: 6) {
+            ForEach(ProviderCapability.allCases.sorted(), id: \.self) { capability in
+                CapabilityFilterChip(
+                    capability: capability,
+                    isOn: capabilityFilter.contains(capability),
+                    toggle: { toggleCapability(capability) }
+                )
+            }
         }
     }
 
@@ -227,16 +243,45 @@ struct ProvidersView: View {
         case .custom: pool = []  // statics never live under Custom
         }
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return pool }
-        return pool.filter { $0.displayName.localizedCaseInsensitiveContains(trimmed) }
+        return pool.filter { entry in
+            matchesSearch(entry.displayName, trimmed: trimmed)
+                && matchesCapability(entry.capabilities)
+        }
     }
 
     private var filteredCustomProviders: [CustomProvider] {
         guard selectedFilter == .all || selectedFilter == .custom else { return [] }
         let pool = customManager.providers
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return pool }
-        return pool.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+        return pool.filter { provider in
+            matchesSearch(provider.name, trimmed: trimmed)
+                && matchesCapability(provider.capabilities)
+        }
+    }
+
+    private func matchesSearch(_ name: String, trimmed: String) -> Bool {
+        guard !trimmed.isEmpty else { return true }
+        return name.localizedCaseInsensitiveContains(trimmed)
+    }
+
+    /// `true` when the provider passes the capability filter. The chips are
+    /// inclusive: nothing selected — or all options selected — means "no
+    /// constraint, show everyone". Exactly one capability selected restricts
+    /// the list to providers that offer it.
+    private func matchesCapability(_ capabilities: Set<ProviderCapability>) -> Bool {
+        let active = capabilityFilter
+        if active.isEmpty || active.count == ProviderCapability.allCases.count {
+            return true
+        }
+        return !capabilities.isDisjoint(with: active)
+    }
+
+    private func toggleCapability(_ capability: ProviderCapability) {
+        if capabilityFilter.contains(capability) {
+            capabilityFilter.remove(capability)
+        } else {
+            capabilityFilter.insert(capability)
+        }
     }
 
     private var shouldShowAddCustom: Bool {
@@ -301,6 +346,45 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var displayName: String { rawValue }
+}
+
+// MARK: - Capability filter chip
+
+private struct CapabilityFilterChip: View {
+    let capability: ProviderCapability
+    let isOn: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 4) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(capability.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .foregroundColor(isOn ? color : .secondary)
+            .background(
+                Capsule()
+                    .fill(isOn ? color.opacity(0.16) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isOn ? color.opacity(0.5) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(isOn ? "Showing only \(capability.displayName)-capable providers" : "Filter to \(capability.displayName)-capable providers")
+    }
+
+    private var color: Color {
+        switch capability {
+        case .stt: return .blue
+        case .llm: return .purple
+        }
+    }
 }
 
 // MARK: - Shared capability badge
