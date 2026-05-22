@@ -38,11 +38,16 @@ struct CustomProviderCardView: View {
     }
 
     private var isConfigured: Bool {
-        // STT-capable: any key counts. LLM-capable: key + selected as active
-        // (or auto-selectable) gates `connectedProviders`. For the card
-        // status pill, "has key + at least one capability checked" is enough.
-        guard provider.offersSTT || provider.offersLLM else { return false }
-        return hasKey
+        // Status pill mirrors the predicate used by the downstream pickers:
+        // a capability is "configured" only when it is *both* toggled on
+        // and fully filled (URL + model). A key alone is not enough; a
+        // toggled-on capability with empty fields counts as needs-setup.
+        guard hasKey else { return false }
+        let usable = provider.usableCapabilities
+        guard !usable.isEmpty else { return false }
+        if provider.offersSTT && !provider.hasUsableSTT { return false }
+        if provider.offersLLM && !provider.hasUsableLLM { return false }
+        return true
     }
 
     var body: some View {

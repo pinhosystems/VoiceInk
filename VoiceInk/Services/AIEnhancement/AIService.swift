@@ -268,10 +268,13 @@ class AIService: ObservableObject {
                 return !LocalCLIProviderManager.shared.configuredProviders.isEmpty
             } else if provider == .custom {
                 // .custom is connected when at least one LLM-capable
-                // CustomProvider has a Keychain entry stored under its
-                // UUID-scoped key.
-                return CustomProviderManager.shared.providers(offering: .llm).contains {
-                    APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
+                // CustomProvider has a stored Keychain entry *and* its
+                // URL+model fields are filled. Half-configured records
+                // (LLM toggle on, empty fields) used to silently appear
+                // in Enhancement's picker.
+                return CustomProviderManager.shared.providers.contains {
+                    $0.hasUsableLLM
+                        && APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
                 }
             } else if provider.requiresAPIKey {
                 return APIKeyManager.shared.hasAPIKey(forProvider: provider.rawValue)
@@ -292,9 +295,10 @@ class AIService: ObservableObject {
         if let id = selectedCustomLLMProviderID {
             provider = manager.provider(for: id)
         } else {
-            // Auto-select the first LLM-capable custom that has a key.
-            provider = manager.providers(offering: .llm).first {
-                APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
+            // Auto-select the first LLM-capable custom that is fully usable.
+            provider = manager.providers.first {
+                $0.hasUsableLLM
+                    && APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
             }
             if let auto = provider {
                 selectedCustomLLMProviderID = auto.id
@@ -302,7 +306,7 @@ class AIService: ObservableObject {
             }
         }
 
-        if let p = provider, p.offersLLM {
+        if let p = provider, p.hasUsableLLM {
             customBaseURL = p.llmEndpointURL
             customModel = p.llmModelName
             if let key = APIKeyManager.shared.getCustomModelAPIKey(forModelId: p.id), !key.isEmpty {

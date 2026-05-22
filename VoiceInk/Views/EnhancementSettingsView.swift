@@ -277,8 +277,12 @@ struct EnhancementSettingsView: View {
 
     @ViewBuilder
     private var customLLMControls: some View {
-        let llmCustoms = CustomProviderManager.shared.providers(offering: .llm).filter { provider in
-            APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
+        // Match the predicate AIService uses for `connectedProviders` so a
+        // half-configured Custom (LLM toggled on but URL/model empty) does
+        // not slip into the Enhancement picker.
+        let llmCustoms = CustomProviderManager.shared.providers.filter { provider in
+            provider.hasUsableLLM
+                && APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
         }
         if llmCustoms.isEmpty {
             Text("No custom LLM providers configured. Add one in Providers → Custom.")

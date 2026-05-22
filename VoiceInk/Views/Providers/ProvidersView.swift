@@ -341,8 +341,12 @@ struct ProvidersView: View {
 
     private func isCustomConfigured(_ provider: CustomProvider) -> Bool {
         _ = catalog.configurationRevision
-        guard provider.offersSTT || provider.offersLLM else { return false }
-        return APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
+        guard APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil else { return false }
+        let usable = provider.usableCapabilities
+        guard !usable.isEmpty else { return false }
+        if provider.offersSTT && !provider.hasUsableSTT { return false }
+        if provider.offersLLM && !provider.hasUsableLLM { return false }
+        return true
     }
 
     private func matchesSearch(_ name: String, trimmed: String) -> Bool {
@@ -386,10 +390,7 @@ struct ProvidersView: View {
     private var configuredCount: Int {
         _ = catalog.configurationRevision
         let staticCount = catalog.entries.filter { catalog.isConfigured($0) }.count
-        let customCount = customManager.providers.filter { provider in
-            APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil &&
-            (provider.offersSTT || provider.offersLLM)
-        }.count
+        let customCount = customManager.providers.filter { isCustomConfigured($0) }.count
         let cliCount = localCLIManager.configuredProviders.count
         return staticCount + customCount + cliCount
     }

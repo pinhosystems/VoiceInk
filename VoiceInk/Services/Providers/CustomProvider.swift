@@ -65,4 +65,32 @@ struct CustomProvider: Identifiable, Codable, Hashable {
         if offersLLM { set.insert(.llm) }
         return set
     }
+
+    /// STT is "usable" only when both the URL and the model name are
+    /// populated. Toggling on without filling the fields leaves the
+    /// provider half-configured — downstream code must skip it.
+    var hasUsableSTT: Bool {
+        guard offersSTT else { return false }
+        let url = sttEndpointURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = sttModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !url.isEmpty && !model.isEmpty
+    }
+
+    var hasUsableLLM: Bool {
+        guard offersLLM else { return false }
+        let url = llmEndpointURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = llmModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !url.isEmpty && !model.isEmpty
+    }
+
+    /// Capabilities that are both enabled *and* fully filled in. The
+    /// status pill and the AI Models / Enhancement pickers all key off
+    /// this — turning a capability on with empty fields no longer makes
+    /// the provider show up downstream as if it were ready.
+    var usableCapabilities: Set<ProviderCapability> {
+        var set: Set<ProviderCapability> = []
+        if hasUsableSTT { set.insert(.stt) }
+        if hasUsableLLM { set.insert(.llm) }
+        return set
+    }
 }

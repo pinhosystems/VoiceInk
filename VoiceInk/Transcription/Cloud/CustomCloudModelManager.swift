@@ -26,8 +26,13 @@ class CustomCloudModelManager: ObservableObject {
     }
 
     private func refresh() {
+        // Surface only providers whose STT side is *complete* — toggled on
+        // with both URL and model name filled in. A half-configured record
+        // (STT box ticked, URL empty) used to leak into AI Models as a
+        // ghost option that always failed at request time.
         customModels = CustomProviderManager.shared
-            .providers(offering: .stt)
+            .providers
+            .filter { $0.hasUsableSTT }
             .map { Self.synthesize(from: $0) }
     }
 
