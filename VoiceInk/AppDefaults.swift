@@ -50,6 +50,9 @@ enum AppDefaults {
             "TranscriptionRetentionMinutes": 1440,
             "IsAudioCleanupEnabled": false,
             "AudioRetentionPeriod": 7,
+            // Troubleshooting-log retention. 0 disables the sweep entirely;
+            // any positive integer is interpreted as days.
+            "TroubleshootingLogRetentionDays": 7,
 
             // UI & Behavior
             "IsMenuBarOnly": false,
