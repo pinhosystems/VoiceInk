@@ -167,21 +167,24 @@ struct EnhancementSettingsView: View {
     @ViewBuilder
     private var llmProviderSection: some View {
         Section {
-            if connectedLLMProviders.isEmpty {
+            if llmOptions.isEmpty {
                 // Keep the empty-state CTA fully interactive: a brand-new
                 // install often has Enhancement turned off and zero
                 // providers configured — disabling the "Open Providers"
                 // button in that state would dead-end the onboarding flow.
                 emptyProvidersView
             } else {
-                Picker(selection: $aiService.selectedProvider) {
-                    ForEach(connectedLLMProviders, id: \.self) { provider in
-                        Text(provider.rawValue).tag(provider)
+                Picker(selection: Binding(
+                    get: { currentLLMSelection },
+                    set: { applyLLMSelection($0) }
+                )) {
+                    ForEach(llmOptions, id: \.self) { option in
+                        Text(label(for: option)).tag(option)
                     }
                 } label: {
                     HStack(spacing: 4) {
                         Text("Provider")
-                        InfoTip("Only providers configured in the Providers tab show up here.")
+                        InfoTip("Only providers configured in the Providers tab show up here. User-defined Custom and Local CLI records appear by their own name.")
                     }
                 }
                 .pickerStyle(.menu)
@@ -241,9 +244,9 @@ struct EnhancementSettingsView: View {
                 .pickerStyle(.menu)
             }
         case .localCLI:
-            localCLIControls
+            localCLIPreview
         case .custom:
-            customLLMControls
+            customLLMPreview
         default:
             if !aiService.availableModels.isEmpty {
                 Picker("Model", selection: Binding(
@@ -276,87 +279,37 @@ struct EnhancementSettingsView: View {
     }
 
     @ViewBuilder
-    private var customLLMControls: some View {
-        // Match the predicate AIService uses for `connectedProviders` so a
-        // half-configured Custom (LLM toggled on but URL/model empty) does
-        // not slip into the Enhancement picker.
-        let llmCustoms = CustomProviderManager.shared.providers.filter { provider in
-            provider.hasUsableLLM
-                && APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
-        }
-        if llmCustoms.isEmpty {
-            Text("No custom LLM providers configured. Add one in Providers → Custom.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        } else {
-            Picker(selection: Binding(
-                get: { aiService.selectedCustomLLMProviderID ?? llmCustoms.first?.id ?? UUID() },
-                set: { id in
-                    aiService.selectedCustomLLMProviderID = id
+    private var customLLMPreview: some View {
+        if let active = activeCustomLLM {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Endpoint").foregroundColor(.secondary)
+                    Spacer()
+                    Text(active.llmEndpointURL.isEmpty ? "—" : active.llmEndpointURL)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-            )) {
-                ForEach(llmCustoms, id: \.id) { provider in
-                    Text(provider.name).tag(provider.id)
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("Custom provider")
-                    InfoTip("Pick which user-defined custom LLM provider to use for enhancement. Add or edit them in Providers → Custom.")
-                }
-            }
-            .pickerStyle(.menu)
-
-            if let active = activeCustomLLM {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Endpoint").foregroundColor(.secondary)
-                        Spacer()
-                        Text(active.llmEndpointURL.isEmpty ? "—" : active.llmEndpointURL)
-                            .font(.system(.caption, design: .monospaced))
-                    }
-                    HStack {
-                        Text("Model").foregroundColor(.secondary)
-                        Spacer()
-                        Text(active.llmModelName.isEmpty ? "—" : active.llmModelName)
-                            .font(.system(.caption, design: .monospaced))
-                    }
+                HStack {
+                    Text("Model").foregroundColor(.secondary)
+                    Spacer()
+                    Text(active.llmModelName.isEmpty ? "—" : active.llmModelName)
+                        .font(.system(.caption, design: .monospaced))
                 }
             }
         }
     }
 
     @ViewBuilder
-    private var localCLIControls: some View {
-        let cliProviders = LocalCLIProviderManager.shared.configuredProviders
-        if cliProviders.isEmpty {
-            Text("No Local CLI provider configured. Add one in Providers.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        } else {
-            Picker(selection: Binding(
-                get: { aiService.selectedLocalCLIProviderID ?? cliProviders.first?.id ?? UUID() },
-                set: { id in aiService.selectedLocalCLIProviderID = id }
-            )) {
-                ForEach(cliProviders, id: \.id) { provider in
-                    Text(provider.name).tag(provider.id)
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("Local CLI")
-                    InfoTip("Pick which user-defined Local CLI provider to use for enhancement.")
-                }
-            }
-            .pickerStyle(.menu)
-
-            if let active = activeLocalCLI {
-                HStack {
-                    Text("Command").foregroundColor(.secondary)
-                    Spacer()
-                    Text(active.commandTemplate.isEmpty ? "—" : active.commandTemplate)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+    private var localCLIPreview: some View {
+        if let active = activeLocalCLI {
+            HStack {
+                Text("Command").foregroundColor(.secondary)
+                Spacer()
+                Text(active.commandTemplate.isEmpty ? "—" : active.commandTemplate)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
     }
@@ -369,6 +322,84 @@ struct EnhancementSettingsView: View {
     private var activeCustomLLM: CustomProvider? {
         guard let id = aiService.selectedCustomLLMProviderID else { return nil }
         return CustomProviderManager.shared.provider(for: id)
+    }
+
+    // MARK: - Unified provider picker
+
+    /// One concrete pick in the flat provider picker. Built-in providers
+    /// map directly to an `AIProvider` enum case; user-defined records map
+    /// to their own UUID so the picker shows them by name instead of the
+    /// generic "Custom" / "Local CLI" enum label.
+    private enum LLMOption: Hashable {
+        case builtIn(AIProvider)
+        case custom(UUID)
+        case localCLI(UUID)
+    }
+
+    /// All concrete picker options, in order: built-in providers
+    /// alphabetically, then user-defined Custom records, then Local CLI
+    /// records. Hidden when no row qualifies.
+    private var llmOptions: [LLMOption] {
+        var options: [LLMOption] = []
+
+        let builtIns = connectedLLMProviders
+            .filter { $0 != .custom && $0 != .localCLI }
+            .sorted { $0.rawValue.localizedCompare($1.rawValue) == .orderedAscending }
+        options.append(contentsOf: builtIns.map(LLMOption.builtIn))
+
+        let customs = CustomProviderManager.shared.providers.filter { provider in
+            provider.hasUsableLLM
+                && APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
+        }
+        options.append(contentsOf: customs.map { .custom($0.id) })
+
+        let clis = LocalCLIProviderManager.shared.configuredProviders
+        options.append(contentsOf: clis.map { .localCLI($0.id) })
+
+        return options
+    }
+
+    private var currentLLMSelection: LLMOption {
+        switch aiService.selectedProvider {
+        case .custom:
+            if let id = aiService.selectedCustomLLMProviderID {
+                return .custom(id)
+            }
+            return llmOptions.first ?? .builtIn(.gemini)
+        case .localCLI:
+            if let id = aiService.selectedLocalCLIProviderID {
+                return .localCLI(id)
+            }
+            return llmOptions.first ?? .builtIn(.gemini)
+        default:
+            return .builtIn(aiService.selectedProvider)
+        }
+    }
+
+    private func applyLLMSelection(_ option: LLMOption) {
+        switch option {
+        case .builtIn(let provider):
+            aiService.selectedProvider = provider
+        case .custom(let id):
+            aiService.selectedCustomLLMProviderID = id
+            aiService.selectedProvider = .custom
+        case .localCLI(let id):
+            aiService.selectedLocalCLIProviderID = id
+            aiService.selectedProvider = .localCLI
+        }
+    }
+
+    private func label(for option: LLMOption) -> String {
+        switch option {
+        case .builtIn(let provider):
+            return provider.rawValue
+        case .custom(let id):
+            let name = CustomProviderManager.shared.provider(for: id)?.name ?? "Custom"
+            return "\(name) (Custom)"
+        case .localCLI(let id):
+            let name = LocalCLIProviderManager.shared.provider(for: id)?.name ?? "Local CLI"
+            return "\(name) (Local CLI)"
+        }
     }
 
     private func resetSelectedProviderIfDisconnected() {
