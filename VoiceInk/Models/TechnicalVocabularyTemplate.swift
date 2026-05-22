@@ -4,8 +4,9 @@ import Foundation
 /// purpose of `BrazilianVocabularyTemplate` but for engineering terms that any
 /// dev — regardless of source language — needs the STT/LLM stack to spell
 /// correctly. Surfaced via "Adicionar vocabulário técnico" in the Vocabulary
-/// panel. Pairs naturally with the "Code" prompt template and the
-/// `WhisperPromptDomain.technical` STT seed.
+/// panel. Any prompt that lists `.technical` in its `vocabularyDomains` will
+/// pull this list through `VocabularyResolver`; the `WhisperPromptDomain.technical`
+/// initial-prompt seed is a separate, parallel hint for the local Whisper engine.
 ///
 /// Selection criteria:
 /// 1. Term has canonical EN spelling commonly mangled by phonetic STT.

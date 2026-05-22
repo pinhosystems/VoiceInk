@@ -165,8 +165,8 @@ enum DictionaryService {
 
     /// Inserts every entry from `TechnicalVocabularyTemplate.canonicalWords` that
     /// does not already exist (case-insensitive). Idempotent. Returns a summary
-    /// for the UI. Pairs with the "Code" prompt template and the
-    /// `WhisperPromptDomain.technical` STT seed.
+    /// for the UI. Any prompt with `.technical` in its `vocabularyDomains` then
+    /// surfaces these terms through `VocabularyResolver`.
     @discardableResult
     static func addTechnicalVocabulary(
         existing: [VocabularyWord],
