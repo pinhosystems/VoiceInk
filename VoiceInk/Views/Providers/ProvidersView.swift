@@ -24,16 +24,34 @@ struct ProvidersView: View {
     @State private var expandedIDs: Set<ProviderID> = []
     @State private var expandedCustomIDs: Set<UUID> = []
     @State private var expandedLocalCLIIDs: Set<UUID> = []
+    @State private var scrollTargetID: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                headerSection
-                summaryCard
-                filtersRow
-                providersList
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+                    summaryCard
+                    filtersRow
+                    providersList
+                }
+                .padding(40)
             }
-            .padding(40)
+            .onChange(of: scrollTargetID) { _, target in
+                guard let id = target else { return }
+                // Two-stage scroll: first hop without animation locks the
+                // target near the top once the new card has been laid out,
+                // then a brief animated nudge highlights it.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    proxy.scrollTo(id, anchor: .top)
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        proxy.scrollTo(id, anchor: .top)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        scrollTargetID = nil
+                    }
+                }
+            }
         }
         .frame(minWidth: 600, minHeight: 500)
         .background(Color(NSColor.controlBackgroundColor))
@@ -240,6 +258,7 @@ struct ProvidersView: View {
                         isExpanded: expandedIDs.contains(entry.id),
                         onToggleExpand: { toggleExpanded(entry.id) }
                     )
+                    .id(entry.id.rawValue)
                 }
                 ForEach(filteredLocalCLIProviders) { provider in
                     LocalCLIProviderCardView(
@@ -247,6 +266,7 @@ struct ProvidersView: View {
                         isExpanded: expandedLocalCLIIDs.contains(provider.id),
                         onToggleExpand: { toggleLocalCLIExpanded(provider.id) }
                     )
+                    .id(provider.id.uuidString)
                 }
                 ForEach(filteredCustomProviders) { provider in
                     CustomProviderCardView(
@@ -254,6 +274,7 @@ struct ProvidersView: View {
                         isExpanded: expandedCustomIDs.contains(provider.id),
                         onToggleExpand: { toggleCustomExpanded(provider.id) }
                     )
+                    .id(provider.id.uuidString)
                 }
             }
         }
@@ -417,9 +438,7 @@ struct ProvidersView: View {
         )
         CustomProviderManager.shared.add(newProvider)
         expandedCustomIDs.insert(newProvider.id)
-        if selectedFilter == .local {
-            selectedFilter = .custom
-        }
+        revealNewCard(category: .custom, scrollID: newProvider.id.uuidString)
         catalog.markChanged()
     }
 
@@ -427,10 +446,30 @@ struct ProvidersView: View {
         let newProvider = LocalCLIProvider(name: "Untitled CLI")
         LocalCLIProviderManager.shared.add(newProvider)
         expandedLocalCLIIDs.insert(newProvider.id)
-        if selectedFilter == .custom {
-            selectedFilter = .local
-        }
+        revealNewCard(category: .local, scrollID: newProvider.id.uuidString)
         catalog.markChanged()
+    }
+
+    /// Resets any filter that could hide a freshly-added card and queues a
+    /// scroll-to so the new entry shows up on screen instead of being
+    /// appended invisibly below the static catalog.
+    ///
+    /// Why every filter is reset: a new card always starts as "Needs
+    /// setup", with whatever capabilities the seed defaults imply
+    /// (offersLLM=true / offersSTT=false for Custom; LLM only for Local
+    /// CLI). The status chip "Configured", the capability chip "STT", or
+    /// an unrelated search query would silently hide the new row right
+    /// after creation — surprising and easy to read as a bug.
+    private func revealNewCard(category: ProviderCategory, scrollID: String) {
+        switch category {
+        case .custom: selectedFilter = .custom
+        case .local:  selectedFilter = .local
+        case .cloud:  selectedFilter = .cloud
+        }
+        searchText = ""
+        capabilityFilter.removeAll()
+        statusFilter = .all
+        scrollTargetID = scrollID
     }
 }
 
