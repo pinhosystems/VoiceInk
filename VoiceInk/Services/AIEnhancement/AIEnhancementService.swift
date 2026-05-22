@@ -252,11 +252,23 @@ class AIEnhancementService: ObservableObject {
 
         let finalContextSection = allContextSections + customVocabularySection
 
+        // Drive the system-instructions wrapper from the *actual* presence of
+        // each block, not just the user's toggles. A toggle that is on but
+        // produces no content (e.g. an empty clipboard) leaves its tag out
+        // of the system message — no point pointing the model at an
+        // <empty>...</empty> block.
+        let flags = AIPrompts.ContextFlags(
+            hasClipboard: !clipboardContext.isEmpty,
+            hasScreen: !screenCaptureContext.isEmpty,
+            hasSelectedText: !selectedTextContext.isEmpty,
+            hasVocabulary: !customVocabulary.isEmpty
+        )
+
         if let activePrompt = activePrompt {
             if activePrompt.id == PredefinedPrompts.assistantPromptId {
-                return activePrompt.promptText + finalContextSection
+                return AIPrompts.assistantMode(flags: flags) + finalContextSection
             } else {
-                return activePrompt.finalPromptText + finalContextSection
+                return activePrompt.finalPromptText(flags: flags) + finalContextSection
             }
         } else {
             // Fallback chain, in order of preference:
@@ -271,7 +283,7 @@ class AIEnhancementService: ObservableObject {
             guard let defaultPrompt = fallback else {
                 return finalContextSection
             }
-            return defaultPrompt.finalPromptText + finalContextSection
+            return defaultPrompt.finalPromptText(flags: flags) + finalContextSection
         }
     }
 

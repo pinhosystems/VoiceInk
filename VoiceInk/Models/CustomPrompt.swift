@@ -133,9 +133,14 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         vocabularyDomains = try container.decodeIfPresent([VocabularyDomain].self, forKey: .vocabularyDomains) ?? [.userVocabulary]
     }
     
-    var finalPromptText: String {
+    /// Renders the user-visible promptText through the system wrapper, with
+    /// the system instructions trimmed to mention only the context blocks
+    /// listed in `flags`. Pass `.none` to keep the prompt body but drop all
+    /// context-tag references (e.g. when the user disabled every context
+    /// source).
+    func finalPromptText(flags: AIPrompts.ContextFlags = .all) -> String {
         if useSystemInstructions {
-            return AIPrompts.customPromptTemplate
+            return AIPrompts.customPromptTemplate(flags: flags)
                 .replacingOccurrences(of: "{{USER_RULES}}", with: self.promptText)
         } else {
             return self.promptText
