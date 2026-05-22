@@ -120,8 +120,6 @@ class AudioTranscriptionService: ObservableObject {
                         promptName: promptName,
                         transcriptionDuration: transcriptionDuration,
                         enhancementDuration: enhancementDuration,
-                        aiRequestSystemMessage: enhancementService.lastSystemMessageSent,
-                        aiRequestUserMessage: enhancementService.lastUserMessageSent,
                         powerModeName: powerModeName,
                         powerModeEmoji: powerModeEmoji,
                         troubleshootingLogJSON: apiLog.encoded()

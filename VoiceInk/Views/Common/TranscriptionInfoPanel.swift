@@ -8,7 +8,6 @@ struct TranscriptionInfoPanel: View {
     var body: some View {
         Form {
             detailsSection
-            aiRequestSection
             troubleshootingLogSection
         }
         .formStyle(.grouped)
@@ -222,59 +221,7 @@ struct TranscriptionInfoPanel: View {
         }
     }
 
-    // MARK: - AI Request Section
-
-    @ViewBuilder
-    private var aiRequestSection: some View {
-        if transcription.aiRequestSystemMessage != nil || transcription.aiRequestUserMessage != nil {
-            Section {
-                if let systemMsg = transcription.aiRequestSystemMessage, !systemMsg.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("System Prompt")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text(systemMsg)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .lineSpacing(2)
-                            .textSelection(.enabled)
-                            .foregroundColor(.primary)
-                    }
-                }
-
-                if let userMsg = transcription.aiRequestUserMessage, !userMsg.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("User Message")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text(userMsg)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .lineSpacing(2)
-                            .textSelection(.enabled)
-                            .foregroundColor(.primary)
-                    }
-                }
-            } header: {
-                HStack {
-                    Text("AI Request")
-                    Spacer()
-                    CopyIconButton(textToCopy: fullRequestText)
-                }
-            }
-        }
-    }
-
     // MARK: - Helpers
-
-    private var fullRequestText: String {
-        var parts: [String] = []
-        if let sys = transcription.aiRequestSystemMessage, !sys.isEmpty {
-            parts.append("System Prompt:\n\(sys)")
-        }
-        if let user = transcription.aiRequestUserMessage, !user.isEmpty {
-            parts.append("User Message:\n\(user)")
-        }
-        return parts.joined(separator: "\n\n")
-    }
 
     private func metadataRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 8) {

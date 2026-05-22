@@ -139,8 +139,6 @@ class TranscriptionPipeline {
                     transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
                     transcription.promptName = promptName
                     transcription.enhancementDuration = enhancementDuration
-                    transcription.aiRequestSystemMessage = enhancementService.lastSystemMessageSent
-                    transcription.aiRequestUserMessage = enhancementService.lastUserMessageSent
                     if let llmStep = enhancementService.lastLLMCallStep {
                         apiLog.steps.append(llmStep)
                     }
