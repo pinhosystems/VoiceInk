@@ -7,24 +7,24 @@ import SwiftUI
 /// OpenAI-compatible escape hatch.
 ///
 /// The visual language mirrors `ModelManagementView`: a header section, a
-/// pill-style filter switcher (All / Local / Cloud / Custom), and a
-/// vertically stacked list of cards — one per provider. Each card carries
-/// the provider's full configuration inline; there is no separate detail
-/// pane. Local providers expose their model list with download/delete
-/// inline, cloud providers expose API-key entry + capability-scoped
-/// settings, and Custom exposes a base URL + model + key form.
+/// pill-style filter switcher (All / Local / Cloud / Custom), a search
+/// field for name lookup, and a vertically stacked list of accordion
+/// cards — one per provider. Cards start collapsed so the page stays
+/// scannable; the user expands the ones they care about.
 struct ProvidersView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
 
     @State private var selectedFilter: ProviderFilter = .all
+    @State private var searchText: String = ""
+    @State private var expandedIDs: Set<ProviderID> = []
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 headerSection
                 summaryCard
-                filterPills
+                filtersRow
                 providersList
             }
             .padding(40)
@@ -68,48 +68,149 @@ struct ProvidersView: View {
         .cornerRadius(8)
     }
 
-    private var filterPills: some View {
-        HStack(spacing: 12) {
-            ForEach(ProviderFilter.allCases) { filter in
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        selectedFilter = filter
+    private var filtersRow: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                ForEach(ProviderFilter.allCases) { filter in
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            selectedFilter = filter
+                        }
+                    } label: {
+                        Text(filter.displayName)
+                            .font(.system(size: 14, weight: selectedFilter == filter ? .semibold : .medium))
+                            .foregroundColor(selectedFilter == filter ? .primary : .primary.opacity(0.7))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(CardBackground(isSelected: selectedFilter == filter, cornerRadius: 22))
                     }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                expandCollapseButtons
+            }
+
+            searchField
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.system(size: 13))
+            TextField("Filter by name…", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
                 } label: {
-                    Text(filter.displayName)
-                        .font(.system(size: 14, weight: selectedFilter == filter ? .semibold : .medium))
-                        .foregroundColor(selectedFilter == filter ? .primary : .primary.opacity(0.7))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(CardBackground(isSelected: selectedFilter == filter, cornerRadius: 22))
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
             }
-            Spacer()
         }
-        .padding(.bottom, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(NSColor.textBackgroundColor).opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
     }
 
+    private var expandCollapseButtons: some View {
+        HStack(spacing: 6) {
+            Button("Expand all") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedIDs = Set(filteredEntries.map { $0.id })
+                }
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .disabled(filteredEntries.isEmpty)
+
+            Button("Collapse all") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedIDs.removeAll()
+                }
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .disabled(expandedIDs.isEmpty)
+        }
+        .font(.system(size: 12))
+    }
+
+    @ViewBuilder
     private var providersList: some View {
-        VStack(spacing: 14) {
-            ForEach(filteredEntries) { entry in
-                ProviderCardView(entry: entry)
+        if filteredEntries.isEmpty {
+            emptyState
+        } else {
+            VStack(spacing: 12) {
+                ForEach(filteredEntries) { entry in
+                    ProviderCardView(
+                        entry: entry,
+                        isExpanded: expandedIDs.contains(entry.id),
+                        onToggleExpand: { toggleExpanded(entry.id) }
+                    )
+                }
             }
         }
     }
 
-    private var filteredEntries: [ProviderEntry] {
-        switch selectedFilter {
-        case .all:    return catalog.entries
-        case .local:  return catalog.providers(in: .local)
-        case .cloud:  return catalog.providers(in: .cloud)
-        case .custom: return catalog.providers(in: .custom)
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 28))
+                .foregroundColor(.secondary.opacity(0.6))
+            Text("No providers match your filter.")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+            if !searchText.isEmpty {
+                Button("Clear search") { searchText = "" }
+                    .controlSize(.small)
+            }
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .background(CardBackground(isSelected: false))
+        .cornerRadius(10)
+    }
+
+    private var filteredEntries: [ProviderEntry] {
+        let pool: [ProviderEntry]
+        switch selectedFilter {
+        case .all:    pool = catalog.entries
+        case .local:  pool = catalog.providers(in: .local)
+        case .cloud:  pool = catalog.providers(in: .cloud)
+        case .custom: pool = catalog.providers(in: .custom)
+        }
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return pool }
+        return pool.filter { $0.displayName.localizedCaseInsensitiveContains(trimmed) }
     }
 
     private var configuredCount: Int {
         _ = catalog.configurationRevision
         return catalog.entries.filter { catalog.isConfigured($0) }.count
+    }
+
+    private func toggleExpanded(_ id: ProviderID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if expandedIDs.contains(id) {
+                expandedIDs.remove(id)
+            } else {
+                expandedIDs.insert(id)
+            }
+        }
     }
 }
 

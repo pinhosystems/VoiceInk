@@ -1,19 +1,18 @@
 import SwiftUI
 import LLMkit
 
-/// A single provider card in the Providers tab. Renders inline:
-///   - a header strip with icon, name, summary, capability badges and a
-///     configured/needs-setup status pill
-///   - a credential body that switches on `entry.credentialKind` (API key,
-///     base URL, command template, base URL + model, local models, or
-///     built-in / no setup)
-///   - an STT settings strip if the provider offers STT and there are
-///     provider-scoped tuning knobs (currently xAI only)
+/// A single provider card in the Providers tab. Accordion-style: the
+/// header strip is always visible and clicking it toggles the body's
+/// visibility. The body carries the credential entry plus any
+/// capability-scoped tuning knobs (currently just xAI's STT settings).
 ///
-/// Cards never collapse: matching the visual rhythm of `ModelCardView`
-/// from the AI Models tab where every model is laid out inline.
+/// The "active LLM is picked in Enhancement" hint that used to live
+/// inside every LLM-capable card was moved to the page-level summary
+/// banner in `ProvidersView`, since repeating it ~17 times added noise.
 struct ProviderCardView: View {
     let entry: ProviderEntry
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
 
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
@@ -21,23 +20,28 @@ struct ProviderCardView: View {
     private var isConfigured: Bool { catalog.isConfigured(entry) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             headerStrip
-            Divider()
-            credentialBody
-            if entry.capabilities.contains(.stt) && hasProviderSpecificSTTSettings {
+            if isExpanded {
                 Divider()
-                sttSettingsBlock
-            }
-            if entry.capabilities.contains(.llm) {
-                Divider()
-                llmHint
+                    .padding(.top, 14)
+                VStack(alignment: .leading, spacing: 14) {
+                    credentialBody
+                    if entry.capabilities.contains(.stt) && hasProviderSpecificSTTSettings {
+                        Divider()
+                        sttSettingsBlock
+                    }
+                }
+                .padding(.top, 14)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(CardBackground(isSelected: false))
         .cornerRadius(12)
+        .contentShape(Rectangle())
+        .onTapGesture { onToggleExpand() }
     }
 
     private var headerStrip: some View {
@@ -58,6 +62,7 @@ struct ProviderCardView: View {
                     }
                     Spacer()
                     statusPill
+                    chevron
                 }
                 Text(entry.summary)
                     .font(.system(size: 12))
@@ -80,6 +85,16 @@ struct ProviderCardView: View {
         .padding(.vertical, 3)
         .background((isConfigured ? Color.green : Color.orange).opacity(0.12))
         .cornerRadius(10)
+    }
+
+    private var chevron: some View {
+        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.secondary)
+            .padding(6)
+            .background(
+                Circle().fill(Color.secondary.opacity(0.08))
+            )
     }
 
     @ViewBuilder
@@ -110,15 +125,6 @@ struct ProviderCardView: View {
             default:
                 EmptyView()
             }
-        }
-    }
-
-    private var llmHint: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionHeader(title: "LLM enhancement", systemImage: "bubble.left.and.bubble.right")
-            Text("Active LLM model is selected in the Enhancement tab from providers configured here.")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
         }
     }
 
