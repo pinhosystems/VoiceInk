@@ -411,37 +411,42 @@ struct LocalModelsCredentialView: View {
             warmupCoordinator.isWarming(modelNamed: whisperModel.name)
         } ?? false
 
-        ModelCardView(
-            model: model,
-            fluidAudioModelManager: fluidAudioModelManager,
-            transcriptionModelManager: transcriptionModelManager,
-            isDownloaded: whisperModelManager.availableModels.contains { $0.name == model.name },
-            isCurrent: transcriptionModelManager.currentTranscriptionModel?.name == model.name,
-            downloadProgress: whisperModelManager.downloadProgress,
-            modelURL: whisperModelManager.availableModels.first { $0.name == model.name }?.url,
-            isWarming: isWarming,
-            deleteAction: { presentDeleteAlert(for: model) },
-            setDefaultAction: {
-                Task { transcriptionModelManager.setDefaultTranscriptionModel(model) }
-            },
-            downloadAction: {
-                if let whisperModel = model as? WhisperModel {
-                    Task { await whisperModelManager.downloadModel(whisperModel) }
-                }
-            },
-            editAction: nil
-        )
-        .overlay(alignment: .topTrailing) {
+        VStack(alignment: .leading, spacing: 4) {
             if Self.recommendedNames.contains(model.name) {
-                Text("Recommended")
-                    .font(.system(size: 9, weight: .semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.18))
-                    .foregroundColor(.accentColor)
-                    .cornerRadius(4)
-                    .padding(10)
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("Recommended")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.accentColor.opacity(0.18))
+                .foregroundColor(.accentColor)
+                .cornerRadius(4)
+                .padding(.leading, 4)
             }
+
+            ModelCardView(
+                model: model,
+                fluidAudioModelManager: fluidAudioModelManager,
+                transcriptionModelManager: transcriptionModelManager,
+                isDownloaded: whisperModelManager.availableModels.contains { $0.name == model.name },
+                isCurrent: transcriptionModelManager.currentTranscriptionModel?.name == model.name,
+                downloadProgress: whisperModelManager.downloadProgress,
+                modelURL: whisperModelManager.availableModels.first { $0.name == model.name }?.url,
+                isWarming: isWarming,
+                deleteAction: { presentDeleteAlert(for: model) },
+                setDefaultAction: {
+                    Task { transcriptionModelManager.setDefaultTranscriptionModel(model) }
+                },
+                downloadAction: {
+                    if let whisperModel = model as? WhisperModel {
+                        Task { await whisperModelManager.downloadModel(whisperModel) }
+                    }
+                },
+                editAction: nil
+            )
         }
     }
 
