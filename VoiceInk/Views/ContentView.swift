@@ -3,7 +3,8 @@ import SwiftData
 import KeyboardShortcuts
 import OSLog
 
-// ViewType enum with all cases
+// ViewType enum with all cases. Order here is irrelevant to the sidebar —
+// the visible order and grouping live in `SidebarSection.allSections`.
 enum ViewType: String, CaseIterable, Identifiable {
     case metrics = "Dashboard"
     case transcribeAudio = "Transcribe Audio"
@@ -38,6 +39,39 @@ enum ViewType: String, CaseIterable, Identifiable {
     }
 }
 
+/// Sidebar grouping. Organized by what the user is *doing* — using the
+/// app daily, configuring the voice pipeline, granting OS access, or
+/// managing their account — so that related items sit together and the
+/// most-touched surfaces (Dashboard / History) stay on top.
+struct SidebarSection: Identifiable {
+    let id: String
+    let title: String
+    let items: [ViewType]
+
+    static let allSections: [SidebarSection] = [
+        SidebarSection(
+            id: "activity",
+            title: "Activity",
+            items: [.metrics, .history, .transcribeAudio]
+        ),
+        SidebarSection(
+            id: "pipeline",
+            title: "Voice Pipeline",
+            items: [.audioInput, .providers, .models, .enhancement, .powerMode, .dictionary]
+        ),
+        SidebarSection(
+            id: "system",
+            title: "System",
+            items: [.permissions, .settings]
+        ),
+        SidebarSection(
+            id: "account",
+            title: "Account",
+            items: [.license]
+        ),
+    ]
+}
+
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
@@ -69,12 +103,17 @@ struct ContentView: View {
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     @StateObject private var licenseViewModel = LicenseViewModel()
 
-    private var visibleViewTypes: [ViewType] {
-        ViewType.allCases.filter { viewType in
-            if viewType == .powerMode {
-                return powerModeUIFlag
+    /// Returns sections with hidden items pruned out. Sections that end
+    /// up empty (e.g. when Power Mode is the only entry in a section and
+    /// is gated off) are dropped so we don't render orphan headers.
+    private var visibleSections: [SidebarSection] {
+        SidebarSection.allSections.compactMap { section in
+            let filtered = section.items.filter { viewType in
+                if viewType == .powerMode { return powerModeUIFlag }
+                return true
             }
-            return true
+            guard !filtered.isEmpty else { return nil }
+            return SidebarSection(id: section.id, title: section.title, items: filtered)
         }
     }
 
@@ -110,13 +149,15 @@ struct ContentView: View {
                     .padding(.vertical, 4)
                 }
 
-                ForEach(visibleViewTypes) { viewType in
-                    Section {
-                        NavigationLink(value: viewType) {
-                            SidebarItemView(viewType: viewType)
+                ForEach(visibleSections) { section in
+                    Section(section.title) {
+                        ForEach(section.items) { viewType in
+                            NavigationLink(value: viewType) {
+                                SidebarItemView(viewType: viewType)
+                            }
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
                         }
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                        .listRowSeparator(.hidden)
                     }
                 }
             }
