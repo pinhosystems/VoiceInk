@@ -151,12 +151,10 @@ final class ProviderCatalog: ObservableObject {
                   signupURL: URL(string: "https://ollama.com/download"),
                   summary: "Self-hosted LLM server. Point VoiceInk at any Ollama instance for offline enhancement.",
                   iconSystemName: "server.rack"),
-            .init(id: .localCLI, displayName: "Local CLI", category: .local,
-                  capabilities: [.llm], credentialKind: .commandTemplate,
-                  aiProviderRaw: "Local CLI", modelProviderRaw: nil,
-                  signupURL: nil,
-                  summary: "Shell out to any local binary for enhancement. Useful for llama.cpp, codex CLI, or custom scripts.",
-                  iconSystemName: "terminal"),
+            // Local CLI providers are user-defined and live in
+            // `LocalCLIProviderManager`; the Providers tab renders each as
+            // its own card alongside the static catalog (same pattern as
+            // CustomProvider). Intentionally absent from this static list.
 
             // MARK: - Cloud providers
             .init(id: .anthropic, displayName: "Anthropic", category: .cloud,

@@ -206,6 +206,22 @@ class AIService: ObservableObject {
             }
         }
     }
+
+    /// Which user-defined `LocalCLIProvider` is the currently active CLI.
+    /// `nil` with no providers = unconfigured; with at least one configured
+    /// record the runtime auto-picks the first.
+    @Published var selectedLocalCLIProviderID: UUID? {
+        didSet {
+            if let id = selectedLocalCLIProviderID {
+                userDefaults.set(id.uuidString, forKey: "selectedLocalCLIProviderID")
+            } else {
+                userDefaults.removeObject(forKey: "selectedLocalCLIProviderID")
+            }
+            if selectedProvider == .localCLI {
+                self.isAPIKeyValid = activeLocalCLIProvider != nil
+            }
+        }
+    }
     @Published var selectedProvider: AIProvider {
         didSet {
             userDefaults.set(selectedProvider.rawValue, forKey: "selectedAIProvider")
@@ -221,7 +237,9 @@ class AIService: ObservableObject {
                 }
             } else {
                 self.apiKey = ""
-                self.isAPIKeyValid = selectedProvider == .localCLI ? localCLIService.isConfigured : true
+                self.isAPIKeyValid = selectedProvider == .localCLI
+                    ? activeLocalCLIProvider != nil
+                    : true
                 if selectedProvider == .ollama {
                     Task {
                         await ollamaService.checkConnection()
@@ -240,13 +258,14 @@ class AIService: ObservableObject {
 
     @Published private var openRouterModels: [String] = []
     private var customProvidersCancellable: AnyCancellable?
+    private var localCLIProvidersCancellable: AnyCancellable?
 
     var connectedProviders: [AIProvider] {
         AIProvider.allCases.filter { provider in
             if provider == .ollama {
                 return ollamaService.isConnected
             } else if provider == .localCLI {
-                return localCLIService.isConfigured
+                return !LocalCLIProviderManager.shared.configuredProviders.isEmpty
             } else if provider == .custom {
                 // .custom is connected when at least one LLM-capable
                 // CustomProvider has a Keychain entry stored under its
@@ -349,6 +368,10 @@ class AIService: ObservableObject {
            let id = UUID(uuidString: raw) {
             self.selectedCustomLLMProviderID = id
         }
+        if let raw = userDefaults.string(forKey: "selectedLocalCLIProviderID"),
+           let id = UUID(uuidString: raw) {
+            self.selectedLocalCLIProviderID = id
+        }
 
         if selectedProvider == .custom {
             // Will pull from active CustomProvider once init returns.
@@ -381,6 +404,20 @@ class AIService: ObservableObject {
                 guard let self = self else { return }
                 if self.selectedProvider == .custom {
                     self.syncFromActiveCustomLLM()
+                }
+                self.objectWillChange.send()
+            }
+
+        // Same fan-out for Local CLI providers: any add / edit / delete
+        // must refresh `connectedProviders` and the picker sub-selection
+        // shown in EnhancementSettingsView.
+        localCLIProvidersCancellable = LocalCLIProviderManager.shared.$providers
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.selectedProvider == .localCLI {
+                    self.isAPIKeyValid = self.activeLocalCLIProvider != nil
                 }
                 self.objectWillChange.send()
             }
@@ -519,7 +556,9 @@ class AIService: ObservableObject {
             }
         } else {
             apiKey = ""
-            isAPIKeyValid = selectedProvider == .localCLI ? localCLIService.isConfigured : true
+            isAPIKeyValid = selectedProvider == .localCLI
+                ? activeLocalCLIProvider != nil
+                : true
         }
         objectWillChange.send()
     }
@@ -568,13 +607,33 @@ class AIService: ObservableObject {
         refreshLocalCLIConfigurationState()
     }
 
+    /// Resolves to the user's currently selected Local CLI provider, or
+    /// auto-selects the first configured one if no explicit selection was
+    /// made. Returns nil only when no configured providers exist.
+    var activeLocalCLIProvider: LocalCLIProvider? {
+        if let id = selectedLocalCLIProviderID,
+           let provider = LocalCLIProviderManager.shared.provider(for: id),
+           provider.isConfigured {
+            return provider
+        }
+        return LocalCLIProviderManager.shared.configuredProviders.first
+    }
+
     func enhanceWithLocalCLI(systemPrompt: String, userPrompt: String) async throws -> String {
-        try await localCLIService.enhance(systemPrompt: systemPrompt, userPrompt: userPrompt)
+        guard let provider = activeLocalCLIProvider else {
+            throw LocalCLIError.commandNotConfigured
+        }
+        return try await LocalCLIService.enhance(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            commandTemplate: provider.commandTemplate,
+            timeoutSeconds: provider.timeoutSeconds
+        )
     }
 
     private func refreshLocalCLIConfigurationState() {
         if selectedProvider == .localCLI {
-            isAPIKeyValid = localCLIService.isConfigured
+            isAPIKeyValid = activeLocalCLIProvider != nil
         }
         objectWillChange.send()
         NotificationCenter.default.post(name: .AppSettingsDidChange, object: nil)

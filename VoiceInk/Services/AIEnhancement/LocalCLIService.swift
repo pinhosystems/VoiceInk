@@ -83,7 +83,29 @@ final class LocalCLIService {
         }
 
         let fullPrompt = Self.makeFullPrompt(systemPrompt: systemPrompt, userPrompt: userPrompt)
-        return try await executeCommand(
+        return try await Self.execute(
+            commandTemplate: commandTemplate,
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            fullPrompt: fullPrompt,
+            timeout: timeoutSeconds
+        )
+    }
+
+    /// Stateless executor used by the multi-instance path
+    /// (`LocalCLIProviderManager`): callers supply the chosen config
+    /// instead of mutating the singleton's instance state.
+    static func enhance(
+        systemPrompt: String,
+        userPrompt: String,
+        commandTemplate: String,
+        timeoutSeconds: Double
+    ) async throws -> String {
+        guard !commandTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw LocalCLIError.commandNotConfigured
+        }
+        let fullPrompt = makeFullPrompt(systemPrompt: systemPrompt, userPrompt: userPrompt)
+        return try await execute(
             commandTemplate: commandTemplate,
             systemPrompt: systemPrompt,
             userPrompt: userPrompt,
@@ -104,7 +126,7 @@ final class LocalCLIService {
         """
     }
 
-    private func executeCommand(
+    private static func execute(
         commandTemplate: String,
         systemPrompt: String,
         userPrompt: String,

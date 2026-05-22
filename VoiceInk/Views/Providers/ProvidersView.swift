@@ -15,6 +15,7 @@ struct ProvidersView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
     @ObservedObject private var customManager = CustomProviderManager.shared
+    @ObservedObject private var localCLIManager = LocalCLIProviderManager.shared
 
     @State private var selectedFilter: ProviderFilter = .all
     @State private var searchText: String = ""
@@ -22,6 +23,7 @@ struct ProvidersView: View {
     @State private var statusFilter: ProviderStatusFilter = .all
     @State private var expandedIDs: Set<ProviderID> = []
     @State private var expandedCustomIDs: Set<UUID> = []
+    @State private var expandedLocalCLIIDs: Set<UUID> = []
 
     var body: some View {
         ScrollView {
@@ -167,32 +169,68 @@ struct ProvidersView: View {
 
     private var expandCollapseButtons: some View {
         HStack(spacing: 6) {
+            addProviderMenu
+
             Button("Expand all") {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedIDs = Set(filteredEntries.map { $0.id })
                     expandedCustomIDs = Set(filteredCustomProviders.map { $0.id })
+                    expandedLocalCLIIDs = Set(filteredLocalCLIProviders.map { $0.id })
                 }
             }
             .controlSize(.small)
             .buttonStyle(.borderless)
-            .disabled(filteredEntries.isEmpty && filteredCustomProviders.isEmpty)
+            .disabled(filteredEntries.isEmpty && filteredCustomProviders.isEmpty && filteredLocalCLIProviders.isEmpty)
 
             Button("Collapse all") {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedIDs.removeAll()
                     expandedCustomIDs.removeAll()
+                    expandedLocalCLIIDs.removeAll()
                 }
             }
             .controlSize(.small)
             .buttonStyle(.borderless)
-            .disabled(expandedIDs.isEmpty && expandedCustomIDs.isEmpty)
+            .disabled(expandedIDs.isEmpty && expandedCustomIDs.isEmpty && expandedLocalCLIIDs.isEmpty)
         }
         .font(.system(size: 12))
     }
 
+    /// Single "Add" menu surfacing both user-defined provider types up at
+    /// the filter row, so the action is reachable without scrolling past
+    /// the entire static catalog first.
+    private var addProviderMenu: some View {
+        Menu {
+            Button {
+                addCustomProvider()
+            } label: {
+                Label("Custom provider", systemImage: "gearshape.2.fill")
+            }
+            Button {
+                addLocalCLIProvider()
+            } label: {
+                Label("Local CLI", systemImage: "terminal")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Add")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+            .foregroundColor(.accentColor)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
     @ViewBuilder
     private var providersList: some View {
-        if filteredEntries.isEmpty && filteredCustomProviders.isEmpty && !shouldShowAddCustom {
+        if filteredEntries.isEmpty && filteredCustomProviders.isEmpty && filteredLocalCLIProviders.isEmpty {
             emptyState
         } else {
             VStack(spacing: 12) {
@@ -203,6 +241,13 @@ struct ProvidersView: View {
                         onToggleExpand: { toggleExpanded(entry.id) }
                     )
                 }
+                ForEach(filteredLocalCLIProviders) { provider in
+                    LocalCLIProviderCardView(
+                        provider: provider,
+                        isExpanded: expandedLocalCLIIDs.contains(provider.id),
+                        onToggleExpand: { toggleLocalCLIExpanded(provider.id) }
+                    )
+                }
                 ForEach(filteredCustomProviders) { provider in
                     CustomProviderCardView(
                         provider: provider,
@@ -210,30 +255,8 @@ struct ProvidersView: View {
                         onToggleExpand: { toggleCustomExpanded(provider.id) }
                     )
                 }
-                if shouldShowAddCustom {
-                    addCustomButton
-                }
             }
         }
-    }
-
-    private var addCustomButton: some View {
-        Button {
-            addCustomProvider()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 16))
-                Text("Add custom provider")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(CardBackground(isSelected: false))
-            .cornerRadius(12)
-        }
-        .buttonStyle(.plain)
     }
 
     private var emptyState: some View {
@@ -282,6 +305,19 @@ struct ProvidersView: View {
         }
     }
 
+    private var filteredLocalCLIProviders: [LocalCLIProvider] {
+        // Local CLI providers live under the Local category; they are LLM-
+        // capable and never STT, so capability + category filters apply.
+        guard selectedFilter == .all || selectedFilter == .local else { return [] }
+        let pool = localCLIManager.providers
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return pool.filter { provider in
+            matchesSearch(provider.name, trimmed: trimmed)
+                && matchesCapability([.llm])
+                && matchesStatus(isConfigured: provider.isConfigured)
+        }
+    }
+
     private func isCustomConfigured(_ provider: CustomProvider) -> Bool {
         _ = catalog.configurationRevision
         guard provider.offersSTT || provider.offersLLM else { return false }
@@ -326,12 +362,6 @@ struct ProvidersView: View {
         statusFilter = (statusFilter == option) ? .all : option
     }
 
-    private var shouldShowAddCustom: Bool {
-        guard selectedFilter == .all || selectedFilter == .custom else { return false }
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty
-    }
-
     private var configuredCount: Int {
         _ = catalog.configurationRevision
         let staticCount = catalog.entries.filter { catalog.isConfigured($0) }.count
@@ -339,11 +369,12 @@ struct ProvidersView: View {
             APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil &&
             (provider.offersSTT || provider.offersLLM)
         }.count
-        return staticCount + customCount
+        let cliCount = localCLIManager.configuredProviders.count
+        return staticCount + customCount + cliCount
     }
 
     private var totalProviderCount: Int {
-        catalog.entries.count + customManager.providers.count
+        catalog.entries.count + customManager.providers.count + localCLIManager.providers.count
     }
 
     private func toggleExpanded(_ id: ProviderID) {
@@ -366,6 +397,16 @@ struct ProvidersView: View {
         }
     }
 
+    private func toggleLocalCLIExpanded(_ id: UUID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if expandedLocalCLIIDs.contains(id) {
+                expandedLocalCLIIDs.remove(id)
+            } else {
+                expandedLocalCLIIDs.insert(id)
+            }
+        }
+    }
+
     private func addCustomProvider() {
         let newProvider = CustomProvider(
             name: "Untitled custom",
@@ -376,6 +417,19 @@ struct ProvidersView: View {
         )
         CustomProviderManager.shared.add(newProvider)
         expandedCustomIDs.insert(newProvider.id)
+        if selectedFilter == .local {
+            selectedFilter = .custom
+        }
+        catalog.markChanged()
+    }
+
+    private func addLocalCLIProvider() {
+        let newProvider = LocalCLIProvider(name: "Untitled CLI")
+        LocalCLIProviderManager.shared.add(newProvider)
+        expandedLocalCLIIDs.insert(newProvider.id)
+        if selectedFilter == .custom {
+            selectedFilter = .local
+        }
         catalog.markChanged()
     }
 }

@@ -241,14 +241,7 @@ struct EnhancementSettingsView: View {
                 .pickerStyle(.menu)
             }
         case .localCLI:
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Local CLI command runs for every enhancement.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("Edit the template in Providers → Local CLI.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            localCLIControls
         case .custom:
             customLLMControls
         default:
@@ -326,6 +319,47 @@ struct EnhancementSettingsView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var localCLIControls: some View {
+        let cliProviders = LocalCLIProviderManager.shared.configuredProviders
+        if cliProviders.isEmpty {
+            Text("No Local CLI provider configured. Add one in Providers.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        } else {
+            Picker(selection: Binding(
+                get: { aiService.selectedLocalCLIProviderID ?? cliProviders.first?.id ?? UUID() },
+                set: { id in aiService.selectedLocalCLIProviderID = id }
+            )) {
+                ForEach(cliProviders, id: \.id) { provider in
+                    Text(provider.name).tag(provider.id)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Local CLI")
+                    InfoTip("Pick which user-defined Local CLI provider to use for enhancement.")
+                }
+            }
+            .pickerStyle(.menu)
+
+            if let active = activeLocalCLI {
+                HStack {
+                    Text("Command").foregroundColor(.secondary)
+                    Spacer()
+                    Text(active.commandTemplate.isEmpty ? "—" : active.commandTemplate)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+    }
+
+    private var activeLocalCLI: LocalCLIProvider? {
+        guard let id = aiService.selectedLocalCLIProviderID else { return nil }
+        return LocalCLIProviderManager.shared.provider(for: id)
     }
 
     private var activeCustomLLM: CustomProvider? {
