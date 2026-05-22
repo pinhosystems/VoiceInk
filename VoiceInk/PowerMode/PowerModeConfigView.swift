@@ -115,6 +115,28 @@ struct ConfigurationView: View {
             _selectedAIProvider = State(initialValue: latestConfig.selectedAIProvider)
             _selectedAIModel = State(initialValue: latestConfig.selectedAIModel)
             _isTranscriptFormattingExpanded = State(initialValue: latestConfig.isTextFormattingEnabled || latestConfig.punctuationCleanupMode != .keep || latestConfig.lowercaseTranscription)
+        case .addFromPreset(let seed):
+            // Pre-populated by a Power Mode preset. The caller already
+            // cloned the prompt template and filtered apps to ones
+            // installed locally — we just seed the editor.
+            _powerModeConfigId = State(initialValue: seed.id)
+            _isAIEnhancementEnabled = State(initialValue: seed.isAIEnhancementEnabled)
+            _selectedPromptId = State(initialValue: seed.selectedPrompt.flatMap { UUID(uuidString: $0) })
+            _selectedTranscriptionModelName = State(initialValue: seed.selectedTranscriptionModelName)
+            _selectedLanguage = State(initialValue: seed.selectedLanguage)
+            _isTextFormattingEnabled = State(initialValue: seed.isTextFormattingEnabled)
+            _punctuationCleanupMode = State(initialValue: seed.punctuationCleanupMode)
+            _lowercaseTranscription = State(initialValue: seed.lowercaseTranscription)
+            _configName = State(initialValue: seed.name)
+            _selectedEmoji = State(initialValue: seed.emoji)
+            _selectedAppConfigs = State(initialValue: seed.appConfigs ?? [])
+            _websiteConfigs = State(initialValue: seed.urlConfigs ?? [])
+            _useScreenCapture = State(initialValue: seed.useScreenCapture)
+            _autoSendKey = State(initialValue: seed.autoSendKey)
+            _isDefault = State(initialValue: false)
+            _selectedAIProvider = State(initialValue: seed.selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider"))
+            _selectedAIModel = State(initialValue: seed.selectedAIModel)
+            _isTranscriptFormattingExpanded = State(initialValue: seed.isTextFormattingEnabled || seed.punctuationCleanupMode != .keep || seed.lowercaseTranscription)
         }
     }
 
@@ -622,7 +644,7 @@ struct ConfigurationView: View {
         let hotkeyString = shortcut != nil ? "configured" : nil
 
         switch mode {
-        case .add:
+        case .add, .addFromPreset:
             return PowerModeConfig(
                 id: powerModeConfigId,
                 name: configName,
@@ -736,7 +758,7 @@ struct ConfigurationView: View {
         }
 
         switch mode {
-        case .add:
+        case .add, .addFromPreset:
             powerModeManager.addConfiguration(config)
         case .edit:
             powerModeManager.updateConfiguration(config)

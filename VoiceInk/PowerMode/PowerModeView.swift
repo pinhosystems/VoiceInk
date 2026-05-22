@@ -17,19 +17,26 @@ extension View {
 enum ConfigurationMode: Hashable {
     case add
     case edit(PowerModeConfig)
-    
+    /// Pre-populates the editor with values copied from a Power Mode
+    /// preset. The carried `PowerModeConfig` already has the cloned
+    /// prompt linked and apps filtered to ones installed on this
+    /// machine. Treated as `.add` on save (creates a new entry).
+    case addFromPreset(PowerModeConfig)
+
     var isAdding: Bool {
-        if case .add = self { return true }
-        return false
+        switch self {
+        case .add, .addFromPreset: return true
+        case .edit: return false
+        }
     }
-    
+
     var title: String {
         switch self {
-        case .add: return "Add Power Mode"
+        case .add, .addFromPreset: return "Add Power Mode"
         case .edit: return "Edit Power Mode"
         }
     }
-    
+
     func hash(into hasher: inout Hasher) {
         switch self {
         case .add:
@@ -37,14 +44,19 @@ enum ConfigurationMode: Hashable {
         case .edit(let config):
             hasher.combine(1)
             hasher.combine(config.id)
+        case .addFromPreset(let config):
+            hasher.combine(2)
+            hasher.combine(config.id)
         }
     }
-    
+
     static func == (lhs: ConfigurationMode, rhs: ConfigurationMode) -> Bool {
         switch (lhs, rhs) {
         case (.add, .add):
             return true
         case (.edit(let lhsConfig), .edit(let rhsConfig)):
+            return lhsConfig.id == rhsConfig.id
+        case (.addFromPreset(let lhsConfig), .addFromPreset(let rhsConfig)):
             return lhsConfig.id == rhsConfig.id
         default:
             return false
@@ -67,6 +79,7 @@ struct PowerModeView: View {
     @State private var isPanelOpen = false
     @State private var panelID = UUID()
     @State private var isReorderPanelOpen = false
+    @State private var isPresetGalleryOpen = false
     
     var body: some View {
             VStack(spacing: 0) {
@@ -93,13 +106,11 @@ struct PowerModeView: View {
                         Spacer()
                         
                         HStack(spacing: 8) {
-                            Button(action: {
-                                openPanel(mode: .add)
-                            }) {
+                            Button(action: { openPresetGallery() }) {
                                 HStack(spacing: 6) {
-                                    Image(systemName: "plus")
+                                    Image(systemName: "square.grid.2x2.fill")
                                         .font(.system(size: 12, weight: .medium))
-                                    Text("Add Power Mode")
+                                    Text("Browse Presets")
                                         .font(.system(size: 13, weight: .medium))
                                 }
                                 .foregroundColor(.white)
@@ -107,6 +118,25 @@ struct PowerModeView: View {
                                 .padding(.vertical, 6)
                                 .background(Color.accentColor)
                                 .cornerRadius(6)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+
+                            Button(action: { openPanel(mode: .add) }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("Blank")
+                                        .font(.system(size: 13, weight: .medium))
+                                }
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color(NSColor.controlBackgroundColor))
+                                .cornerRadius(6)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                                )
                             }
                             .buttonStyle(PlainButtonStyle())
 
@@ -143,32 +173,29 @@ struct PowerModeView: View {
                             ScrollView {
                                 VStack(spacing: 0) {
                                     if powerModeManager.configurations.isEmpty {
-                                        VStack(spacing: 24) {
-                                            Spacer()
-                                                .frame(height: geometry.size.height * 0.2)
-                                            
-                                            VStack(spacing: 16) {
-                                                Image(systemName: "square.grid.2x2.fill")
-                                                    .font(.system(size: 48, weight: .regular))
-                                                    .foregroundColor(.secondary.opacity(0.6))
-                                                
-                                                VStack(spacing: 8) {
-                                                    Text("No Power Modes Yet")
-                                                        .font(.system(size: 20, weight: .medium))
-                                                        .foregroundColor(.primary)
-                                                    
-                                                    Text("Create first power mode to automate your VoiceInk workflow based on apps/website you are using")
-                                                        .font(.system(size: 14))
-                                                        .foregroundColor(.secondary)
-                                                        .multilineTextAlignment(.center)
-                                                        .lineSpacing(2)
-                                                }
+                                        // First-run experience: show the preset gallery
+                                        // inline so the user has working profiles to pick
+                                        // from instead of an empty placeholder.
+                                        VStack(alignment: .leading, spacing: 16) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Start from a preset")
+                                                    .font(.system(size: 18, weight: .semibold))
+                                                    .foregroundColor(.primary)
+                                                Text("Each preset prefills apps, prompt, and behavior for a common context. Apps you don't have installed are filtered out.")
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(.secondary)
+                                                    .lineSpacing(2)
                                             }
-                                            
-                                            Spacer()
+                                            .padding(.top, 24)
+                                            .padding(.horizontal, 24)
+
+                                            PowerModePresetGallery(
+                                                onSelect: { preset in applyPreset(preset) }
+                                            )
+                                            .padding(.horizontal, 24)
+                                            .padding(.bottom, 40)
                                         }
-                                        .frame(maxWidth: .infinity)
-                                        .frame(minHeight: geometry.size.height)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     } else {
                                         VStack(spacing: 0) {
                                             PowerModeConfigurationsGrid(
@@ -207,6 +234,69 @@ struct PowerModeView: View {
             ), width: 400) {
                 ReorderPanelView(powerModeManager: powerModeManager, onDismiss: closeReorderPanel)
             }
+            .slidingPanel(isPresented: .init(
+                get: { isPresetGalleryOpen },
+                set: { if !$0 { closePresetGallery() } }
+            ), width: 520) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        Text("Power Mode Presets")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Button(action: closePresetGallery) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.secondary)
+                                .padding(6)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .background(Color(NSColor.windowBackgroundColor))
+                    .overlay(Divider().opacity(0.5), alignment: .bottom)
+
+                    ScrollView {
+                        PowerModePresetGallery(
+                            onSelect: { preset in
+                                closePresetGallery()
+                                applyPreset(preset)
+                            }
+                        )
+                        .padding(20)
+                    }
+                }
+                .background(Color(NSColor.windowBackgroundColor))
+            }
+    }
+
+    /// Clone the preset's prompt template into a new CustomPrompt,
+    /// register it with the enhancement service, then open the editor
+    /// pre-populated with the materialized config.
+    private func applyPreset(_ preset: PowerModePreset) {
+        var clonedPromptID: UUID? = nil
+        if let template = PromptTemplates.template(withID: preset.promptTemplateID) {
+            let cloned = template.toCustomPrompt()
+            enhancementService.customPrompts.append(cloned)
+            clonedPromptID = cloned.id
+        }
+        let seed = preset.toConfig(clonedPromptID: clonedPromptID)
+        openPanel(mode: .addFromPreset(seed))
+    }
+
+    private func openPresetGallery() {
+        withAnimation(.smooth(duration: 0.3)) {
+            isPresetGalleryOpen = true
+        }
+    }
+
+    private func closePresetGallery() {
+        withAnimation(.smooth(duration: 0.3)) {
+            isPresetGalleryOpen = false
+        }
     }
 
     private func openPanel(mode: ConfigurationMode) {
