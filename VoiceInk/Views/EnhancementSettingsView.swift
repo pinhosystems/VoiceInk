@@ -168,6 +168,10 @@ struct EnhancementSettingsView: View {
     private var llmProviderSection: some View {
         Section {
             if connectedLLMProviders.isEmpty {
+                // Keep the empty-state CTA fully interactive: a brand-new
+                // install often has Enhancement turned off and zero
+                // providers configured — disabling the "Open Providers"
+                // button in that state would dead-end the onboarding flow.
                 emptyProvidersView
             } else {
                 Picker(selection: $aiService.selectedProvider) {
@@ -181,8 +185,16 @@ struct EnhancementSettingsView: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .disabled(!enhancementService.isEnhancementEnabled)
 
                 modelControls
+                    .disabled(!enhancementService.isEnhancementEnabled)
+
+                if !enhancementService.isEnhancementEnabled {
+                    Text("Provider and model are read-only while Enhancement is off — they only affect the LLM step.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         } header: {
             Text("LLM")
