@@ -1,16 +1,27 @@
 import Foundation
 import LLMkit
+import SwiftData
 
 /// xAI streaming provider wrapping `LLMkit.XAIStreamingClient`.
+///
+/// Forwards `XAISettings.endpointingMs` plus the active prompt's vocabulary
+/// domains (via `VocabularyResolver`) so the streaming endpoint gets the
+/// same `keyterm` bias the REST endpoint receives. Decoupling vocabulary
+/// from the LLM enhancement state means recording with enhancement off
+/// still benefits from the bias. `filler_words` is forced on so VoiceInk's
+/// FillerWordManager owns user-visible filler behavior; `diarize` is
+/// omitted (dictation is single-speaker).
 final class XAIStreamingProvider: StreamingTranscriptionProvider {
 
     private let client = LLMkit.XAIStreamingClient()
+    private let modelContext: ModelContext
     private var eventsContinuation: AsyncStream<StreamingTranscriptionEvent>.Continuation?
     private var forwardingTask: Task<Void, Never>?
 
     private(set) var transcriptionEvents: AsyncStream<StreamingTranscriptionEvent>
 
-    init() {
+    init(modelContext: ModelContext) {
+        self.modelContext = modelContext
         var continuation: AsyncStream<StreamingTranscriptionEvent>.Continuation!
         transcriptionEvents = AsyncStream { continuation = $0 }
         eventsContinuation = continuation
@@ -29,8 +40,18 @@ final class XAIStreamingProvider: StreamingTranscriptionProvider {
         forwardingTask?.cancel()
         startEventForwarding()
 
+        let vocabulary = VocabularyResolver.resolveFromUserDefaults(context: modelContext)
+
         do {
-            try await client.connect(apiKey: apiKey, model: model.name, language: language)
+            try await client.connect(
+                apiKey: apiKey,
+                model: model.name,
+                language: language,
+                customVocabulary: vocabulary,
+                endpointingMs: XAISettings.endpointingMs,
+                fillerWords: XAISettings.keepFillerWords,
+                diarize: nil
+            )
         } catch {
             forwardingTask?.cancel()
             forwardingTask = nil
