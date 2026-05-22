@@ -426,7 +426,7 @@ struct AudioPlayerView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .help("Playback speed")
+                    .help("Cycle playback speed (1× → 1.5× → 2×)")
 
                     CircleIconButton(
                         icon: enhancementService.activePrompt?.icon ?? "sparkles",
@@ -458,6 +458,7 @@ struct AudioPlayerView: View {
                             isHovering = hovering
                         }
                     }
+                    .help(playerManager.isPlaying ? "Pause" : "Play")
 
                     AsyncCircleButton(
                         defaultIcon: "arrow.clockwise",
