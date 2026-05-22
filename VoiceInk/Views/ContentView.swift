@@ -104,17 +104,26 @@ struct ContentView: View {
     @StateObject private var licenseViewModel = LicenseViewModel()
 
     /// Returns sections with hidden items pruned out. Sections that end
-    /// up empty (e.g. when Power Mode is the only entry in a section and
-    /// is gated off) are dropped so we don't render orphan headers.
+    /// up empty are dropped so we don't render orphan headers. Power Mode
+    /// is kept as a disabled discovery entry when its UI flag is off —
+    /// the click navigates to Settings instead of opening the disabled
+    /// view, see `body`.
     private var visibleSections: [SidebarSection] {
         SidebarSection.allSections.compactMap { section in
-            let filtered = section.items.filter { viewType in
-                if viewType == .powerMode { return powerModeUIFlag }
-                return true
-            }
+            // Every item stays visible — the disabled-entry rendering for
+            // Power Mode is handled in the row builder.
+            let filtered = section.items
             guard !filtered.isEmpty else { return nil }
             return SidebarSection(id: section.id, title: section.title, items: filtered)
         }
+    }
+
+    /// True when this view type is currently routable. Power Mode is the
+    /// only conditional case today — disabled until the feature flag is
+    /// turned on in Settings.
+    private func isRoutable(_ viewType: ViewType) -> Bool {
+        if viewType == .powerMode { return powerModeUIFlag }
+        return true
     }
 
     var body: some View {
@@ -152,11 +161,28 @@ struct ContentView: View {
                 ForEach(visibleSections) { section in
                     Section(section.title) {
                         ForEach(section.items) { viewType in
-                            NavigationLink(value: viewType) {
-                                SidebarItemView(viewType: viewType)
+                            if isRoutable(viewType) {
+                                NavigationLink(value: viewType) {
+                                    SidebarItemView(viewType: viewType)
+                                }
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .listRowSeparator(.hidden)
+                            } else {
+                                // Power Mode is gated by a feature flag. Render
+                                // a faded, click-through entry that promotes the
+                                // toggle in Settings rather than hiding the
+                                // feature entirely — users couldn't discover it
+                                // before because the sidebar simply didn't list
+                                // it.
+                                Button(action: { selectedView = .settings }) {
+                                    SidebarItemView(viewType: viewType)
+                                        .opacity(0.4)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .listRowSeparator(.hidden)
+                                .help("Power Mode is disabled. Open Settings → Power Mode to enable.")
                             }
-                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                            .listRowSeparator(.hidden)
                         }
                     }
                 }
