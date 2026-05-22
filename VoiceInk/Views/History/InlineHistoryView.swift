@@ -188,7 +188,7 @@ struct InlineHistoryView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
-            .help("Open performance analysis for the selected transcriptions")
+            .softTooltip("Open performance analysis for the selected transcriptions")
 
             Button(action: {
                 exportService.exportTranscriptionsToCSV(transcriptions: Array(selectedTranscriptions))
@@ -198,7 +198,7 @@ struct InlineHistoryView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
-            .help("Export the selected transcriptions to CSV")
+            .softTooltip("Export the selected transcriptions to CSV")
 
             Button(action: { showDeleteConfirmation = true }) {
                 Label("Delete", systemImage: "trash")
@@ -206,7 +206,7 @@ struct InlineHistoryView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.red.opacity(0.8))
-            .help("Delete the selected transcriptions (audio + metadata)")
+            .softTooltip("Delete the selected transcriptions (audio + metadata)")
 
             Divider()
                 .frame(height: 16)
@@ -218,7 +218,7 @@ struct InlineHistoryView: View {
                 .font(.system(size: 12, weight: .medium))
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
-                .help("Clear the current selection")
+                .softTooltip("Clear the current selection")
             } else {
                 Button("Select All") {
                     Task { await selectAllTranscriptions() }
@@ -226,7 +226,7 @@ struct InlineHistoryView: View {
                 .font(.system(size: 12, weight: .medium))
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
-                .help("Select every transcription matching the current search")
+                .softTooltip("Select every transcription matching the current search")
             }
         }
         .padding(.horizontal, 20)
@@ -587,7 +587,7 @@ private struct HistoryCardRow: View {
         .background(
             Capsule().fill(tint.opacity(0.12))
         )
-        .help(help ?? text)
+        .softTooltip(help ?? text)
     }
 
     var body: some View {
@@ -756,7 +756,7 @@ private struct HistoryCardRow: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("View details")
+                    .softTooltip("View details")
                 }
             }
         }

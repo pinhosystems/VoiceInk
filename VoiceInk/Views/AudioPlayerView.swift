@@ -413,7 +413,7 @@ struct AudioPlayerView: View {
 
                 HStack(spacing: 8) {
                     CircleIconButton(icon: "folder", action: showInFinder)
-                        .help("Show in Finder")
+                        .softTooltip("Show in Finder")
 
                     Button(action: { playerManager.cyclePlaybackRate() }) {
                         Circle()
@@ -426,14 +426,14 @@ struct AudioPlayerView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .help("Cycle playback speed (1× → 1.5× → 2×)")
+                    .softTooltip("Cycle playback speed (1× → 1.5× → 2×)")
 
                     CircleIconButton(
                         icon: enhancementService.activePrompt?.icon ?? "sparkles",
                         action: { showPromptPopover.toggle() }
                     )
                     .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.4)
-                    .help("Select enhancement prompt (applied to next Re-analyze / Retranscribe)")
+                    .softTooltip("Select enhancement prompt (applied to next Re-analyze / Retranscribe)")
                     .popover(isPresented: $showPromptPopover, arrowEdge: .bottom) {
                         EnhancementPromptPopover()
                             .environmentObject(enhancementService)
@@ -443,7 +443,7 @@ struct AudioPlayerView: View {
                         icon: "bolt.fill",
                         action: { showPowerModePopover.toggle() }
                     )
-                    .help("Select Power Mode profile (applied to next Re-analyze / Retranscribe)")
+                    .softTooltip("Select Power Mode profile (applied to next Re-analyze / Retranscribe)")
                     .popover(isPresented: $showPowerModePopover, arrowEdge: .bottom) {
                         PowerModePopover()
                     }
@@ -458,7 +458,7 @@ struct AudioPlayerView: View {
                             isHovering = hovering
                         }
                     }
-                    .help(playerManager.isPlaying ? "Pause" : "Play")
+                    .softTooltip(playerManager.isPlaying ? "Pause" : "Play")
 
                     AsyncCircleButton(
                         defaultIcon: "arrow.clockwise",
@@ -467,7 +467,7 @@ struct AudioPlayerView: View {
                         action: retranscribeAudio
                     )
                     .disabled(isOperationInProgress)
-                    .help("Retranscribe this audio (creates a new history record)")
+                    .softTooltip("Retranscribe this audio (creates a new history record)")
 
                     if transcription != nil {
                         AsyncCircleButton(
@@ -478,12 +478,12 @@ struct AudioPlayerView: View {
                         )
                         .disabled(isOperationInProgress || !enhancementService.isEnhancementEnabled || !enhancementService.isConfigured)
                         .opacity(enhancementService.isEnhancementEnabled && enhancementService.isConfigured ? 1.0 : 0.4)
-                        .help("Re-analyze (overwrites this record's enhancement with the selected prompt / profile)")
+                        .softTooltip("Re-analyze (overwrites this record's enhancement with the selected prompt / profile)")
                     }
 
                     if let onInfoTap {
                         CircleIconButton(icon: "info.circle", action: onInfoTap)
-                            .help("View details")
+                            .softTooltip("View details")
                     }
                 }
 
