@@ -264,16 +264,14 @@ struct ProvidersView: View {
         return name.localizedCaseInsensitiveContains(trimmed)
     }
 
-    /// `true` when the provider passes the capability filter. The chips are
-    /// inclusive: nothing selected — or all options selected — means "no
-    /// constraint, show everyone". Exactly one capability selected restricts
-    /// the list to providers that offer it.
+    /// `true` when the provider passes the capability filter. Nothing
+    /// selected = no constraint, show everyone. One or more chips selected =
+    /// AND filter: the provider must offer every selected capability. Both
+    /// chips on therefore narrows to providers that do both STT and LLM.
     private func matchesCapability(_ capabilities: Set<ProviderCapability>) -> Bool {
         let active = capabilityFilter
-        if active.isEmpty || active.count == ProviderCapability.allCases.count {
-            return true
-        }
-        return !capabilities.isDisjoint(with: active)
+        if active.isEmpty { return true }
+        return capabilities.isSuperset(of: active)
     }
 
     private func toggleCapability(_ capability: ProviderCapability) {
