@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import os
@@ -9,6 +10,7 @@ class TranscriptionModelManager: ObservableObject {
 
     private weak var whisperModelManager: WhisperModelManager?
     private weak var fluidAudioModelManager: FluidAudioModelManager?
+    private var customModelsCancellable: AnyCancellable?
 
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionModelManager")
 
@@ -31,6 +33,15 @@ class TranscriptionModelManager: ObservableObject {
         fluidAudioModelManager.onModelsChanged = { [weak self] in
             self?.refreshAllAvailableModels()
         }
+
+        // CustomCloudModelManager mirrors CustomProviderManager. Without this
+        // bridge subscription, a custom provider added via the Providers tab
+        // never reaches `allAvailableModels` until the next app launch — the
+        // AI Models tab would silently omit it.
+        customModelsCancellable = CustomCloudModelManager.shared.$customModels
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshAllAvailableModels() }
     }
 
     // MARK: - Computed: usable models

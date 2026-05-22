@@ -369,12 +369,20 @@ class AIService: ObservableObject {
         }
 
         // Track edits to the active custom provider so the LLM enhancement
-        // path always sees the latest endpoint URL / model / API key.
+        // path always sees the latest endpoint URL / model / API key, and
+        // force-publish so observing views (Enhancement picker) re-evaluate
+        // `connectedProviders` even when the currently-selected provider is
+        // not .custom — they still need to know that .custom flipped from
+        // "no LLM-capable record" to "one available" or vice-versa.
         customProvidersCancellable = CustomProviderManager.shared.$providers
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self = self, self.selectedProvider == .custom else { return }
-                self.syncFromActiveCustomLLM()
+                guard let self = self else { return }
+                if self.selectedProvider == .custom {
+                    self.syncFromActiveCustomLLM()
+                }
+                self.objectWillChange.send()
             }
     }
     
