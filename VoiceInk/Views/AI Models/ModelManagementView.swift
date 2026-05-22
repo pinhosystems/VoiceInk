@@ -15,9 +15,6 @@ struct ModelManagementView: View {
     @EnvironmentObject private var whisperModelManager: WhisperModelManager
     @EnvironmentObject private var fluidAudioModelManager: FluidAudioModelManager
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
-    @State private var customModelToEdit: CustomCloudModel?
-    @StateObject private var aiService = AIService()
-    @StateObject private var customModelManager = CustomCloudModelManager.shared
     @EnvironmentObject private var enhancementService: AIEnhancementService
     @Environment(\.modelContext) private var modelContext
     @StateObject private var whisperPrompt = WhisperPrompt()
@@ -124,7 +121,6 @@ struct ModelManagementView: View {
     private var availableModelsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                // Modern compact pill switcher
                 HStack(spacing: 12) {
                     ForEach(ModelFilter.allCases, id: \.self) { filter in
                         Button(action: {
@@ -145,9 +141,9 @@ struct ModelManagementView: View {
                         .buttonStyle(PlainButtonStyle())
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     withAnimation(.smooth(duration: 0.3)) {
                         isShowingSettings.toggle()
@@ -164,8 +160,11 @@ struct ModelManagementView: View {
                 .buttonStyle(PlainButtonStyle())
             }
             .padding(.bottom, 12)
-            
-            VStack(spacing: 12) {
+
+            if filteredModels.isEmpty {
+                emptyModelsState
+            } else {
+                VStack(spacing: 12) {
                     ForEach(filteredModels, id: \.id) { model in
                         let isWarming = (model as? WhisperModel).map { whisperModel in
                             warmupCoordinator.isWarming(modelNamed: whisperModel.name)
@@ -180,88 +179,71 @@ struct ModelManagementView: View {
                             downloadProgress: whisperModelManager.downloadProgress,
                             modelURL: whisperModelManager.availableModels.first { $0.name == model.name }?.url,
                             isWarming: isWarming,
-                            deleteAction: {
-                                if let customModel = model as? CustomCloudModel {
-                                    alertTitle = "Delete Custom Model"
-                                    alertMessage = "Are you sure you want to delete the custom model '\(customModel.displayName)'?"
-                                    deleteActionClosure = {
-                                        customModelManager.removeCustomModel(withId: customModel.id)
-                                        transcriptionModelManager.refreshAllAvailableModels()
-                                    }
-                                    isShowingDeleteAlert = true
-                                } else if let downloadedModel = whisperModelManager.availableModels.first(where: { $0.name == model.name }) {
-                                    alertTitle = "Delete Model"
-                                    alertMessage = "Are you sure you want to delete the model '\(downloadedModel.name)'?"
-                                    deleteActionClosure = {
-                                        Task {
-                                            await whisperModelManager.deleteModel(downloadedModel)
-                                        }
-                                    }
-                                    isShowingDeleteAlert = true
-                                }
-                            },
+                            deleteAction: { presentDeleteAlert(for: model) },
                             setDefaultAction: {
-                                Task {
-                                    transcriptionModelManager.setDefaultTranscriptionModel(model)
-                                }
+                                Task { transcriptionModelManager.setDefaultTranscriptionModel(model) }
                             },
                             downloadAction: {
                                 if let whisperModel = model as? WhisperModel {
                                     Task { await whisperModelManager.downloadModel(whisperModel) }
                                 }
                             },
-                            editAction: model.provider == .custom ? { customModel in
-                                customModelToEdit = customModel
-                            } : nil
+                            editAction: nil
                         )
-                    }
-                    
-                    // Import button as a card at the end of the Local list
-                    if selectedFilter == .local {
-                        HStack(spacing: 8) {
-                            Button(action: { presentImportPanel() }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "square.and.arrow.down")
-                                    Text("Import Local Model…")
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(16)
-                                .background(CardBackground(isSelected: false))
-                                .cornerRadius(10)
-                            }
-                            .buttonStyle(.plain)
-
-                            InfoTip(
-                                "Add a custom fine-tuned whisper model to use with VoiceInk. Select the downloaded .bin file.",
-                                learnMoreURL: "https://tryvoiceink.com/docs/custom-local-whisper-models"
-                            )
-                            .help("Read more about custom local models")
-                        }
-                    }
-                    
-                    if selectedFilter == .custom {
-                        HStack(spacing: 6) {
-                            Image(systemName: "info.circle")
-                                .font(.system(size: 12))
-                            Text("Only OpenAI-compatible transcription APIs are supported.")
-                                .font(.system(size: 12))
-                        }
-                        .foregroundColor(.secondary)
-                        .padding(.bottom, 4)
-
-                        AddCustomModelCardView(
-                            customModelManager: customModelManager,
-                            editingModel: customModelToEdit
-                        ) {
-                            // Refresh the models when a new custom model is added
-                            transcriptionModelManager.refreshAllAvailableModels()
-                            customModelToEdit = nil // Clear editing state
-                        }
                     }
                 }
             }
+        }
         .padding()
+    }
+
+    private var emptyModelsState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "tray")
+                .font(.system(size: 28))
+                .foregroundColor(.secondary.opacity(0.6))
+            Text(emptyMessage)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Open Providers") {
+                NotificationCenter.default.post(
+                    name: .navigateToDestination,
+                    object: nil,
+                    userInfo: ["destination": "Providers"]
+                )
+            }
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+        .padding(.horizontal, 20)
+        .background(CardBackground(isSelected: false))
+        .cornerRadius(10)
+    }
+
+    private var emptyMessage: String {
+        switch selectedFilter {
+        case .recommended:
+            return "No recommended models are downloaded yet. Install one in Providers → Local."
+        case .local:
+            return "No local models installed. Download a Whisper or Parakeet model in Providers → Local."
+        case .cloud:
+            return "No cloud STT providers configured. Add an API key in Providers → Cloud."
+        case .custom:
+            return "No custom STT providers configured. Add one in Providers → Custom (enable the STT toggle)."
+        }
+    }
+
+    private func presentDeleteAlert(for model: any TranscriptionModel) {
+        if let downloadedModel = whisperModelManager.availableModels.first(where: { $0.name == model.name }) {
+            alertTitle = "Delete Model"
+            alertMessage = "Are you sure you want to delete '\(downloadedModel.name)'? Use Providers to reinstall it later."
+            deleteActionClosure = {
+                Task { await whisperModelManager.deleteModel(downloadedModel) }
+            }
+            isShowingDeleteAlert = true
+        }
     }
 
 
@@ -304,41 +286,51 @@ struct ModelManagementView: View {
     }
 
     private var filteredModels: [any TranscriptionModel] {
+        let usableOnly = transcriptionModelManager.allAvailableModels.filter { isUsable($0) }
         switch selectedFilter {
         case .recommended:
-            return transcriptionModelManager.allAvailableModels.filter {
-                let recommendedNames = ["ggml-base.en", "parakeet-tdt-0.6b-v2", "ggml-large-v3-turbo-q5_0", "whisper-large-v3-turbo"]
-                return recommendedNames.contains($0.name)
-            }.sorted { model1, model2 in
-                let recommendedOrder = ["ggml-base.en", "parakeet-tdt-0.6b-v2", "ggml-large-v3-turbo-q5_0", "whisper-large-v3-turbo"]
-                let index1 = recommendedOrder.firstIndex(of: model1.name) ?? Int.max
-                let index2 = recommendedOrder.firstIndex(of: model2.name) ?? Int.max
-                return index1 < index2
-            }
+            let order = ["ggml-base.en", "parakeet-tdt-0.6b-v2", "ggml-large-v3-turbo-q5_0", "whisper-large-v3-turbo"]
+            return usableOnly
+                .filter { order.contains($0.name) }
+                .sorted { (m1, m2) in
+                    let i1 = order.firstIndex(of: m1.name) ?? Int.max
+                    let i2 = order.firstIndex(of: m2.name) ?? Int.max
+                    return i1 < i2
+                }
         case .local:
-            return transcriptionModelManager.allAvailableModels.filter {
+            return usableOnly.filter {
                 ($0.provider == .whisper || $0.provider == .nativeApple || $0.provider == .fluidAudio)
                     && transcriptionModelManager.isAvailableOnCurrentOS($0)
             }
         case .cloud:
-            return transcriptionModelManager.allAvailableModels.filter { CloudProviderRegistry.provider(for: $0.provider) != nil }
+            return usableOnly.filter { CloudProviderRegistry.provider(for: $0.provider) != nil }
         case .custom:
-            return transcriptionModelManager.allAvailableModels.filter { $0.provider == .custom }
+            return usableOnly.filter { $0.provider == .custom }
         }
     }
 
-    // MARK: - Import Panel
-    private func presentImportPanel() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "bin")!]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.resolvesAliases = true
-        panel.title = "Select a Whisper ggml .bin model"
-        if panel.runModal() == .OK, let url = panel.url {
-            Task { @MainActor in
-                await whisperModelManager.importWhisperModel(from: url)
+    /// True when the model can actually transcribe right now — local model
+    /// downloaded, cloud provider key present, custom provider key present.
+    /// The Providers tab owns installation/credentials, so models that
+    /// aren't usable are hidden here instead of dragging the user through
+    /// a half-broken flow.
+    private func isUsable(_ model: any TranscriptionModel) -> Bool {
+        switch model.provider {
+        case .whisper:
+            return whisperModelManager.availableModels.contains { $0.name == model.name }
+        case .fluidAudio:
+            return fluidAudioModelManager.isFluidAudioModelDownloaded(named: model.name)
+        case .nativeApple:
+            return true
+        case .custom:
+            if let customModel = model as? CustomCloudModel {
+                return APIKeyManager.shared.getCustomModelAPIKey(forModelId: customModel.id) != nil
             }
+            return false
+        default:
+            // Cloud providers — check API key under the provider's raw name.
+            return APIKeyManager.shared.hasAPIKey(forProvider: model.provider.rawValue)
         }
     }
+
 }
