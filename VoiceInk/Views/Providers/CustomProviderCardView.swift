@@ -251,17 +251,7 @@ struct CustomProviderCardView: View {
     private var credentialsBlock: some View {
         EditorBlock(title: "Credentials", systemImage: "key.fill", tint: .orange) {
             if hasKey {
-                HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text("API key stored")
-                            .font(.system(size: 12))
-                    }
-                    Spacer()
-                    Text("••••••••").foregroundColor(.secondary)
-                    Button("Remove", role: .destructive) { removeKey() }
-                }
+                storedKeyControls
             } else {
                 FieldLabel("API key", help: "Same key is used for STT and LLM when both are enabled.")
                 SecureField("", text: $apiKeyInput, prompt: Text("Paste the secret here"))
@@ -284,6 +274,48 @@ struct CustomProviderCardView: View {
         }
     }
 
+    /// Controls shown once a key is stored. The user can still re-verify the
+    /// stored credential against whichever capabilities and endpoints are
+    /// currently enabled — important because users often save with STT only
+    /// and later enable LLM (or vice-versa); without this they would have
+    /// to delete and re-paste the key to confirm the new endpoint works.
+    @ViewBuilder
+    private var storedKeyControls: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                Text("API key stored")
+                    .font(.system(size: 12))
+            }
+            Spacer()
+            Text("••••••••").foregroundColor(.secondary)
+            Button("Re-verify", action: reverifyStoredKey)
+                .disabled(!canReverify)
+            Button("Remove", role: .destructive) { removeKey() }
+        }
+        if !canReverify {
+            Text(verifyDisabledHint)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+
+        Divider()
+
+        FieldLabel("Replace API key", help: "Paste a new secret here to overwrite the stored one.")
+        SecureField("", text: $apiKeyInput, prompt: Text("Paste a new secret"))
+            .textFieldStyle(.roundedBorder)
+        HStack {
+            Spacer()
+            Button {
+                verifyAndSave()
+            } label: {
+                Text("Verify and replace")
+            }
+            .disabled(apiKeyInput.isEmpty || !canVerify)
+        }
+    }
+
     // MARK: - Delete footer
 
     private var deleteFooter: some View {
@@ -300,8 +332,18 @@ struct CustomProviderCardView: View {
         }
     }
 
+    /// True when the user has typed a key AND the enabled capabilities have
+    /// the URL+model pair needed to actually verify the call.
     private var canVerify: Bool {
         guard !apiKeyInput.isEmpty else { return false }
+        return endpointsReady
+    }
+
+    /// Same gating as `canVerify` minus the input-field check — used when a
+    /// key is already stored so the user can re-verify without retyping.
+    private var canReverify: Bool { endpointsReady }
+
+    private var endpointsReady: Bool {
         guard draft.offersSTT || draft.offersLLM else { return false }
         if draft.offersLLM, draft.llmEndpointURL.isEmpty || draft.llmModelName.isEmpty {
             return false
@@ -373,6 +415,41 @@ struct CustomProviderCardView: View {
         }
         catalog.markChanged()
         NotificationCenter.default.post(name: .aiProviderKeyChanged, object: nil)
+    }
+
+    /// Re-runs the LLM verification against the *stored* key — used when the
+    /// user enabled a new capability after the original save and needs to
+    /// confirm the new endpoint resolves correctly.
+    private func reverifyStoredKey() {
+        guard let stored = APIKeyManager.shared.getCustomModelAPIKey(forModelId: draft.id),
+              !stored.isEmpty else {
+            alertMessage = "No stored key to re-verify."
+            showAlert = true
+            return
+        }
+        guard draft.offersLLM else {
+            // STT-only verification has no cheap probe path; treat the stored
+            // key as already-good and tell the user.
+            alertMessage = "STT-only providers are not probed — saving the key is enough."
+            showAlert = true
+            return
+        }
+        guard let url = URL(string: draft.llmEndpointURL) else {
+            alertMessage = "Invalid LLM endpoint URL"
+            showAlert = true
+            return
+        }
+        Task {
+            let r = await OpenAILLMClient.verifyAPIKey(baseURL: url, apiKey: stored, model: draft.llmModelName)
+            await MainActor.run {
+                if r.isValid {
+                    alertMessage = "Connection OK."
+                } else {
+                    alertMessage = r.errorMessage ?? "Verification failed"
+                }
+                showAlert = true
+            }
+        }
     }
 
     private func removeKey() {
