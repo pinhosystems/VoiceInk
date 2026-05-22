@@ -48,19 +48,25 @@ struct CustomProviderCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerStrip
+                .contentShape(Rectangle())
+                .onTapGesture { onToggleExpand() }
             if isExpanded {
                 Divider().padding(.top, 14)
                 editorBody
                     .padding(.top, 14)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.animation(.easeInOut(duration: 0.22).delay(0.05)),
+                            removal: .opacity.animation(.easeInOut(duration: 0.12))
+                        )
+                    )
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(CardBackground(isSelected: false))
         .cornerRadius(12)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggleExpand() }
+        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
         .alert("Error", isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
         } message: { Text(alertMessage) }
@@ -123,11 +129,13 @@ struct CustomProviderCardView: View {
     }
 
     private var chevron: some View {
-        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+        Image(systemName: "chevron.down")
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.secondary)
+            .rotationEffect(.degrees(isExpanded ? 180 : 0))
             .padding(6)
             .background(Circle().fill(Color.secondary.opacity(0.08)))
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
     }
 
     private var editorBody: some View {

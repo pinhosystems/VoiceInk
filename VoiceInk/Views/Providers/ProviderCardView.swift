@@ -22,9 +22,10 @@ struct ProviderCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerStrip
+                .contentShape(Rectangle())
+                .onTapGesture { onToggleExpand() }
             if isExpanded {
-                Divider()
-                    .padding(.top, 14)
+                Divider().padding(.top, 14)
                 VStack(alignment: .leading, spacing: 14) {
                     credentialBody
                     if entry.capabilities.contains(.stt) && hasProviderSpecificSTTSettings {
@@ -33,15 +34,19 @@ struct ProviderCardView: View {
                     }
                 }
                 .padding(.top, 14)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.animation(.easeInOut(duration: 0.22).delay(0.05)),
+                        removal: .opacity.animation(.easeInOut(duration: 0.12))
+                    )
+                )
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(CardBackground(isSelected: false))
         .cornerRadius(12)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggleExpand() }
+        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
     }
 
     private var headerStrip: some View {
@@ -88,13 +93,13 @@ struct ProviderCardView: View {
     }
 
     private var chevron: some View {
-        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+        Image(systemName: "chevron.down")
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.secondary)
+            .rotationEffect(.degrees(isExpanded ? 180 : 0))
             .padding(6)
-            .background(
-                Circle().fill(Color.secondary.opacity(0.08))
-            )
+            .background(Circle().fill(Color.secondary.opacity(0.08)))
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
     }
 
     @ViewBuilder
