@@ -164,11 +164,10 @@ struct RecorderPromptButton: View {
             icon: enhancementService.activePrompt?.icon ?? enhancementService.allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId })?.icon ?? "checkmark.seal.fill",
             disabled: false
         ) {
-            if enhancementService.isEnhancementEnabled {
-                activePopover = activePopover == .enhancement ? .none : .enhancement
-            } else {
-                enhancementService.isEnhancementEnabled = true
-            }
+            // Popover always toggles open/close. The Transcription Profile
+            // picker inside is meaningful even with LLM Enhancement off
+            // (the profile drives STT vocabulary bias).
+            activePopover = activePopover == .enhancement ? .none : .enhancement
         }
         .frame(width: buttonSize)
         .padding(padding)

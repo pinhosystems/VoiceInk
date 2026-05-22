@@ -45,7 +45,7 @@ struct EnhancementSettingsView: View {
                     HStack(spacing: 4) {
                         Text("Enable Enhancement")
                         InfoTip(
-                            "AI enhancement lets you pass the transcribed audio through LLMs to post-process using different prompts suitable for different use cases like e-mails, summary, writing, etc.",
+                            "When ON, the transcript is post-processed by an LLM using the active Transcription Profile's writing rules. When OFF, the LLM step is skipped but the profile still controls vocabulary bias sent to the STT engine.",
                             learnMoreURL: "https://tryvoiceink.com/docs/enhancements-configuring-models"
                         )
                     }
@@ -93,7 +93,8 @@ struct EnhancementSettingsView: View {
                 .padding(.vertical, 8)
             } header: {
                 HStack {
-                    Text("Enhancement Prompts")
+                    Text("Transcription Profiles")
+                    InfoTip("The active profile always controls vocabulary bias sent to the STT engine. Its writing rules only apply when Enhancement is enabled.")
                     Spacer()
                     Button {
                         openPromptPanel()
@@ -107,10 +108,9 @@ struct EnhancementSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Add new prompt")
+                    .help("Add new profile")
                 }
             }
-            .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.8)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

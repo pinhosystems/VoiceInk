@@ -55,8 +55,8 @@ struct MenuBarView: View {
             
             Divider()
             
-            Toggle("AI Enhancement", isOn: $enhancementService.isEnhancementEnabled)
-            
+            Toggle("LLM Enhancement", isOn: $enhancementService.isEnhancementEnabled)
+
             Menu {
                 ForEach(enhancementService.allPrompts) { prompt in
                     Button {
@@ -75,7 +75,7 @@ struct MenuBarView: View {
                 }
             } label: {
                 HStack {
-                    Text("Prompt: \(enhancementService.activePrompt?.title ?? "None")")
+                    Text("Profile: \(enhancementService.activePrompt?.title ?? "None")")
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 10))
                 }
@@ -240,12 +240,11 @@ struct MenuBarView: View {
                 }
             
             Divider()
-            
-            Button("Check for Updates") {
-                updaterViewModel.checkForUpdates()
-            }
-            .disabled(!updaterViewModel.canCheckForUpdates)
-            
+
+            // "Check for Updates" intentionally hidden in this fork — see
+            // UpdaterViewModel in VoiceInk.swift. There's no working feed to
+            // consult, so the button would only confuse users.
+
             Button("Help and Support") {
                 EmailSupport.openSupportEmail()
             }

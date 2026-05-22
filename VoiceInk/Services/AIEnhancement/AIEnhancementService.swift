@@ -143,7 +143,12 @@ class AIEnhancementService: ObservableObject {
             self.selectedPromptId = UUID(uuidString: savedPromptId)
         }
 
-        if isEnhancementEnabled && (selectedPromptId == nil || !allPrompts.contains(where: { $0.id == selectedPromptId })) {
+        // Profile selection is independent of `isEnhancementEnabled`: even
+        // when LLM enhancement is off, the active prompt still controls the
+        // vocabulary domains used for STT keyterm bias (see
+        // `VocabularyResolver`). Auto-pick a default whenever the stored
+        // selection is missing or stale.
+        if selectedPromptId == nil || !allPrompts.contains(where: { $0.id == selectedPromptId }) {
             self.selectedPromptId = allPrompts.first?.id
         }
 
@@ -528,6 +533,14 @@ class AIEnhancementService: ObservableObject {
 
     private func initializePredefinedPrompts() {
         let predefinedTemplates = PredefinedPrompts.createDefaultPrompts()
+        let validPredefinedIds = Set(predefinedTemplates.map { $0.id })
+
+        // Purge orphan predefined prompts: entries persisted with
+        // `isPredefined: true` whose UUID is no longer in the source list.
+        // Without this, a prompt that used to be predefined and was later
+        // removed from `PredefinedPrompts` stays stuck — the delete UI
+        // guards on `!isPredefined`, so the user can never remove it.
+        customPrompts.removeAll { $0.isPredefined && !validPredefinedIds.contains($0.id) }
 
         for template in predefinedTemplates {
             if let existingIndex = customPrompts.firstIndex(where: { $0.id == template.id }) {
@@ -541,7 +554,8 @@ class AIEnhancementService: ObservableObject {
                     description: template.description,
                     isPredefined: true,
                     triggerWords: updatedPrompt.triggerWords,
-                    useSystemInstructions: template.useSystemInstructions
+                    useSystemInstructions: template.useSystemInstructions,
+                    vocabularyDomains: template.vocabularyDomains
                 )
                 customPrompts[existingIndex] = updatedPrompt
             } else {
