@@ -11,6 +11,10 @@ enum ProviderCredentialKind {
     case commandTemplate
     /// Base URL + model name + API key (Custom OpenAI-compatible provider).
     case baseURLAndModel
+    /// On-device models that ship as downloadable binaries (Whisper, Parakeet).
+    case localModels
+    /// Built-in OS capability that needs no installation (Native Apple Speech).
+    case builtIn
 }
 
 /// Metadata describing a single provider for the Providers tab.
@@ -22,11 +26,14 @@ enum ProviderCredentialKind {
 struct ProviderEntry: Identifiable, Hashable {
     let id: ProviderID
     let displayName: String
+    let category: ProviderCategory
     let capabilities: Set<ProviderCapability>
     let credentialKind: ProviderCredentialKind
     let aiProviderRaw: String?
     let modelProviderRaw: String?
     let signupURL: URL?
+    let summary: String
+    let iconSystemName: String
 
     static func == (lhs: ProviderEntry, rhs: ProviderEntry) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

@@ -15,16 +15,29 @@ enum ProviderID: String, CaseIterable, Hashable, Codable, Identifiable {
     case custom = "Custom"
     case deepgram = "Deepgram"
     case elevenLabs = "ElevenLabs"
+    case fluidAudio = "Parakeet"
     case gemini = "Gemini"
     case groq = "Groq"
     case localCLI = "Local CLI"
     case mistral = "Mistral"
+    case nativeApple = "Native Apple"
     case ollama = "Ollama"
     case openAI = "OpenAI"
     case openRouter = "OpenRouter"
     case soniox = "Soniox"
     case speechmatics = "Speechmatics"
+    case whisper = "Whisper"
     case xai = "xAI"
+
+    var id: String { rawValue }
+}
+
+/// Where the provider's compute happens. Drives the Providers tab filter
+/// pills and the visual treatment of each card.
+enum ProviderCategory: String, CaseIterable, Hashable, Identifiable {
+    case local = "Local"
+    case cloud = "Cloud"
+    case custom = "Custom"
 
     var id: String { rawValue }
 }

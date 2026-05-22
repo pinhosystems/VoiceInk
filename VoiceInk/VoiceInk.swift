@@ -104,9 +104,6 @@ struct VoiceInkApp: App {
         let enhancementService = AIEnhancementService(aiService: aiService, modelContext: resolvedContainer.mainContext)
         _enhancementService = StateObject(wrappedValue: enhancementService)
 
-        let providerCatalog = ProviderCatalog(aiService: aiService)
-        _providerCatalog = StateObject(wrappedValue: providerCatalog)
-
         // 1. Create modelsDirectory URL
         let appSupportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("com.prakashjoshipax.VoiceInk")
@@ -115,6 +112,16 @@ struct VoiceInkApp: App {
         // 2. Create model managers
         let whisperModelManager = WhisperModelManager(modelsDirectory: modelsDirectory)
         let fluidAudioModelManager = FluidAudioModelManager()
+
+        // ProviderCatalog needs both model managers to derive `isConfigured`
+        // for local STT providers (Whisper / Parakeet), so it must be built
+        // after the managers exist but before any view tries to enumerate it.
+        let providerCatalog = ProviderCatalog(
+            aiService: aiService,
+            whisperModelManager: whisperModelManager,
+            fluidAudioModelManager: fluidAudioModelManager
+        )
+        _providerCatalog = StateObject(wrappedValue: providerCatalog)
         let transcriptionModelManager = TranscriptionModelManager(
             whisperModelManager: whisperModelManager,
             fluidAudioModelManager: fluidAudioModelManager
