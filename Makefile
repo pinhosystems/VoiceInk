@@ -6,7 +6,15 @@ WHISPER_CPP_DIR := $(DEPS_DIR)/whisper.cpp
 FRAMEWORK_PATH := $(WHISPER_CPP_DIR)/build-apple/whisper.xcframework
 LOCAL_DERIVED_DATA := $(CURDIR)/.local-build
 
-.PHONY: all clean whisper setup build local install-local check healthcheck help dev run
+# Local code-signing identity. When set to a real certificate in the
+# login keychain, rebuilds keep their TCC grants (Accessibility, Screen
+# Recording, etc.) because the Designated Requirement is stable across
+# binary cdhashes. When set to "-" (ad-hoc), every rebuild invalidates
+# every prior TCC grant. Run `make setup-signing` once to provision the
+# default identity below.
+LOCAL_SIGNING_IDENTITY ?= VoiceInk Local Dev
+
+.PHONY: all clean whisper setup setup-signing build local install-local check healthcheck help dev run
 
 # Default target
 all: check build
@@ -46,15 +54,32 @@ setup: whisper
 build: setup
 	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug CODE_SIGN_IDENTITY="" build
 
-# Build for local use without Apple Developer certificate
+# Build for local use without Apple Developer certificate.
+#
+# When LOCAL_SIGNING_IDENTITY points at a self-signed certificate
+# present in the login keychain (default: "VoiceInk Local Dev",
+# provisioned via `make setup-signing`), the build uses that identity
+# so the Designated Requirement stays stable across rebuilds — TCC
+# grants survive. Fall back to ad-hoc ("-") when the identity isn't
+# found so the target keeps working on fresh checkouts.
 local: check setup
-	@echo "Building VoiceInk for local use (no Apple Developer certificate required)..."
+	@echo "Building VoiceInk for local use..."
 	@rm -rf "$(LOCAL_DERIVED_DATA)"
+	@if security find-identity -p codesigning -v "${HOME}/Library/Keychains/login.keychain-db" 2>/dev/null | grep -qF "\"$(LOCAL_SIGNING_IDENTITY)\""; then \
+		echo "Signing with stable identity: $(LOCAL_SIGNING_IDENTITY)"; \
+		SIGN_IDENTITY="$(LOCAL_SIGNING_IDENTITY)"; \
+		SIGN_REQUIRED="YES"; \
+	else \
+		echo "Identity '$(LOCAL_SIGNING_IDENTITY)' not found — falling back to ad-hoc."; \
+		echo "(Run 'make setup-signing' once to get persistent TCC grants.)"; \
+		SIGN_IDENTITY="-"; \
+		SIGN_REQUIRED="NO"; \
+	fi; \
 	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug \
 		-derivedDataPath "$(LOCAL_DERIVED_DATA)" \
 		-xcconfig LocalBuild.xcconfig \
-		CODE_SIGN_IDENTITY="-" \
-		CODE_SIGNING_REQUIRED=NO \
+		CODE_SIGN_IDENTITY="$$SIGN_IDENTITY" \
+		CODE_SIGNING_REQUIRED="$$SIGN_REQUIRED" \
 		CODE_SIGNING_ALLOWED=YES \
 		DEVELOPMENT_TEAM="" \
 		CODE_SIGN_ENTITLEMENTS=$(CURDIR)/VoiceInk/VoiceInk.local.entitlements \
@@ -83,6 +108,13 @@ local: check setup
 # (re-adding the app to Accessibility/Screen Recording in System Settings).
 install-local:
 	@$(CURDIR)/scripts/install-local.sh
+
+# Provision a stable, self-signed code-signing certificate in the login
+# keychain so subsequent `make install-local` runs keep their TCC grants.
+# Idempotent — re-running detects the existing identity. Pass --force
+# to regenerate.
+setup-signing:
+	@$(CURDIR)/scripts/setup-local-signing.sh
 
 # Run application
 run:
@@ -116,6 +148,7 @@ help:
 	@echo "  build              Build the VoiceInk Xcode project"
 	@echo "  local              Build for local use (no Apple Developer certificate needed)"
 	@echo "  install-local      Build, reset stale TCC grants, replace /Applications/VoiceInk.app, launch"
+	@echo "  setup-signing      Provision a stable self-signed identity (run once for persistent TCC)"
 	@echo "  run                Launch the built VoiceInk app"
 	@echo "  dev                Build and run the app (for development)"
 	@echo "  all                Run full build process (default)"

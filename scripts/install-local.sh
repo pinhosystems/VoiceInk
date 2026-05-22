@@ -22,9 +22,31 @@ BUNDLE_ID="com.prakashjoshipax.VoiceInk"
 INSTALL_PATH="/Applications/VoiceInk.app"
 BUILD_OUTPUT="$HOME/Downloads/VoiceInk.app"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCAL_SIGNING_IDENTITY="${LOCAL_SIGNING_IDENTITY:-VoiceInk Local Dev}"
+LOGIN_KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
 
 log() { printf "\033[1;34m▸\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m!\033[0m %s\n" "$*"; }
+
+# Is the stable self-signed identity available? When it is, we sign the
+# build with a cert whose requirement string doesn't change between
+# rebuilds, so TCC grants persist and we can skip the destructive
+# tccutil reset below.
+has_stable_signing_identity() {
+    security find-identity -p codesigning -v "${LOGIN_KEYCHAIN}" 2>/dev/null \
+        | grep -qF "\"${LOCAL_SIGNING_IDENTITY}\""
+}
+
+# Allow callers to force a TCC reset even when signed (RESET_TCC=1).
+# Default policy: reset only for ad-hoc builds.
+RESET_TCC="${RESET_TCC:-auto}"
+if [ "${RESET_TCC}" = "auto" ]; then
+    if has_stable_signing_identity; then
+        RESET_TCC=0
+    else
+        RESET_TCC=1
+    fi
+fi
 
 # 1. Stop the running app cleanly (best-effort).
 if pgrep -f "${INSTALL_PATH}/Contents/MacOS/VoiceInk" >/dev/null 2>&1; then
@@ -39,24 +61,26 @@ if pgrep -f "${INSTALL_PATH}/Contents/MacOS/VoiceInk" >/dev/null 2>&1; then
     sleep 1
 fi
 
-# 2. Wipe stale TCC entries for every permission scope VoiceInk requests.
-#    Ad-hoc rebuilds change the binary's cdhash, and tccd silently rejects
-#    permission attempts whose stored csreq no longer matches. Resetting
-#    every relevant scope forces tccd to treat the next launch as a first
-#    install and write a new csreq against the current cdhash.
+# 2. Wipe stale TCC entries for every permission scope VoiceInk requests
+#    — but only when the build is ad-hoc signed.
 #
-#    Scopes covered (must match the entitlements & Info.plist usage descriptions):
-#      Accessibility       — global hotkey + CGEvent paste
-#      ScreenCapture       — screen-context capture for AI enhancement
-#      Microphone          — recording (technically survives most rebuilds,
-#                            but worth resetting when the user reports any
-#                            mic-related flake — costs nothing)
-#      AppleEvents         — AppleScript bridge to detect active browser URL
-#      PostEvent/ListenEvent — keyboard event posting via the hotkey paste path
-log "Resetting TCC for ${BUNDLE_ID} (all VoiceInk scopes)"
-for scope in Accessibility ScreenCapture Microphone AppleEvents PostEvent ListenEvent; do
-    tccutil reset "${scope}" "${BUNDLE_ID}" >/dev/null 2>&1 || true
-done
+#    Ad-hoc rebuilds change the binary's cdhash, and tccd silently
+#    rejects permission attempts whose stored csreq no longer matches.
+#    Resetting every relevant scope forces tccd to treat the next launch
+#    as a first install and write a new csreq against the current cdhash.
+#
+#    When `make setup-signing` has been run, builds are signed by a
+#    stable self-signed identity whose Designated Requirement does not
+#    change between rebuilds — TCC grants carry over without a reset.
+#    Skip the destructive sweep in that case (set RESET_TCC=1 to force).
+if [ "${RESET_TCC}" -eq 1 ]; then
+    log "Resetting TCC for ${BUNDLE_ID} (all VoiceInk scopes)"
+    for scope in Accessibility ScreenCapture Microphone AppleEvents PostEvent ListenEvent; do
+        tccutil reset "${scope}" "${BUNDLE_ID}" >/dev/null 2>&1 || true
+    done
+else
+    log "Stable signing identity detected — TCC grants will persist across rebuilds"
+fi
 
 # 3. Build via the existing make target.
 log "Running 'make local' in ${REPO_DIR}"
@@ -90,7 +114,8 @@ fi
 log "Launching ${INSTALL_PATH}"
 open "${INSTALL_PATH}"
 
-cat <<'EOF'
+if [ "${RESET_TCC}" -eq 1 ]; then
+    cat <<'EOF'
 
 ✓ VoiceInk rebuilt, reinstalled to /Applications, TCC reset, and launched.
 
@@ -107,7 +132,26 @@ VoiceInk entry from that list with the (−) button and add it back with
 (+) pointing at /Applications/VoiceInk.app — that forces macOS to write
 a fresh requirement string against the current ad-hoc signature.
 
-Permanent fix: sign the build with an Apple Developer ID (or a local
-self-signed identity reused across builds). TCC will then index by
-TeamIdentifier and rebuilds will stop invalidating grants.
+Tired of granting permissions on every rebuild?
+  Run once:  make setup-signing
+  Then:      make install-local
+The setup target provisions a stable self-signed identity in your login
+keychain. Subsequent installs reuse it, the Designated Requirement stays
+fixed across builds, and TCC stops invalidating your grants.
 EOF
+else
+    cat <<'EOF'
+
+✓ VoiceInk rebuilt, reinstalled to /Applications, and launched.
+
+TCC grants were preserved this run (stable signing identity in use).
+If this is the first time you've installed the app under this identity,
+you'll still need to grant permissions once for:
+
+  System Settings → Privacy & Security
+    → Accessibility            (global hotkey + paste)
+    → Screen & System Audio    (screen-context capture)
+
+Subsequent rebuilds will keep those grants.
+EOF
+fi
