@@ -1,139 +1,11 @@
 import SwiftUI
 import LLMkit
 
-/// Right-pane detail for a single provider in the Providers tab. Renders:
-///   - a header with capability badges
-///   - credential entry whose shape is driven by `entry.credentialKind`
-///   - an STT settings card (if the provider offers STT)
-///   - an LLM settings card (if the provider offers LLM)
-///
-/// Per-modality settings panels are deliberately small for now: only xAI
-/// exposes tuning knobs on the STT side. Other providers' cards make it
-/// explicit that there is no provider-specific setting to tweak yet.
-struct ProviderDetailView: View {
-    let entry: ProviderEntry
-    @EnvironmentObject private var aiService: AIService
-    @EnvironmentObject private var catalog: ProviderCatalog
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                credentialsSection
-                if entry.capabilities.contains(.stt) {
-                    sttSection
-                }
-                if entry.capabilities.contains(.llm) {
-                    llmSection
-                }
-            }
-            .padding(28)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Text(entry.displayName)
-                    .font(.title2.bold())
-                ForEach(entry.capabilities.sorted(), id: \.self) { cap in
-                    CapabilityBadge(capability: cap)
-                }
-                Spacer()
-                if catalog.isConfigured(entry) {
-                    HStack(spacing: 4) {
-                        Circle().fill(Color.green).frame(width: 8, height: 8)
-                        Text("Configured").font(.caption).foregroundColor(.secondary)
-                    }
-                }
-            }
-            Text(capabilityDescription)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private var credentialsSection: some View {
-        switch entry.credentialKind {
-        case .apiKey:
-            APIKeyCredentialView(entry: entry)
-        case .baseURL:
-            OllamaCredentialView()
-        case .commandTemplate:
-            LocalCLICredentialView()
-        case .baseURLAndModel:
-            CustomProviderCredentialView()
-        }
-    }
-
-    private var sttSection: some View {
-        ProviderSectionCard(title: "STT settings", systemImage: "waveform") {
-            sttSettingsContent
-        }
-    }
-
-    @ViewBuilder
-    private var sttSettingsContent: some View {
-        switch entry.id {
-        case .xai:
-            XAIAdvancedSettingsView()
-        default:
-            Text("No provider-specific STT settings.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var llmSection: some View {
-        ProviderSectionCard(title: "LLM settings", systemImage: "bubble.left.and.bubble.right") {
-            Text("Pick the active LLM model and prompt in the Enhancement tab.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var capabilityDescription: String {
-        let stt = entry.capabilities.contains(.stt)
-        let llm = entry.capabilities.contains(.llm)
-        if stt && llm { return "Speech-to-text and LLM enhancement." }
-        if stt        { return "Speech-to-text only." }
-        if llm        { return "LLM enhancement only." }
-        return ""
-    }
-}
-
-// MARK: - Section card
-
-struct ProviderSectionCard<Content: View>: View {
-    let title: String
-    let systemImage: String
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
-                Text(title)
-                    .font(.headline)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                content()
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(NSColor.windowBackgroundColor))
-        .cornerRadius(10)
-    }
-}
-
 // MARK: - API-key credentials
 
-private struct APIKeyCredentialView: View {
+/// Inline credential entry for any provider whose only secret is a single
+/// API key (most cloud providers).
+struct APIKeyCredentialView: View {
     let entry: ProviderEntry
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
@@ -149,16 +21,19 @@ private struct APIKeyCredentialView: View {
     }
 
     var body: some View {
-        ProviderSectionCard(title: "Credentials", systemImage: "key.fill") {
+        VStack(alignment: .leading, spacing: 10) {
+            credentialHeader(title: "API key", systemImage: "key.fill")
             if hasKey {
                 HStack {
-                    Text("API key configured")
+                    Text("Stored in Keychain")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                     Spacer()
                     Text("••••••••").foregroundColor(.secondary)
                     Button("Remove", role: .destructive) { removeKey() }
                 }
             } else {
-                SecureField("API key", text: $inputKey)
+                SecureField("Paste your API key", text: $inputKey)
                     .textFieldStyle(.roundedBorder)
                 HStack {
                     if let url = entry.signupURL {
@@ -216,7 +91,7 @@ private struct APIKeyCredentialView: View {
 
 // MARK: - Ollama credentials
 
-private struct OllamaCredentialView: View {
+struct OllamaCredentialView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
 
@@ -228,7 +103,8 @@ private struct OllamaCredentialView: View {
     @State private var selectedModel: String = UserDefaults.standard.string(forKey: "ollamaSelectedModel") ?? "mistral"
 
     var body: some View {
-        ProviderSectionCard(title: "Credentials", systemImage: "server.rack") {
+        VStack(alignment: .leading, spacing: 10) {
+            credentialHeader(title: "Server", systemImage: "server.rack")
             if isEditing {
                 HStack {
                     TextField("Base URL", text: $baseURL)
@@ -241,7 +117,9 @@ private struct OllamaCredentialView: View {
                 }
             } else {
                 HStack {
-                    Text("Server: \(baseURL)")
+                    Text("Endpoint: \(baseURL)")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.secondary)
                     Spacer()
                     Button("Edit") { isEditing = true }
                     Button {
@@ -267,6 +145,7 @@ private struct OllamaCredentialView: View {
                 Spacer()
                 Button("Refresh") { check() }.disabled(isChecking)
             }
+            .font(.system(size: 12))
 
             if !models.isEmpty {
                 Divider()
@@ -308,7 +187,7 @@ private struct OllamaCredentialView: View {
 
 // MARK: - Local CLI credentials
 
-private struct LocalCLICredentialView: View {
+struct LocalCLICredentialView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
 
@@ -319,11 +198,9 @@ private struct LocalCLICredentialView: View {
     private static let timeoutOptions: [Double] = [15, 30, 45, 60, 90, 120, 180, 300]
 
     var body: some View {
-        ProviderSectionCard(title: "Credentials", systemImage: "terminal") {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Command")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                credentialHeader(title: "Command", systemImage: "terminal")
                 Spacer()
                 Menu("Load template") {
                     ForEach(LocalCLITemplate.allCases) { template in
@@ -383,7 +260,7 @@ private struct LocalCLICredentialView: View {
 
 // MARK: - Custom OpenAI-compatible credentials
 
-private struct CustomProviderCredentialView: View {
+struct CustomProviderCredentialView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
 
@@ -398,7 +275,9 @@ private struct CustomProviderCredentialView: View {
     }
 
     var body: some View {
-        ProviderSectionCard(title: "Credentials", systemImage: "key.fill") {
+        VStack(alignment: .leading, spacing: 10) {
+            credentialHeader(title: "OpenAI-compatible endpoint", systemImage: "gearshape.2.fill")
+
             TextField("API endpoint URL", text: $aiService.customBaseURL,
                       prompt: Text("e.g. https://api.openai.com/v1/chat/completions"))
                 .textFieldStyle(.roundedBorder)
@@ -408,7 +287,7 @@ private struct CustomProviderCredentialView: View {
 
             if hasKey {
                 HStack {
-                    Text("API key set")
+                    Text("API key stored").font(.system(size: 12)).foregroundColor(.secondary)
                     Spacer()
                     Button("Remove", role: .destructive) {
                         APIKeyManager.shared.deleteAPIKey(forProvider: ProviderID.custom.rawValue)
@@ -467,5 +346,197 @@ private struct CustomProviderCredentialView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Local model lists (Whisper, Parakeet)
+
+/// Shows the model catalog for a local STT provider, with each variant
+/// rendered through the existing `ModelCardView` so download/delete/set-
+/// default flows are identical to the AI Models tab. Whisper additionally
+/// gets an "Import .bin" button that mirrors `ModelManagementView`.
+struct LocalModelsCredentialView: View {
+    let entry: ProviderEntry
+    @EnvironmentObject private var whisperModelManager: WhisperModelManager
+    @EnvironmentObject private var fluidAudioModelManager: FluidAudioModelManager
+    @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
+    @EnvironmentObject private var catalog: ProviderCatalog
+    @ObservedObject private var warmupCoordinator = WhisperModelWarmupCoordinator.shared
+
+    @State private var isShowingDeleteAlert = false
+    @State private var alertTitle = ""
+    @State private var alertMessage = ""
+    @State private var deleteActionClosure: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            credentialHeader(title: "Models", systemImage: "square.and.arrow.down.fill")
+            modelsList
+            if entry.id == .whisper {
+                importWhisperButton
+            }
+        }
+        .alert(isPresented: $isShowingDeleteAlert) {
+            Alert(
+                title: Text(alertTitle),
+                message: Text(alertMessage),
+                primaryButton: .destructive(Text("Delete"), action: deleteActionClosure),
+                secondaryButton: .cancel()
+            )
+        }
+    }
+
+    private var modelsList: some View {
+        VStack(spacing: 10) {
+            ForEach(filteredModels, id: \.id) { model in
+                let isWarming = (model as? WhisperModel).map { whisperModel in
+                    warmupCoordinator.isWarming(modelNamed: whisperModel.name)
+                } ?? false
+
+                ModelCardView(
+                    model: model,
+                    fluidAudioModelManager: fluidAudioModelManager,
+                    transcriptionModelManager: transcriptionModelManager,
+                    isDownloaded: whisperModelManager.availableModels.contains { $0.name == model.name },
+                    isCurrent: transcriptionModelManager.currentTranscriptionModel?.name == model.name,
+                    downloadProgress: whisperModelManager.downloadProgress,
+                    modelURL: whisperModelManager.availableModels.first { $0.name == model.name }?.url,
+                    isWarming: isWarming,
+                    deleteAction: { presentDeleteAlert(for: model) },
+                    setDefaultAction: {
+                        Task { transcriptionModelManager.setDefaultTranscriptionModel(model) }
+                    },
+                    downloadAction: {
+                        if let whisperModel = model as? WhisperModel {
+                            Task { await whisperModelManager.downloadModel(whisperModel) }
+                        }
+                    },
+                    editAction: nil
+                )
+            }
+        }
+    }
+
+    private var importWhisperButton: some View {
+        HStack(spacing: 8) {
+            Button(action: presentImportPanel) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.arrow.down")
+                    Text("Import local .bin model…")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(16)
+                .background(CardBackground(isSelected: false))
+                .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+
+            InfoTip(
+                "Add a custom fine-tuned whisper model. Select the downloaded .bin file.",
+                learnMoreURL: "https://tryvoiceink.com/docs/custom-local-whisper-models"
+            )
+            .help("Read more about custom local models")
+        }
+    }
+
+    private var filteredModels: [any TranscriptionModel] {
+        let targetProvider: ModelProvider
+        switch entry.id {
+        case .whisper:     targetProvider = .whisper
+        case .fluidAudio:  targetProvider = .fluidAudio
+        default:           return []
+        }
+        return transcriptionModelManager.allAvailableModels.filter {
+            $0.provider == targetProvider && transcriptionModelManager.isAvailableOnCurrentOS($0)
+        }
+    }
+
+    private func presentDeleteAlert(for model: any TranscriptionModel) {
+        if let downloaded = whisperModelManager.availableModels.first(where: { $0.name == model.name }) {
+            alertTitle = "Delete Model"
+            alertMessage = "Are you sure you want to delete '\(downloaded.name)'?"
+            deleteActionClosure = {
+                Task { await whisperModelManager.deleteModel(downloaded) }
+            }
+            isShowingDeleteAlert = true
+        }
+    }
+
+    private func presentImportPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "bin")!]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.resolvesAliases = true
+        panel.title = "Select a Whisper ggml .bin model"
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { @MainActor in
+                await whisperModelManager.importWhisperModel(from: url)
+            }
+        }
+    }
+}
+
+// MARK: - Built-in / no setup
+
+/// Card body for providers that need no setup — they are baked into the OS.
+struct BuiltInProviderInfoView: View {
+    let entry: ProviderEntry
+    @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            credentialHeader(title: "Installation", systemImage: "checkmark.seal.fill")
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No setup required")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Built into the operating system. Pick it as the active model in the AI Models tab.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if let appleModel = appleSpeechModel {
+                HStack {
+                    Text(appleModel.displayName).font(.system(size: 12))
+                    Spacer()
+                    if transcriptionModelManager.currentTranscriptionModel?.name == appleModel.name {
+                        Text("Active")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.green)
+                    } else {
+                        Button("Set as active") {
+                            Task { transcriptionModelManager.setDefaultTranscriptionModel(appleModel) }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private var appleSpeechModel: (any TranscriptionModel)? {
+        transcriptionModelManager.allAvailableModels.first {
+            $0.provider == .nativeApple
+        }
+    }
+}
+
+// MARK: - Helpers
+
+@ViewBuilder
+fileprivate func credentialHeader(title: String, systemImage: String) -> some View {
+    HStack(spacing: 6) {
+        Image(systemName: systemImage)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.secondary)
+        Text(title)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundColor(.secondary)
     }
 }

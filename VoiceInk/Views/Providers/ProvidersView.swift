@@ -1,98 +1,129 @@
 import SwiftUI
 
-/// Top-level Providers tab: lists every provider VoiceInk integrates with on
-/// the left, and shows credential entry + per-modality settings for the
-/// selected provider on the right.
+/// Providers tab: the single source of truth for credential and
+/// installation state across every provider VoiceInk integrates with —
+/// local on-device engines (Whisper, Parakeet, Native Apple, Ollama,
+/// Local CLI), cloud APIs (OpenAI, xAI, Groq, etc.), and the Custom
+/// OpenAI-compatible escape hatch.
 ///
-/// This view is the single source of truth for credential management.
-/// Active-model picking (which STT model to use, which LLM model to enhance
-/// with) remains in the "AI Models" and "Enhancement" tabs respectively —
-/// those tabs only pick from providers configured here.
+/// The visual language mirrors `ModelManagementView`: a header section, a
+/// pill-style filter switcher (All / Local / Cloud / Custom), and a
+/// vertically stacked list of cards — one per provider. Each card carries
+/// the provider's full configuration inline; there is no separate detail
+/// pane. Local providers expose their model list with download/delete
+/// inline, cloud providers expose API-key entry + capability-scoped
+/// settings, and Custom exposes a base URL + model + key form.
 struct ProvidersView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
-    @State private var selectedID: ProviderID?
+
+    @State private var selectedFilter: ProviderFilter = .all
 
     var body: some View {
-        HSplitView {
-            providerList
-                .frame(minWidth: 240, idealWidth: 260, maxWidth: 320)
-            detailPane
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .background(Color(NSColor.controlBackgroundColor))
-        .onAppear {
-            if selectedID == nil {
-                selectedID = catalog.entries.first?.id
-            }
-        }
-    }
-
-    private var providerList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(catalog.entries) { entry in
-                    Button {
-                        selectedID = entry.id
-                    } label: {
-                        ProviderRow(
-                            entry: entry,
-                            isSelected: entry.id == selectedID,
-                            isConfigured: catalog.isConfigured(entry)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
+            VStack(alignment: .leading, spacing: 20) {
+                headerSection
+                summaryCard
+                filterPills
+                providersList
             }
-            .padding(12)
+            .padding(40)
         }
-        .background(Color(NSColor.windowBackgroundColor))
+        .frame(minWidth: 600, minHeight: 500)
+        .background(Color(NSColor.controlBackgroundColor))
     }
 
-    @ViewBuilder
-    private var detailPane: some View {
-        if let id = selectedID, let entry = catalog.entry(for: id) {
-            ProviderDetailView(entry: entry)
-                .id(id)
-        } else {
-            Text("Select a provider")
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Providers")
+                .font(.headline)
                 .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text("\(configuredCount) of \(catalog.entries.count) providers configured")
+                .font(.title2)
+                .fontWeight(.bold)
         }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(CardBackground(isSelected: false))
+        .cornerRadius(10)
     }
-}
 
-private struct ProviderRow: View {
-    let entry: ProviderEntry
-    let isSelected: Bool
-    let isConfigured: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: isConfigured ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(isConfigured ? .green : .secondary)
-                .font(.system(size: 14))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(entry.displayName)
+    private var summaryCard: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundColor(.accentColor)
+                .font(.system(size: 14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("One place to manage every backend VoiceInk can talk to.")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                HStack(spacing: 4) {
-                    ForEach(entry.capabilities.sorted(), id: \.self) { cap in
-                        CapabilityBadge(capability: cap, compact: true)
+                Text("Pick the active STT model in AI Models, the active LLM in Enhancement. Both only show providers configured here.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.08))
+        .cornerRadius(8)
+    }
+
+    private var filterPills: some View {
+        HStack(spacing: 12) {
+            ForEach(ProviderFilter.allCases) { filter in
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        selectedFilter = filter
                     }
+                } label: {
+                    Text(filter.displayName)
+                        .font(.system(size: 14, weight: selectedFilter == filter ? .semibold : .medium))
+                        .foregroundColor(selectedFilter == filter ? .primary : .primary.opacity(0.7))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(CardBackground(isSelected: selectedFilter == filter, cornerRadius: 22))
                 }
+                .buttonStyle(.plain)
             }
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
-        )
+        .padding(.bottom, 4)
+    }
+
+    private var providersList: some View {
+        VStack(spacing: 14) {
+            ForEach(filteredEntries) { entry in
+                ProviderCardView(entry: entry)
+            }
+        }
+    }
+
+    private var filteredEntries: [ProviderEntry] {
+        switch selectedFilter {
+        case .all:    return catalog.entries
+        case .local:  return catalog.providers(in: .local)
+        case .cloud:  return catalog.providers(in: .cloud)
+        case .custom: return catalog.providers(in: .custom)
+        }
+    }
+
+    private var configuredCount: Int {
+        _ = catalog.configurationRevision
+        return catalog.entries.filter { catalog.isConfigured($0) }.count
     }
 }
+
+enum ProviderFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case local = "Local"
+    case cloud = "Cloud"
+    case custom = "Custom"
+
+    var id: String { rawValue }
+    var displayName: String { rawValue }
+}
+
+// MARK: - Shared capability badge
 
 struct CapabilityBadge: View {
     let capability: ProviderCapability
