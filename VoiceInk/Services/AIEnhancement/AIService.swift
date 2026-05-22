@@ -404,6 +404,30 @@ class AIService: ObservableObject {
         APIKeyManager.shared.deleteAPIKey(forProvider: selectedProvider.rawValue)
         NotificationCenter.default.post(name: .aiProviderKeyChanged, object: nil)
     }
+
+    /// Re-reads the API-key / configured state for `selectedProvider` from
+    /// the source of truth (Keychain, Ollama, or LocalCLI).
+    ///
+    /// Needed because the Providers tab can mutate credentials for any
+    /// provider — including the one that happens to be `selectedProvider` —
+    /// while this object's `apiKey` / `isAPIKeyValid` cache would otherwise
+    /// drift. The provider's `didSet` already does this on switch, but a
+    /// save/remove without a switch needs this manual nudge.
+    func refreshKeyStateForCurrentProvider() {
+        if selectedProvider.requiresAPIKey {
+            if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
+                apiKey = savedKey
+                isAPIKeyValid = true
+            } else {
+                apiKey = ""
+                isAPIKeyValid = false
+            }
+        } else {
+            apiKey = ""
+            isAPIKeyValid = selectedProvider == .localCLI ? localCLIService.isConfigured : true
+        }
+        objectWillChange.send()
+    }
     
     func checkOllamaConnection(completion: @escaping (Bool) -> Void) {
         Task { [weak self] in
