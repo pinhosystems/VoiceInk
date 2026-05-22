@@ -90,6 +90,9 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
     /// prompt persisted by an older build keeps its prior behavior (user's
     /// manual vocab only).
     let vocabularyDomains: [VocabularyDomain]
+    /// Coarse classification surfaced in the prompt picker. Legacy JSON
+    /// without the field decodes to `.writing`.
+    let category: PromptCategory
 
     init(
         id: UUID = UUID(),
@@ -101,7 +104,8 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         isPredefined: Bool = false,
         triggerWords: [String] = [],
         useSystemInstructions: Bool = true,
-        vocabularyDomains: [VocabularyDomain] = [.userVocabulary]
+        vocabularyDomains: [VocabularyDomain] = [.userVocabulary],
+        category: PromptCategory = .writing
     ) {
         self.id = id
         self.title = title
@@ -113,10 +117,11 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         self.triggerWords = triggerWords
         self.useSystemInstructions = useSystemInstructions
         self.vocabularyDomains = vocabularyDomains
+        self.category = category
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions, vocabularyDomains
+        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions, vocabularyDomains, category
     }
 
     init(from decoder: Decoder) throws {
@@ -131,6 +136,7 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         triggerWords = try container.decode([String].self, forKey: .triggerWords)
         useSystemInstructions = try container.decodeIfPresent(Bool.self, forKey: .useSystemInstructions) ?? true
         vocabularyDomains = try container.decodeIfPresent([VocabularyDomain].self, forKey: .vocabularyDomains) ?? [.userVocabulary]
+        category = try container.decodeIfPresent(PromptCategory.self, forKey: .category) ?? .writing
     }
     
     /// Renders the user-visible promptText through the system wrapper, with
