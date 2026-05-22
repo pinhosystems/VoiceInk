@@ -14,7 +14,6 @@ struct ModelSettingsView: View {
     private var transcriptionTimeoutSeconds: Double = CloudTranscriptionService.defaultTranscriptionTimeoutSeconds
     @State private var customPrompt: String = ""
     @State private var isEditing: Bool = false
-    @State private var isXAIAdvancedExpanded: Bool = false
 
     private static let transcriptionTimeoutOptions: [Double] = [30, 60, 120, 180, 300, 600, 900]
 
@@ -151,18 +150,6 @@ struct ModelSettingsView: View {
                 }
             }
 
-            Section {
-                DisclosureGroup(isExpanded: $isXAIAdvancedExpanded) {
-                    XAIAdvancedSettingsView()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("xAI Advanced")
-                        InfoTip("Tuning knobs specific to the xAI STT engine (Grok). Only takes effect when transcribing with an xAI model.")
-                    }
-                }
-            } header: {
-                Text("Provider Settings")
-            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

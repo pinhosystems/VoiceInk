@@ -3,12 +3,26 @@ import UniformTypeIdentifiers
 
 struct EnhancementSettingsView: View {
     @EnvironmentObject private var enhancementService: AIEnhancementService
+    @EnvironmentObject private var aiService: AIService
     @State private var isEditingPrompt = false
     @State private var isShowingSettings = false
     @State private var selectedPromptForEdit: CustomPrompt?
     @State private var panelID = UUID()
 
     private let panelWidth: CGFloat = 400
+
+    /// AIProviders that are LLM-capable AND have a usable credential. The
+    /// historical AIProvider enum still carries STT-only providers (ElevenLabs,
+    /// Deepgram, Soniox, Speechmatics, AssemblyAI) — none of them implement
+    /// real chat completion, so they are excluded here just like the legacy
+    /// APIKeyManagementView did.
+    private static let sttOnlyLLMAliases: Set<AIProvider> = [
+        .elevenLabs, .deepgram, .soniox, .speechmatics, .assemblyAI
+    ]
+
+    private var connectedLLMProviders: [AIProvider] {
+        aiService.connectedProviders.filter { !Self.sttOnlyLLMAliases.contains($0) }
+    }
 
     private enum PanelType {
         case promptEditor
@@ -71,7 +85,7 @@ struct EnhancementSettingsView: View {
                 }
             }
 
-            APIKeyManagementView()
+            llmProviderSection
                 .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.8)
 
             Section {
@@ -115,6 +129,10 @@ struct EnhancementSettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .onAppear { resetSelectedProviderIfDisconnected() }
+        .onReceive(NotificationCenter.default.publisher(for: .aiProviderKeyChanged)) { _ in
+            resetSelectedProviderIfDisconnected()
+        }
         .slidingPanel(isPresented: .init(
             get: { isPanelOpen },
             set: { newValue in
@@ -144,6 +162,136 @@ struct EnhancementSettingsView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 400)
+    }
+
+    @ViewBuilder
+    private var llmProviderSection: some View {
+        Section {
+            if connectedLLMProviders.isEmpty {
+                emptyProvidersView
+            } else {
+                Picker(selection: $aiService.selectedProvider) {
+                    ForEach(connectedLLMProviders, id: \.self) { provider in
+                        Text(provider.rawValue).tag(provider)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Provider")
+                        InfoTip("Only providers configured in the Providers tab show up here.")
+                    }
+                }
+                .pickerStyle(.menu)
+
+                modelControls
+            }
+        } header: {
+            Text("LLM")
+        }
+    }
+
+    @ViewBuilder
+    private var modelControls: some View {
+        switch aiService.selectedProvider {
+        case .openRouter:
+            if aiService.availableModels.isEmpty {
+                HStack {
+                    Text("No models loaded").foregroundColor(.secondary)
+                    Spacer()
+                    Button { Task { await aiService.fetchOpenRouterModels() } } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                }
+            } else {
+                HStack {
+                    Picker("Model", selection: Binding(
+                        get: { aiService.currentModel },
+                        set: { aiService.selectModel($0) }
+                    )) {
+                        ForEach(aiService.availableModels, id: \.self) { Text($0).tag($0) }
+                    }
+                    Button { Task { await aiService.fetchOpenRouterModels() } } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+        case .ollama:
+            if aiService.availableModels.isEmpty {
+                Text("No Ollama models found. Set the server up in Providers → Ollama.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Picker("Model", selection: Binding(
+                    get: { aiService.currentModel },
+                    set: { aiService.selectModel($0) }
+                )) {
+                    ForEach(aiService.availableModels, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.menu)
+            }
+        case .localCLI:
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Local CLI command runs for every enhancement.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("Edit the template in Providers → Local CLI.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        case .custom:
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Endpoint")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(aiService.customBaseURL.isEmpty ? "—" : aiService.customBaseURL)
+                        .font(.system(.caption, design: .monospaced))
+                }
+                HStack {
+                    Text("Model")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(aiService.customModel.isEmpty ? "—" : aiService.customModel)
+                        .font(.system(.caption, design: .monospaced))
+                }
+            }
+        default:
+            if !aiService.availableModels.isEmpty {
+                Picker("Model", selection: Binding(
+                    get: { aiService.currentModel },
+                    set: { aiService.selectModel($0) }
+                )) {
+                    ForEach(aiService.availableModels, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.menu)
+            }
+        }
+    }
+
+    private var emptyProvidersView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No LLM provider configured.")
+                .font(.subheadline)
+            Text("Open the Providers tab and add an API key, base URL, or command template.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Button("Open Providers") {
+                NotificationCenter.default.post(
+                    name: .navigateToDestination,
+                    object: nil,
+                    userInfo: ["destination": "Providers"]
+                )
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func resetSelectedProviderIfDisconnected() {
+        let connected = connectedLLMProviders
+        guard !connected.isEmpty else { return }
+        if !connected.contains(aiService.selectedProvider),
+           let fallback = connected.first {
+            aiService.selectedProvider = fallback
+        }
     }
 }
 
