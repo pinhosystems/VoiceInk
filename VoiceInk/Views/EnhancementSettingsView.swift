@@ -238,22 +238,7 @@ struct EnhancementSettingsView: View {
                     .foregroundColor(.secondary)
             }
         case .custom:
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Endpoint")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(aiService.customBaseURL.isEmpty ? "—" : aiService.customBaseURL)
-                        .font(.system(.caption, design: .monospaced))
-                }
-                HStack {
-                    Text("Model")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(aiService.customModel.isEmpty ? "—" : aiService.customModel)
-                        .font(.system(.caption, design: .monospaced))
-                }
-            }
+            customLLMControls
         default:
             if !aiService.availableModels.isEmpty {
                 Picker("Model", selection: Binding(
@@ -283,6 +268,57 @@ struct EnhancementSettingsView: View {
             }
             .controlSize(.small)
         }
+    }
+
+    @ViewBuilder
+    private var customLLMControls: some View {
+        let llmCustoms = CustomProviderManager.shared.providers(offering: .llm).filter { provider in
+            APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
+        }
+        if llmCustoms.isEmpty {
+            Text("No custom LLM providers configured. Add one in Providers → Custom.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        } else {
+            Picker(selection: Binding(
+                get: { aiService.selectedCustomLLMProviderID ?? llmCustoms.first?.id ?? UUID() },
+                set: { id in
+                    aiService.selectedCustomLLMProviderID = id
+                }
+            )) {
+                ForEach(llmCustoms, id: \.id) { provider in
+                    Text(provider.name).tag(provider.id)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Custom provider")
+                    InfoTip("Pick which user-defined custom LLM provider to use for enhancement. Add or edit them in Providers → Custom.")
+                }
+            }
+            .pickerStyle(.menu)
+
+            if let active = activeCustomLLM {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Endpoint").foregroundColor(.secondary)
+                        Spacer()
+                        Text(active.llmEndpointURL.isEmpty ? "—" : active.llmEndpointURL)
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                    HStack {
+                        Text("Model").foregroundColor(.secondary)
+                        Spacer()
+                        Text(active.llmModelName.isEmpty ? "—" : active.llmModelName)
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                }
+            }
+        }
+    }
+
+    private var activeCustomLLM: CustomProvider? {
+        guard let id = aiService.selectedCustomLLMProviderID else { return nil }
+        return CustomProviderManager.shared.provider(for: id)
     }
 
     private func resetSelectedProviderIfDisconnected() {

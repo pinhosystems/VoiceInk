@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import LLMkit
 
@@ -190,10 +191,27 @@ class AIService: ObservableObject {
             userDefaults.set(customModel, forKey: "customProviderModel")
         }
     }
+    /// Which user-defined `CustomProvider` is the currently active LLM
+    /// custom. `nil` means "no custom LLM picked yet" — in that state
+    /// `selectedProvider == .custom` is considered unconfigured.
+    @Published var selectedCustomLLMProviderID: UUID? {
+        didSet {
+            if let id = selectedCustomLLMProviderID {
+                userDefaults.set(id.uuidString, forKey: "selectedCustomLLMProviderID")
+            } else {
+                userDefaults.removeObject(forKey: "selectedCustomLLMProviderID")
+            }
+            if selectedProvider == .custom {
+                syncFromActiveCustomLLM()
+            }
+        }
+    }
     @Published var selectedProvider: AIProvider {
         didSet {
             userDefaults.set(selectedProvider.rawValue, forKey: "selectedAIProvider")
-            if selectedProvider.requiresAPIKey {
+            if selectedProvider == .custom {
+                syncFromActiveCustomLLM()
+            } else if selectedProvider.requiresAPIKey {
                 if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
                     self.apiKey = savedKey
                     self.isAPIKeyValid = true
@@ -214,24 +232,70 @@ class AIService: ObservableObject {
             NotificationCenter.default.post(name: .AppSettingsDidChange, object: nil)
         }
     }
-    
+
     @Published private var selectedModels: [AIProvider: String] = [:]
     private let userDefaults = UserDefaults.standard
     private lazy var ollamaService = OllamaService()
     private lazy var localCLIService = LocalCLIService()
-    
+
     @Published private var openRouterModels: [String] = []
-    
+    private var customProvidersCancellable: AnyCancellable?
+
     var connectedProviders: [AIProvider] {
         AIProvider.allCases.filter { provider in
             if provider == .ollama {
                 return ollamaService.isConnected
             } else if provider == .localCLI {
                 return localCLIService.isConfigured
+            } else if provider == .custom {
+                // .custom is connected when at least one LLM-capable
+                // CustomProvider has a Keychain entry stored under its
+                // UUID-scoped key.
+                return CustomProviderManager.shared.providers(offering: .llm).contains {
+                    APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
+                }
             } else if provider.requiresAPIKey {
                 return APIKeyManager.shared.hasAPIKey(forProvider: provider.rawValue)
             }
             return false
+        }
+    }
+
+    /// Pull the active custom LLM provider's URL/model/key into the
+    /// `customBaseURL`/`customModel`/`apiKey` published cache so existing
+    /// consumers (AIEnhancementService routing via `AIProvider.custom.baseURL`,
+    /// the Enhancement picker display) work without provider-specific
+    /// branching.
+    func syncFromActiveCustomLLM() {
+        guard selectedProvider == .custom else { return }
+        let manager = CustomProviderManager.shared
+        let provider: CustomProvider?
+        if let id = selectedCustomLLMProviderID {
+            provider = manager.provider(for: id)
+        } else {
+            // Auto-select the first LLM-capable custom that has a key.
+            provider = manager.providers(offering: .llm).first {
+                APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
+            }
+            if let auto = provider {
+                selectedCustomLLMProviderID = auto.id
+                return // didSet re-enters and finishes the sync
+            }
+        }
+
+        if let p = provider, p.offersLLM {
+            customBaseURL = p.llmEndpointURL
+            customModel = p.llmModelName
+            if let key = APIKeyManager.shared.getCustomModelAPIKey(forModelId: p.id), !key.isEmpty {
+                apiKey = key
+                isAPIKeyValid = true
+            } else {
+                apiKey = ""
+                isAPIKeyValid = false
+            }
+        } else {
+            apiKey = ""
+            isAPIKeyValid = false
         }
     }
     
@@ -281,7 +345,14 @@ class AIService: ObservableObject {
             self.selectedProvider = .gemini
         }
 
-        if selectedProvider.requiresAPIKey {
+        if let raw = userDefaults.string(forKey: "selectedCustomLLMProviderID"),
+           let id = UUID(uuidString: raw) {
+            self.selectedCustomLLMProviderID = id
+        }
+
+        if selectedProvider == .custom {
+            // Will pull from active CustomProvider once init returns.
+        } else if selectedProvider.requiresAPIKey {
             if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
                 self.apiKey = savedKey
                 self.isAPIKeyValid = true
@@ -292,6 +363,19 @@ class AIService: ObservableObject {
 
         loadSavedModelSelections()
         loadSavedOpenRouterModels()
+
+        if selectedProvider == .custom {
+            syncFromActiveCustomLLM()
+        }
+
+        // Track edits to the active custom provider so the LLM enhancement
+        // path always sees the latest endpoint URL / model / API key.
+        customProvidersCancellable = CustomProviderManager.shared.$providers
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self, self.selectedProvider == .custom else { return }
+                self.syncFromActiveCustomLLM()
+            }
     }
     
     private func loadSavedModelSelections() {
@@ -406,7 +490,8 @@ class AIService: ObservableObject {
     }
 
     /// Re-reads the API-key / configured state for `selectedProvider` from
-    /// the source of truth (Keychain, Ollama, or LocalCLI).
+    /// the source of truth (Keychain, Ollama, LocalCLI, or — for .custom —
+    /// the active `CustomProvider`).
     ///
     /// Needed because the Providers tab can mutate credentials for any
     /// provider — including the one that happens to be `selectedProvider` —
@@ -414,7 +499,9 @@ class AIService: ObservableObject {
     /// drift. The provider's `didSet` already does this on switch, but a
     /// save/remove without a switch needs this manual nudge.
     func refreshKeyStateForCurrentProvider() {
-        if selectedProvider.requiresAPIKey {
+        if selectedProvider == .custom {
+            syncFromActiveCustomLLM()
+        } else if selectedProvider.requiresAPIKey {
             if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
                 apiKey = savedKey
                 isAPIKeyValid = true
