@@ -11,7 +11,6 @@ class AudioTranscriptionService: ObservableObject {
 
     private let modelContext: ModelContext
     private let enhancementService: AIEnhancementService?
-    private let promptDetectionService = PromptDetectionService()
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "AudioTranscriptionService")
     private let serviceRegistry: TranscriptionServiceRegistry
 
@@ -82,22 +81,21 @@ class AudioTranscriptionService: ObservableObject {
             
             let permanentURLString = permanentURL.absoluteString
 
-            // Apply prompt detection for trigger words
+            // Retry path: skip trigger-word prompt detection so the LLM call
+            // honours the user's *current* profile. The detection service is
+            // for hands-free first-pass dictation ("hey assistant, do X") —
+            // when the user clicks Retry in History they have already picked
+            // a model and profile in the UI; re-running detection on the
+            // same audio would silently override that choice (e.g. with the
+            // Assistant prompt that triggered the original run).
             let originalText = cleanedText
-            var promptDetectionResult: PromptDetectionService.PromptDetectionResult? = nil
-
-            if let enhancementService = enhancementService, enhancementService.isConfigured {
-                let detectionResult = await promptDetectionService.analyzeText(text, with: enhancementService)
-                promptDetectionResult = detectionResult
-                await promptDetectionService.applyDetectionResult(detectionResult, to: enhancementService)
-            }
 
             // Apply AI enhancement if enabled
             if let enhancementService = enhancementService,
                enhancementService.isEnhancementEnabled,
                enhancementService.isConfigured {
                 do {
-                    let textForAI = promptDetectionResult?.processedText ?? text
+                    let textForAI = text
                     let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(textForAI)
                     let newTranscription = Transcription(
                         text: originalText,
@@ -121,12 +119,6 @@ class AudioTranscriptionService: ObservableObject {
                         NotificationCenter.default.post(name: .transcriptionCompleted, object: newTranscription)
                     } catch {
                         logger.error("❌ Failed to save transcription: \(error.localizedDescription, privacy: .public)")
-                    }
-
-                    // Restore original prompt settings if AI was temporarily enabled
-                    if let result = promptDetectionResult,
-                       result.shouldEnableAI {
-                        await promptDetectionService.restoreOriginalSettings(result, to: enhancementService)
                     }
 
                     await MainActor.run {
