@@ -139,105 +139,139 @@ struct CustomProviderCardView: View {
     }
 
     private var editorBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            identitySection
-            capabilitiesSection
-            if draft.offersSTT { sttFieldsSection }
-            if draft.offersLLM { llmFieldsSection }
-            apiKeySection
-            HStack {
-                Spacer()
-                Button("Delete provider", role: .destructive) {
-                    confirmDelete = true
-                }
-                .controlSize(.small)
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            identityBlock
+            sttBlock
+            llmBlock
+            credentialsBlock
+            deleteFooter
         }
     }
 
-    private var identitySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader(title: "Identity", systemImage: "person.text.rectangle")
-            TextField("Name (shown in pickers)", text: $draft.name,
-                      prompt: Text("e.g. Local Llama gateway"))
+    // MARK: - Identity
+
+    private var identityBlock: some View {
+        EditorBlock(title: "Identity", systemImage: "person.text.rectangle", tint: .secondary) {
+            FieldLabel("Name", help: "Shown in the Providers list and in Enhancement's Custom picker.")
+            TextField("", text: $draft.name, prompt: Text("e.g. Local Llama gateway"))
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: draft.name) { _, _ in persist() }
-            TextField("Description (optional)", text: $draft.summary,
-                      prompt: Text("Short note shown on the card"))
+
+            FieldLabel("Description", help: "Optional. Appears on the card below the name.")
+            TextField("", text: $draft.summary, prompt: Text("Short note about this provider"))
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: draft.summary) { _, _ in persist() }
         }
     }
 
-    private var capabilitiesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader(title: "Capabilities", systemImage: "checklist")
-            Toggle(isOn: $draft.offersSTT) {
-                Text("Speech-to-text")
-            }
-            .toggleStyle(.switch)
-            .onChange(of: draft.offersSTT) { _, _ in persist() }
+    // MARK: - STT block
 
-            Toggle(isOn: $draft.offersLLM) {
-                Text("LLM enhancement")
+    private var sttBlock: some View {
+        EditorBlock(
+            title: "Speech-to-text",
+            systemImage: "waveform",
+            tint: .blue,
+            headerTrailing: {
+                AnyView(
+                    Toggle("", isOn: $draft.offersSTT)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .onChange(of: draft.offersSTT) { _, _ in persist() }
+                )
             }
-            .toggleStyle(.switch)
-            .onChange(of: draft.offersLLM) { _, _ in persist() }
-        }
-    }
+        ) {
+            if draft.offersSTT {
+                FieldLabel("Transcription URL")
+                TextField("", text: $draft.sttEndpointURL,
+                          prompt: Text("https://api.openai.com/v1/audio/transcriptions"))
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: draft.sttEndpointURL) { _, _ in persist() }
 
-    private var sttFieldsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader(title: "STT endpoint", systemImage: "waveform")
-            TextField("Transcription URL", text: $draft.sttEndpointURL,
-                      prompt: Text("e.g. https://api.openai.com/v1/audio/transcriptions"))
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: draft.sttEndpointURL) { _, _ in persist() }
-            TextField("STT model name", text: $draft.sttModelName,
-                      prompt: Text("e.g. whisper-1"))
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: draft.sttModelName) { _, _ in persist() }
-            Toggle(isOn: $draft.isMultilingual) {
-                HStack(spacing: 4) {
-                    Text("Multilingual")
-                    InfoTip("When on, the language picker offers every supported language. When off, the model is treated as English-only.")
+                FieldLabel("STT model")
+                TextField("", text: $draft.sttModelName, prompt: Text("e.g. whisper-1"))
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: draft.sttModelName) { _, _ in persist() }
+
+                Toggle(isOn: $draft.isMultilingual) {
+                    HStack(spacing: 4) {
+                        Text("Multilingual")
+                            .font(.system(size: 12))
+                        InfoTip("On: language picker offers every supported language. Off: model is treated as English-only.")
+                    }
                 }
+                .toggleStyle(.switch)
+                .onChange(of: draft.isMultilingual) { _, _ in persist() }
+                .padding(.top, 2)
+            } else {
+                Text("Turn on to expose this provider as a transcription model in AI Models.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             }
-            .toggleStyle(.switch)
-            .onChange(of: draft.isMultilingual) { _, _ in persist() }
         }
     }
 
-    private var llmFieldsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader(title: "LLM endpoint", systemImage: "bubble.left.and.bubble.right")
-            TextField("Chat completions URL", text: $draft.llmEndpointURL,
-                      prompt: Text("e.g. https://api.openai.com/v1/chat/completions"))
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: draft.llmEndpointURL) { _, _ in persist() }
-            TextField("LLM model name", text: $draft.llmModelName,
-                      prompt: Text("e.g. gpt-5.4, claude-opus-4-7"))
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: draft.llmModelName) { _, _ in persist() }
+    // MARK: - LLM block
+
+    private var llmBlock: some View {
+        EditorBlock(
+            title: "LLM enhancement",
+            systemImage: "bubble.left.and.bubble.right",
+            tint: .purple,
+            headerTrailing: {
+                AnyView(
+                    Toggle("", isOn: $draft.offersLLM)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .onChange(of: draft.offersLLM) { _, _ in persist() }
+                )
+            }
+        ) {
+            if draft.offersLLM {
+                FieldLabel("Chat completions URL")
+                TextField("", text: $draft.llmEndpointURL,
+                          prompt: Text("https://api.openai.com/v1/chat/completions"))
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: draft.llmEndpointURL) { _, _ in persist() }
+
+                FieldLabel("LLM model")
+                TextField("", text: $draft.llmModelName,
+                          prompt: Text("e.g. gpt-5.4, claude-opus-4-7"))
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: draft.llmModelName) { _, _ in persist() }
+            } else {
+                Text("Turn on to use this provider for enhancement in the Enhancement tab.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
         }
     }
 
-    private var apiKeySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader(title: "Credentials", systemImage: "key.fill")
+    // MARK: - Credentials block
+
+    private var credentialsBlock: some View {
+        EditorBlock(title: "Credentials", systemImage: "key.fill", tint: .orange) {
             if hasKey {
                 HStack {
-                    Text("API key stored")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("API key stored")
+                            .font(.system(size: 12))
+                    }
                     Spacer()
                     Text("••••••••").foregroundColor(.secondary)
                     Button("Remove", role: .destructive) { removeKey() }
                 }
             } else {
-                SecureField("API key", text: $apiKeyInput)
+                FieldLabel("API key", help: "Same key is used for STT and LLM when both are enabled.")
+                SecureField("", text: $apiKeyInput, prompt: Text("Paste the secret here"))
                     .textFieldStyle(.roundedBorder)
                 HStack {
+                    if !canVerify {
+                        Text(verifyDisabledHint)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                     Button {
                         verifyAndSave()
@@ -250,28 +284,45 @@ struct CustomProviderCardView: View {
         }
     }
 
-    private var canVerify: Bool {
-        guard !apiKeyInput.isEmpty else { return false }
-        if draft.offersLLM {
-            guard !draft.llmEndpointURL.isEmpty, !draft.llmModelName.isEmpty else { return false }
-            return true
+    // MARK: - Delete footer
+
+    private var deleteFooter: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
+            HStack {
+                Spacer()
+                Button("Delete provider", role: .destructive) {
+                    confirmDelete = true
+                }
+                .controlSize(.small)
+            }
+            .padding(.top, 10)
         }
-        if draft.offersSTT {
-            guard !draft.sttEndpointURL.isEmpty, !draft.sttModelName.isEmpty else { return false }
-            return true
-        }
-        return false
     }
 
-    private func sectionHeader(title: String, systemImage: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary)
+    private var canVerify: Bool {
+        guard !apiKeyInput.isEmpty else { return false }
+        guard draft.offersSTT || draft.offersLLM else { return false }
+        if draft.offersLLM, draft.llmEndpointURL.isEmpty || draft.llmModelName.isEmpty {
+            return false
         }
+        if draft.offersSTT, draft.sttEndpointURL.isEmpty || draft.sttModelName.isEmpty {
+            return false
+        }
+        return true
+    }
+
+    private var verifyDisabledHint: String {
+        if !draft.offersSTT && !draft.offersLLM {
+            return "Enable Speech-to-text or LLM enhancement first."
+        }
+        if draft.offersLLM, draft.llmEndpointURL.isEmpty || draft.llmModelName.isEmpty {
+            return "Fill in the LLM endpoint and model."
+        }
+        if draft.offersSTT, draft.sttEndpointURL.isEmpty || draft.sttModelName.isEmpty {
+            return "Fill in the STT endpoint and model."
+        }
+        return ""
     }
 
     // MARK: - Actions
@@ -331,5 +382,83 @@ struct CustomProviderCardView: View {
         }
         catalog.markChanged()
         NotificationCenter.default.post(name: .aiProviderKeyChanged, object: nil)
+    }
+}
+
+// MARK: - Visual building blocks
+
+/// Visually distinct sub-section inside a custom provider card. Each block
+/// carries an icon + title row, an optional trailing control (used for the
+/// STT/LLM capability toggles), and a tinted rounded body so STT, LLM and
+/// Credentials are easy to tell apart at a glance.
+private struct EditorBlock<Content: View>: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    var headerTrailing: (() -> AnyView)?
+    @ViewBuilder var content: () -> Content
+
+    init(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        headerTrailing: (() -> AnyView)? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.tint = tint
+        self.headerTrailing = headerTrailing
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(tint)
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                if let trailing = headerTrailing {
+                    trailing()
+                }
+            }
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(tint.opacity(0.22), lineWidth: 1)
+        )
+        .cornerRadius(10)
+    }
+}
+
+/// Field label rendered above its input. Optional help text appears as a
+/// secondary line so users see the constraint without hovering an InfoTip.
+private struct FieldLabel: View {
+    let text: String
+    let help: String?
+
+    init(_ text: String, help: String? = nil) {
+        self.text = text
+        self.help = help
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+            if let help = help {
+                Text(help)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.75))
+            }
+        }
     }
 }
