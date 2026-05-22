@@ -19,6 +19,7 @@ struct ProvidersView: View {
     @State private var selectedFilter: ProviderFilter = .all
     @State private var searchText: String = ""
     @State private var capabilityFilter: Set<ProviderCapability> = []
+    @State private var statusFilter: ProviderStatusFilter = .all
     @State private var expandedIDs: Set<ProviderID> = []
     @State private var expandedCustomIDs: Set<UUID> = []
 
@@ -98,6 +99,7 @@ struct ProvidersView: View {
             HStack(spacing: 10) {
                 searchField
                 capabilityChips
+                statusChips
             }
         }
     }
@@ -111,6 +113,25 @@ struct ProvidersView: View {
                     toggle: { toggleCapability(capability) }
                 )
             }
+        }
+    }
+
+    private var statusChips: some View {
+        HStack(spacing: 6) {
+            StatusFilterChip(
+                label: "Configured",
+                systemImage: "checkmark.circle.fill",
+                tint: .green,
+                isOn: statusFilter == .configured,
+                toggle: { toggleStatus(.configured) }
+            )
+            StatusFilterChip(
+                label: "Needs setup",
+                systemImage: "exclamationmark.circle.fill",
+                tint: .orange,
+                isOn: statusFilter == .needsSetup,
+                toggle: { toggleStatus(.needsSetup) }
+            )
         }
     }
 
@@ -246,6 +267,7 @@ struct ProvidersView: View {
         return pool.filter { entry in
             matchesSearch(entry.displayName, trimmed: trimmed)
                 && matchesCapability(entry.capabilities)
+                && matchesStatus(isConfigured: catalog.isConfigured(entry))
         }
     }
 
@@ -256,7 +278,14 @@ struct ProvidersView: View {
         return pool.filter { provider in
             matchesSearch(provider.name, trimmed: trimmed)
                 && matchesCapability(provider.capabilities)
+                && matchesStatus(isConfigured: isCustomConfigured(provider))
         }
+    }
+
+    private func isCustomConfigured(_ provider: CustomProvider) -> Bool {
+        _ = catalog.configurationRevision
+        guard provider.offersSTT || provider.offersLLM else { return false }
+        return APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil
     }
 
     private func matchesSearch(_ name: String, trimmed: String) -> Bool {
@@ -280,6 +309,21 @@ struct ProvidersView: View {
         } else {
             capabilityFilter.insert(capability)
         }
+    }
+
+    /// Three-state status filter behind two chips. Clicking the active chip
+    /// turns it off (back to "all"); clicking the other chip swaps the
+    /// selection. Both chips off means "no constraint".
+    private func matchesStatus(isConfigured: Bool) -> Bool {
+        switch statusFilter {
+        case .all:        return true
+        case .configured: return isConfigured
+        case .needsSetup: return !isConfigured
+        }
+    }
+
+    private func toggleStatus(_ option: ProviderStatusFilter) {
+        statusFilter = (statusFilter == option) ? .all : option
     }
 
     private var shouldShowAddCustom: Bool {
@@ -346,6 +390,12 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
     var displayName: String { rawValue }
 }
 
+enum ProviderStatusFilter {
+    case all
+    case configured
+    case needsSetup
+}
+
 // MARK: - Capability filter chip
 
 private struct CapabilityFilterChip: View {
@@ -382,6 +432,40 @@ private struct CapabilityFilterChip: View {
         case .stt: return .blue
         case .llm: return .purple
         }
+    }
+}
+
+// MARK: - Status filter chip
+
+private struct StatusFilterChip: View {
+    let label: String
+    let systemImage: String
+    let tint: Color
+    let isOn: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .foregroundColor(isOn ? tint : .secondary)
+            .background(
+                Capsule()
+                    .fill(isOn ? tint.opacity(0.16) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isOn ? tint.opacity(0.5) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(isOn ? "Showing only \(label.lowercased()) providers" : "Filter to \(label.lowercased()) providers")
     }
 }
 
