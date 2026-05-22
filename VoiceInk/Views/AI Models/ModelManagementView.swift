@@ -4,7 +4,6 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum ModelFilter: String, CaseIterable, Identifiable {
-    case recommended = "Recommended"
     case local = "Local"
     case cloud = "Cloud"
     case custom = "Custom"
@@ -20,7 +19,7 @@ struct ModelManagementView: View {
     @StateObject private var whisperPrompt = WhisperPrompt()
     @ObservedObject private var warmupCoordinator = WhisperModelWarmupCoordinator.shared
 
-    @State private var selectedFilter: ModelFilter = .recommended
+    @State private var selectedFilter: ModelFilter = .local
     @State private var isShowingSettings = false
 
     private let settingsPanelWidth: CGFloat = 400
@@ -224,8 +223,6 @@ struct ModelManagementView: View {
 
     private var emptyMessage: String {
         switch selectedFilter {
-        case .recommended:
-            return "No recommended models are downloaded yet. Install one in Providers → Local."
         case .local:
             return "No local models installed. Download a Whisper or Parakeet model in Providers → Local."
         case .cloud:
@@ -288,15 +285,6 @@ struct ModelManagementView: View {
     private var filteredModels: [any TranscriptionModel] {
         let usableOnly = transcriptionModelManager.allAvailableModels.filter { isUsable($0) }
         switch selectedFilter {
-        case .recommended:
-            let order = ["ggml-base.en", "parakeet-tdt-0.6b-v2", "ggml-large-v3-turbo-q5_0", "whisper-large-v3-turbo"]
-            return usableOnly
-                .filter { order.contains($0.name) }
-                .sorted { (m1, m2) in
-                    let i1 = order.firstIndex(of: m1.name) ?? Int.max
-                    let i2 = order.firstIndex(of: m2.name) ?? Int.max
-                    return i1 < i2
-                }
         case .local:
             return usableOnly.filter {
                 ($0.provider == .whisper || $0.provider == .nativeApple || $0.provider == .fluidAudio)

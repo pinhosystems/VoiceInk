@@ -368,6 +368,17 @@ struct LocalModelsCredentialView: View {
     @State private var alertMessage = ""
     @State private var deleteActionClosure: () -> Void = {}
 
+    /// Curated set of model names worth recommending to first-time users.
+    /// Surfaced here (next to download buttons) instead of as a separate
+    /// filter pill on the AI Models tab — the recommendation lives where
+    /// the action lives.
+    private static let recommendedNames: Set<String> = [
+        "ggml-base.en",
+        "parakeet-tdt-0.6b-v2",
+        "ggml-large-v3-turbo-q5_0",
+        "whisper-large-v3-turbo"
+    ]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             credentialHeader(title: "Models", systemImage: "square.and.arrow.down.fill")
@@ -388,33 +399,59 @@ struct LocalModelsCredentialView: View {
 
     private var modelsList: some View {
         VStack(spacing: 10) {
-            ForEach(filteredModels, id: \.id) { model in
-                let isWarming = (model as? WhisperModel).map { whisperModel in
-                    warmupCoordinator.isWarming(modelNamed: whisperModel.name)
-                } ?? false
-
-                ModelCardView(
-                    model: model,
-                    fluidAudioModelManager: fluidAudioModelManager,
-                    transcriptionModelManager: transcriptionModelManager,
-                    isDownloaded: whisperModelManager.availableModels.contains { $0.name == model.name },
-                    isCurrent: transcriptionModelManager.currentTranscriptionModel?.name == model.name,
-                    downloadProgress: whisperModelManager.downloadProgress,
-                    modelURL: whisperModelManager.availableModels.first { $0.name == model.name }?.url,
-                    isWarming: isWarming,
-                    deleteAction: { presentDeleteAlert(for: model) },
-                    setDefaultAction: {
-                        Task { transcriptionModelManager.setDefaultTranscriptionModel(model) }
-                    },
-                    downloadAction: {
-                        if let whisperModel = model as? WhisperModel {
-                            Task { await whisperModelManager.downloadModel(whisperModel) }
-                        }
-                    },
-                    editAction: nil
-                )
+            ForEach(sortedModels, id: \.id) { model in
+                modelRow(for: model)
             }
         }
+    }
+
+    @ViewBuilder
+    private func modelRow(for model: any TranscriptionModel) -> some View {
+        let isWarming = (model as? WhisperModel).map { whisperModel in
+            warmupCoordinator.isWarming(modelNamed: whisperModel.name)
+        } ?? false
+
+        ModelCardView(
+            model: model,
+            fluidAudioModelManager: fluidAudioModelManager,
+            transcriptionModelManager: transcriptionModelManager,
+            isDownloaded: whisperModelManager.availableModels.contains { $0.name == model.name },
+            isCurrent: transcriptionModelManager.currentTranscriptionModel?.name == model.name,
+            downloadProgress: whisperModelManager.downloadProgress,
+            modelURL: whisperModelManager.availableModels.first { $0.name == model.name }?.url,
+            isWarming: isWarming,
+            deleteAction: { presentDeleteAlert(for: model) },
+            setDefaultAction: {
+                Task { transcriptionModelManager.setDefaultTranscriptionModel(model) }
+            },
+            downloadAction: {
+                if let whisperModel = model as? WhisperModel {
+                    Task { await whisperModelManager.downloadModel(whisperModel) }
+                }
+            },
+            editAction: nil
+        )
+        .overlay(alignment: .topTrailing) {
+            if Self.recommendedNames.contains(model.name) {
+                Text("Recommended")
+                    .font(.system(size: 9, weight: .semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.18))
+                    .foregroundColor(.accentColor)
+                    .cornerRadius(4)
+                    .padding(10)
+            }
+        }
+    }
+
+    private var sortedModels: [any TranscriptionModel] {
+        // Push recommended variants to the top of the list — the rest keep
+        // the registry's natural order.
+        let pool = filteredModels
+        let recommended = pool.filter { Self.recommendedNames.contains($0.name) }
+        let others = pool.filter { !Self.recommendedNames.contains($0.name) }
+        return recommended + others
     }
 
     private var importWhisperButton: some View {
