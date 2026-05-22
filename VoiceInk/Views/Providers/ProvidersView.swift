@@ -14,10 +14,12 @@ import SwiftUI
 struct ProvidersView: View {
     @EnvironmentObject private var aiService: AIService
     @EnvironmentObject private var catalog: ProviderCatalog
+    @ObservedObject private var customManager = CustomProviderManager.shared
 
     @State private var selectedFilter: ProviderFilter = .all
     @State private var searchText: String = ""
     @State private var expandedIDs: Set<ProviderID> = []
+    @State private var expandedCustomIDs: Set<UUID> = []
 
     var body: some View {
         ScrollView {
@@ -38,7 +40,7 @@ struct ProvidersView: View {
             Text("Providers")
                 .font(.headline)
                 .foregroundColor(.secondary)
-            Text("\(configuredCount) of \(catalog.entries.count) providers configured")
+            Text("\(configuredCount) of \(totalProviderCount) providers configured")
                 .font(.title2)
                 .fontWeight(.bold)
         }
@@ -131,27 +133,29 @@ struct ProvidersView: View {
             Button("Expand all") {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedIDs = Set(filteredEntries.map { $0.id })
+                    expandedCustomIDs = Set(filteredCustomProviders.map { $0.id })
                 }
             }
             .controlSize(.small)
             .buttonStyle(.borderless)
-            .disabled(filteredEntries.isEmpty)
+            .disabled(filteredEntries.isEmpty && filteredCustomProviders.isEmpty)
 
             Button("Collapse all") {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     expandedIDs.removeAll()
+                    expandedCustomIDs.removeAll()
                 }
             }
             .controlSize(.small)
             .buttonStyle(.borderless)
-            .disabled(expandedIDs.isEmpty)
+            .disabled(expandedIDs.isEmpty && expandedCustomIDs.isEmpty)
         }
         .font(.system(size: 12))
     }
 
     @ViewBuilder
     private var providersList: some View {
-        if filteredEntries.isEmpty {
+        if filteredEntries.isEmpty && filteredCustomProviders.isEmpty && !shouldShowAddCustom {
             emptyState
         } else {
             VStack(spacing: 12) {
@@ -162,8 +166,37 @@ struct ProvidersView: View {
                         onToggleExpand: { toggleExpanded(entry.id) }
                     )
                 }
+                ForEach(filteredCustomProviders) { provider in
+                    CustomProviderCardView(
+                        provider: provider,
+                        isExpanded: expandedCustomIDs.contains(provider.id),
+                        onToggleExpand: { toggleCustomExpanded(provider.id) }
+                    )
+                }
+                if shouldShowAddCustom {
+                    addCustomButton
+                }
             }
         }
+    }
+
+    private var addCustomButton: some View {
+        Button {
+            addCustomProvider()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 16))
+                Text("Add custom provider")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(CardBackground(isSelected: false))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
     }
 
     private var emptyState: some View {
@@ -191,16 +224,39 @@ struct ProvidersView: View {
         case .all:    pool = catalog.entries
         case .local:  pool = catalog.providers(in: .local)
         case .cloud:  pool = catalog.providers(in: .cloud)
-        case .custom: pool = catalog.providers(in: .custom)
+        case .custom: pool = []  // statics never live under Custom
         }
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return pool }
         return pool.filter { $0.displayName.localizedCaseInsensitiveContains(trimmed) }
     }
 
+    private var filteredCustomProviders: [CustomProvider] {
+        guard selectedFilter == .all || selectedFilter == .custom else { return [] }
+        let pool = customManager.providers
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return pool }
+        return pool.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+    }
+
+    private var shouldShowAddCustom: Bool {
+        guard selectedFilter == .all || selectedFilter == .custom else { return false }
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty
+    }
+
     private var configuredCount: Int {
         _ = catalog.configurationRevision
-        return catalog.entries.filter { catalog.isConfigured($0) }.count
+        let staticCount = catalog.entries.filter { catalog.isConfigured($0) }.count
+        let customCount = customManager.providers.filter { provider in
+            APIKeyManager.shared.getCustomModelAPIKey(forModelId: provider.id) != nil &&
+            (provider.offersSTT || provider.offersLLM)
+        }.count
+        return staticCount + customCount
+    }
+
+    private var totalProviderCount: Int {
+        catalog.entries.count + customManager.providers.count
     }
 
     private func toggleExpanded(_ id: ProviderID) {
@@ -211,6 +267,29 @@ struct ProvidersView: View {
                 expandedIDs.insert(id)
             }
         }
+    }
+
+    private func toggleCustomExpanded(_ id: UUID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if expandedCustomIDs.contains(id) {
+                expandedCustomIDs.remove(id)
+            } else {
+                expandedCustomIDs.insert(id)
+            }
+        }
+    }
+
+    private func addCustomProvider() {
+        let newProvider = CustomProvider(
+            name: "Untitled custom",
+            offersSTT: false,
+            offersLLM: true,
+            llmEndpointURL: "",
+            llmModelName: ""
+        )
+        CustomProviderManager.shared.add(newProvider)
+        expandedCustomIDs.insert(newProvider.id)
+        catalog.markChanged()
     }
 }
 

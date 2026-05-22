@@ -244,13 +244,10 @@ final class ProviderCatalog: ObservableObject {
                   summary: "Grok speech-to-text (streaming + REST) and chat models.",
                   iconSystemName: "sparkles"),
 
-            // MARK: - Custom
-            .init(id: .custom, displayName: "Custom", category: .custom,
-                  capabilities: [.llm], credentialKind: .baseURLAndModel,
-                  aiProviderRaw: "Custom", modelProviderRaw: nil,
-                  signupURL: nil,
-                  summary: "Point VoiceInk at any OpenAI-compatible chat completions endpoint.",
-                  iconSystemName: "gearshape.2.fill"),
+            // Custom providers are user-defined and live in
+            // `CustomProviderManager`; the Providers tab renders each as its
+            // own card alongside the static catalog. They are intentionally
+            // absent from this static list.
         ]
     }
 }
