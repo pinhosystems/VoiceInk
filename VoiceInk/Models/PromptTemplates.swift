@@ -47,44 +47,28 @@ enum PromptTemplates {
             TemplatePrompt(
                 id: UUID(),
                 title: "System Default",
-                promptText: """
-                    - Clean <TRANSCRIPT>: fix grammar/spelling, drop fillers, collapse repetitions, resolve self-corrections.
-                    - Honor "new line"/"new paragraph". Format lists when speaker counts or enumerates.
-                    - Output only the cleaned text. No new facts.
-                    """,
+                promptText: "Clean <TRANSCRIPT>: fix grammar, drop fillers, collapse repetitions, resolve self-corrections, format lists when enumerated. Output only the cleaned text.",
                 icon: "checkmark.seal.fill",
                 description: "Default cleanup"
             ),
             TemplatePrompt(
                 id: UUID(),
                 title: "Chat",
-                promptText: """
-                    - Rewrite <TRANSCRIPT> as a short informal chat message.
-                    - Keep emojis. Expand only ambiguous shorthand (pq, vc, tb).
-                    - No greetings, sign-offs, or commentary.
-                    """,
+                promptText: "Rewrite <TRANSCRIPT> as a short informal chat message. Keep emojis. No greetings or sign-offs.",
                 icon: "bubble.left.and.bubble.right.fill",
                 description: "Casual chat-style formatting"
             ),
             TemplatePrompt(
                 id: UUID(),
                 title: "Email",
-                promptText: """
-                    - Rewrite <TRANSCRIPT> as an email: greeting, 2–4 sentence body, closing. Match the <TRANSCRIPT> language for both.
-                    - Friendly tone unless <TRANSCRIPT> is clearly professional.
-                    - Keep all facts, names, dates, action items. Never invent.
-                    """,
+                promptText: "Rewrite <TRANSCRIPT> as an email: greeting, 2–4 sentence body, closing. Match the <TRANSCRIPT> language. Friendly tone unless clearly professional. Keep all facts, names, dates, action items.",
                 icon: "envelope.fill",
                 description: "Professional email formatting"
             ),
             TemplatePrompt(
                 id: UUID(),
                 title: "Rewrite",
-                promptText: """
-                    - Rewrite <TRANSCRIPT> with better clarity and flow; preserve meaning, tone, facts.
-                    - Fix grammar, drop fillers, format any lists.
-                    - Output only the rewritten text.
-                    """,
+                promptText: "Rewrite <TRANSCRIPT> with better clarity and flow. Preserve meaning, tone, and facts. Output only the rewritten text.",
                 icon: "pencil.circle.fill",
                 description: "Rewrite with better clarity"
             )
