@@ -47,6 +47,26 @@ struct APICallLog: Codable, Hashable {
 
     var steps: [Step] = []
 
+    /// Appends `step` to `steps`, then evicts oldest LLM steps (and Local
+    /// CLI steps, treated symmetrically since they share the enhancement
+    /// slot) until at most `maxLLMSteps` of them remain. STT steps are
+    /// never evicted — they anchor the fixture to the source audio call.
+    mutating func appendCappingEnhancement(_ step: Step, maxLLMSteps: Int = 5) {
+        steps.append(step)
+        let enhancementKinds: Set<Kind> = [.llm, .localCLI]
+        var enhancementIndices = steps.enumerated()
+            .filter { enhancementKinds.contains($0.element.kind) }
+            .map(\.offset)
+        while enhancementIndices.count > maxLLMSteps {
+            let evict = enhancementIndices.removeFirst()
+            steps.remove(at: evict)
+            // Indices shift left after a removal; rebuild from scratch.
+            enhancementIndices = steps.enumerated()
+                .filter { enhancementKinds.contains($0.element.kind) }
+                .map(\.offset)
+        }
+    }
+
     // MARK: - JSON helpers
 
     func encoded() -> String? {

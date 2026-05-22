@@ -379,6 +379,7 @@ struct AudioPlayerView: View {
     @State private var isReEnhancing = false
     @State private var bannerState: BannerState?
     @State private var showPromptPopover = false
+    @State private var showPowerModePopover = false
     @EnvironmentObject private var engine: VoiceInkEngine
     @EnvironmentObject private var enhancementService: AIEnhancementService
     @Environment(\.modelContext) private var modelContext
@@ -432,10 +433,19 @@ struct AudioPlayerView: View {
                         action: { showPromptPopover.toggle() }
                     )
                     .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.4)
-                    .help("Select enhancement prompt")
+                    .help("Select enhancement prompt (applied to next Re-analyze / Retranscribe)")
                     .popover(isPresented: $showPromptPopover, arrowEdge: .bottom) {
                         EnhancementPromptPopover()
                             .environmentObject(enhancementService)
+                    }
+
+                    CircleIconButton(
+                        icon: "bolt.fill",
+                        action: { showPowerModePopover.toggle() }
+                    )
+                    .help("Select Power Mode profile (applied to next Re-analyze / Retranscribe)")
+                    .popover(isPresented: $showPowerModePopover, arrowEdge: .bottom) {
+                        PowerModePopover()
                     }
 
                     CircleIconButton(
@@ -456,7 +466,7 @@ struct AudioPlayerView: View {
                         action: retranscribeAudio
                     )
                     .disabled(isOperationInProgress)
-                    .help("Retranscribe this audio")
+                    .help("Retranscribe this audio (creates a new history record)")
 
                     if transcription != nil {
                         AsyncCircleButton(
@@ -467,7 +477,7 @@ struct AudioPlayerView: View {
                         )
                         .disabled(isOperationInProgress || !enhancementService.isEnhancementEnabled || !enhancementService.isConfigured)
                         .opacity(enhancementService.isEnhancementEnabled && enhancementService.isConfigured ? 1.0 : 0.4)
-                        .help("Re-enhance with selected prompt")
+                        .help("Re-analyze (overwrites this record's enhancement with the selected prompt / profile)")
                     }
 
                     if let onInfoTap {
@@ -544,6 +554,25 @@ struct AudioPlayerView: View {
                     transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
                     transcription.promptName = promptName
                     transcription.enhancementDuration = enhancementDuration
+
+                    // Re-analyze overwrites the record's enhancement; mirror that
+                    // in the troubleshooting log by appending the new LLM step,
+                    // capped so a heavy iteration session doesn't explode the
+                    // fixture. The STT entry is preserved untouched.
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        var log = APICallLog.decoded(from: transcription.troubleshootingLogJSON) ?? APICallLog()
+                        log.appendCappingEnhancement(llmStep)
+                        transcription.troubleshootingLogJSON = log.encoded()
+                    }
+
+                    // Refresh the power-mode label so the history row's pill
+                    // reflects the profile that just ran.
+                    let active = PowerModeManager.shared.currentActiveConfiguration
+                    if active?.isEnabled == true {
+                        transcription.powerModeName = active?.name
+                        transcription.powerModeEmoji = active?.emoji
+                    }
+
                     try? modelContext.save()
 
                     isReEnhancing = false
@@ -551,6 +580,15 @@ struct AudioPlayerView: View {
                 }
             } catch {
                 await MainActor.run {
+                    // Capture failed-attempt steps too — they're the most
+                    // useful entries when the user is iterating on a broken
+                    // prompt.
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        var log = APICallLog.decoded(from: transcription.troubleshootingLogJSON) ?? APICallLog()
+                        log.appendCappingEnhancement(llmStep)
+                        transcription.troubleshootingLogJSON = log.encoded()
+                        try? modelContext.save()
+                    }
                     isReEnhancing = false
                     showTemporaryBanner(.reEnhanceError(error.localizedDescription))
                 }
