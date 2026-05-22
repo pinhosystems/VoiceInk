@@ -514,6 +514,38 @@ private struct HistoryCardRow: View {
         return false
     }
 
+    /// Trimmed power-mode label. Returns nil when the name is missing or
+    /// blank so we don't render a hollow pill containing only the emoji.
+    private var powerModeLabel: String? {
+        guard let raw = transcription.powerModeName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        return raw
+    }
+
+    @ViewBuilder
+    private func metadataPill(icon: String?, emoji: String?, text: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            if let emoji, !emoji.isEmpty {
+                Text(emoji)
+                    .font(.system(size: 10))
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(tint)
+            }
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(tint)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule().fill(tint.opacity(0.12))
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
@@ -525,9 +557,29 @@ private struct HistoryCardRow: View {
                 .labelsHidden()
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(transcription.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Text(transcription.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        if let powerModeText = powerModeLabel {
+                            metadataPill(
+                                icon: nil,
+                                emoji: transcription.powerModeEmoji,
+                                text: powerModeText,
+                                tint: .blue
+                            )
+                        }
+
+                        if let promptName = transcription.promptName, !promptName.isEmpty {
+                            metadataPill(
+                                icon: "sparkles",
+                                emoji: nil,
+                                text: promptName,
+                                tint: .purple
+                            )
+                        }
+                    }
 
                     if !isExpanded {
                         Text(transcription.enhancedText ?? transcription.text)
