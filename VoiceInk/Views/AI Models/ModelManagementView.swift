@@ -4,6 +4,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum ModelFilter: String, CaseIterable, Identifiable {
+    case all = "All"
     case local = "Local"
     case cloud = "Cloud"
     case custom = "Custom"
@@ -19,7 +20,7 @@ struct ModelManagementView: View {
     @StateObject private var whisperPrompt = WhisperPrompt()
     @ObservedObject private var warmupCoordinator = WhisperModelWarmupCoordinator.shared
 
-    @State private var selectedFilter: ModelFilter = .local
+    @State private var selectedFilter: ModelFilter = .all
     @State private var isShowingSettings = false
 
     private let settingsPanelWidth: CGFloat = 400
@@ -223,6 +224,8 @@ struct ModelManagementView: View {
 
     private var emptyMessage: String {
         switch selectedFilter {
+        case .all:
+            return "No transcription models available yet. Install a local model or add an API key in Providers."
         case .local:
             return "No local models installed. Download a Whisper or Parakeet model in Providers → Local."
         case .cloud:
@@ -285,6 +288,8 @@ struct ModelManagementView: View {
     private var filteredModels: [any TranscriptionModel] {
         let usableOnly = transcriptionModelManager.allAvailableModels.filter { isUsable($0) }
         switch selectedFilter {
+        case .all:
+            return usableOnly.filter { transcriptionModelManager.isAvailableOnCurrentOS($0) }
         case .local:
             return usableOnly.filter {
                 ($0.provider == .whisper || $0.provider == .nativeApple || $0.provider == .fluidAudio)
