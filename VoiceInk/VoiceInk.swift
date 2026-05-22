@@ -192,6 +192,7 @@ struct VoiceInkApp: App {
                 DictionaryService.runDedupeMigrationIfNeeded(context: mainContext)
             }
             TranscriptionAutoCleanupService.shared.startMonitoring(modelContext: mainContext)
+            TranscriptionLogRetentionService.shared.start(modelContext: mainContext)
         }
     }
 

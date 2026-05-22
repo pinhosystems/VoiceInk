@@ -25,6 +25,11 @@ final class Transcription {
     var powerModeName: String?
     var powerModeEmoji: String?
     var transcriptionStatus: String?
+    /// JSON-encoded `APICallLog` capturing every outbound API call that
+    /// produced this transcription (STT + LLM + Local CLI). Tokens are
+    /// never stored — see `APICallLog`'s docstring. Subject to retention
+    /// pruning by `TranscriptionLogRetentionService`.
+    var troubleshootingLogJSON: String?
 
     init(text: String,
          duration: TimeInterval,
@@ -39,7 +44,8 @@ final class Transcription {
          aiRequestUserMessage: String? = nil,
          powerModeName: String? = nil,
          powerModeEmoji: String? = nil,
-         transcriptionStatus: TranscriptionStatus = .pending) {
+         transcriptionStatus: TranscriptionStatus = .pending,
+         troubleshootingLogJSON: String? = nil) {
         self.id = UUID()
         self.text = text
         self.enhancedText = enhancedText
@@ -56,5 +62,6 @@ final class Transcription {
         self.powerModeName = powerModeName
         self.powerModeEmoji = powerModeEmoji
         self.transcriptionStatus = transcriptionStatus.rawValue
+        self.troubleshootingLogJSON = troubleshootingLogJSON
     }
 }

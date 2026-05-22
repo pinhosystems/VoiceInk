@@ -88,6 +88,10 @@ class AIEnhancementService: ObservableObject {
 
     @Published var lastSystemMessageSent: String?
     @Published var lastUserMessageSent: String?
+    /// Most recent LLM call expressed as an `APICallLog.Step`. Picked up
+    /// by the orchestrators (TranscriptionPipeline / retranscribeAudio)
+    /// and attached to the Transcription's troubleshooting fixture.
+    @Published var lastLLMCallStep: APICallLog.Step?
 
     var activePrompt: CustomPrompt? {
         allPrompts.first { $0.id == selectedPromptId }
@@ -302,40 +306,97 @@ class AIEnhancementService: ObservableObject {
         await MainActor.run {
             self.lastSystemMessageSent = systemMessage
             self.lastUserMessageSent = formattedText
+            // Seed a fresh log step so a downstream throw still ends up
+            // attached to the transcription with the error captured below.
+            self.lastLLMCallStep = APICallLog.Step(
+                kind: .llm,
+                provider: aiService.selectedProvider.rawValue,
+                providerVariant: nil,
+                endpointHost: nil,
+                model: aiService.currentModel,
+                languageCode: nil,
+                requestSummary: nil,
+                requestSystemMessage: systemMessage,
+                requestUserMessage: formattedText,
+                responseSummary: nil,
+                durationMs: nil,
+                errorMessage: nil
+            )
         }
 
-        if aiService.selectedProvider == .ollama {
+        let provider = aiService.selectedProvider
+        let model = aiService.currentModel
+        let endpointHost = APICallLog.host(from: provider.baseURL)
+        let variant: String = {
+            switch provider {
+            case .ollama: return "Local server"
+            case .localCLI: return "Local CLI"
+            case .custom: return "Custom (OpenAI-compatible)"
+            default: return "Cloud"
+            }
+        }()
+        let startedAt = Date()
+
+        func record(response: String?, error: String?) async {
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            await MainActor.run {
+                self.lastLLMCallStep = APICallLog.Step(
+                    kind: .llm,
+                    provider: provider.rawValue,
+                    providerVariant: variant,
+                    endpointHost: endpointHost,
+                    model: model,
+                    languageCode: nil,
+                    requestSummary: nil,
+                    requestSystemMessage: systemMessage,
+                    requestUserMessage: formattedText,
+                    responseSummary: response,
+                    durationMs: durationMs,
+                    errorMessage: error
+                )
+            }
+        }
+
+        if provider == .ollama {
             do {
                 let result = try await aiService.enhanceWithOllama(
                     text: formattedText,
                     systemPrompt: systemMessage,
                     timeout: baseTimeout
                 )
-                return AIEnhancementOutputFilter.filter(result)
+                let filtered = AIEnhancementOutputFilter.filter(result)
+                await record(response: filtered, error: nil)
+                return filtered
             } catch {
+                let mapped: EnhancementError
                 if let localError = error as? LocalAIError {
                     switch localError {
-                    case .timeout:
-                        throw EnhancementError.timeout
-                    default:
-                        throw EnhancementError.customError(localError.errorDescription ?? "An unknown Ollama error occurred.")
+                    case .timeout: mapped = .timeout
+                    default: mapped = .customError(localError.errorDescription ?? "An unknown Ollama error occurred.")
                     }
                 } else {
-                    throw EnhancementError.customError(error.localizedDescription)
+                    mapped = .customError(error.localizedDescription)
                 }
+                await record(response: nil, error: mapped.errorDescription)
+                throw mapped
             }
         }
 
-        if aiService.selectedProvider == .localCLI {
+        if provider == .localCLI {
             do {
                 let result = try await aiService.enhanceWithLocalCLI(systemPrompt: systemMessage, userPrompt: formattedText)
-                return AIEnhancementOutputFilter.filter(result)
+                let filtered = AIEnhancementOutputFilter.filter(result)
+                await record(response: filtered, error: nil)
+                return filtered
             } catch {
+                let mapped: EnhancementError
                 if let localError = error as? LocalCLIError {
-                    throw EnhancementError.customError(localError.errorDescription ?? "An unknown Local CLI error occurred.")
+                    mapped = .customError(localError.errorDescription ?? "An unknown Local CLI error occurred.")
                 } else {
-                    throw EnhancementError.customError(error.localizedDescription)
+                    mapped = .customError(error.localizedDescription)
                 }
+                await record(response: nil, error: mapped.errorDescription)
+                throw mapped
             }
         }
 
@@ -343,32 +404,28 @@ class AIEnhancementService: ObservableObject {
 
         do {
             let result: String
-            switch aiService.selectedProvider {
+            switch provider {
             case .anthropic:
                 result = try await AnthropicLLMClient.chatCompletion(
                     apiKey: aiService.apiKey,
-                    model: aiService.currentModel,
+                    model: model,
                     messages: [.user(formattedText)],
                     systemPrompt: systemMessage,
                     timeout: baseTimeout
                 )
             default:
-                guard let baseURL = URL(string: aiService.selectedProvider.baseURL) else {
-                    throw EnhancementError.customError("\(aiService.selectedProvider.rawValue) has an invalid API endpoint URL. Please update it in AI settings.")
+                guard let baseURL = URL(string: provider.baseURL) else {
+                    let mapped = EnhancementError.customError("\(provider.rawValue) has an invalid API endpoint URL. Please update it in AI settings.")
+                    await record(response: nil, error: mapped.errorDescription)
+                    throw mapped
                 }
-                let temperature = aiService.currentModel.lowercased().hasPrefix("gpt-5") ? 1.0 : 0.3
-                let reasoningEffort = ReasoningConfig.getReasoningParameter(
-                    for: aiService.selectedProvider,
-                    modelName: aiService.currentModel
-                )
-                let extraBody = ReasoningConfig.getExtraBodyParameters(
-                    for: aiService.selectedProvider,
-                    modelName: aiService.currentModel
-                )
+                let temperature = model.lowercased().hasPrefix("gpt-5") ? 1.0 : 0.3
+                let reasoningEffort = ReasoningConfig.getReasoningParameter(for: provider, modelName: model)
+                let extraBody = ReasoningConfig.getExtraBodyParameters(for: provider, modelName: model)
                 result = try await OpenAILLMClient.chatCompletion(
                     baseURL: baseURL,
                     apiKey: aiService.apiKey,
-                    model: aiService.currentModel,
+                    model: model,
                     messages: [.user(formattedText)],
                     systemPrompt: systemMessage,
                     temperature: temperature,
@@ -377,13 +434,20 @@ class AIEnhancementService: ObservableObject {
                     timeout: baseTimeout
                 )
             }
-            return AIEnhancementOutputFilter.filter(result.trimmingCharacters(in: .whitespacesAndNewlines))
+            let filtered = AIEnhancementOutputFilter.filter(result.trimmingCharacters(in: .whitespacesAndNewlines))
+            await record(response: filtered, error: nil)
+            return filtered
         } catch let error as LLMKitError {
-            throw mapLLMKitError(error)
+            let mapped = mapLLMKitError(error)
+            await record(response: nil, error: mapped.errorDescription)
+            throw mapped
         } catch let error as EnhancementError {
+            await record(response: nil, error: error.errorDescription)
             throw error
         } catch {
-            throw EnhancementError.customError(error.localizedDescription)
+            let mapped = EnhancementError.customError(error.localizedDescription)
+            await record(response: nil, error: mapped.errorDescription)
+            throw mapped
         }
     }
 

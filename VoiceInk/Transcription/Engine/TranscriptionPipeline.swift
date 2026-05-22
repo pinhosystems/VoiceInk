@@ -104,6 +104,15 @@ class TranscriptionPipeline {
             transcription.powerModeEmoji = powerModeEmoji
             finalPastedText = cleanedText
 
+            var apiLog = APICallLog()
+            apiLog.steps.append(makeSTTStep(
+                model: model,
+                language: selectedLanguage,
+                durationMs: Int(transcriptionDuration * 1000),
+                response: cleanedText,
+                error: nil
+            ))
+
             if let enhancementService, enhancementService.isConfigured {
                 let detectionResult = await promptDetectionService.analyzeText(text, with: enhancementService)
                 promptDetectionResult = detectionResult
@@ -132,10 +141,16 @@ class TranscriptionPipeline {
                     transcription.enhancementDuration = enhancementDuration
                     transcription.aiRequestSystemMessage = enhancementService.lastSystemMessageSent
                     transcription.aiRequestUserMessage = enhancementService.lastUserMessageSent
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
+                    }
                     finalPastedText = enhancedText
                 } catch {
                     let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     transcription.enhancedText = "Enhancement failed: \(errorDescription)"
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
+                    }
                     let shortReason = String(errorDescription.prefix(80))
                     await MainActor.run {
                         NotificationManager.shared.showNotification(
@@ -148,6 +163,7 @@ class TranscriptionPipeline {
             }
 
             transcription.transcriptionStatus = TranscriptionStatus.completed.rawValue
+            transcription.troubleshootingLogJSON = apiLog.encoded()
         } catch {
             let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
 
@@ -178,6 +194,15 @@ class TranscriptionPipeline {
 
             transcription.text = "Transcription Failed: \(errorDescription)"
             transcription.transcriptionStatus = TranscriptionStatus.failed.rawValue
+            var failureLog = APICallLog()
+            failureLog.steps.append(makeSTTStep(
+                model: model,
+                language: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+                durationMs: 0,
+                response: nil,
+                error: errorDescription
+            ))
+            transcription.troubleshootingLogJSON = failureLog.encoded()
         }
 
         func saveTranscriptionAndPostCompletion() {
@@ -248,5 +273,42 @@ class TranscriptionPipeline {
         }
 
         saveTranscriptionAndPostCompletion()
+    }
+
+    /// Builds the STT entry that goes into `Transcription.troubleshootingLogJSON`.
+    /// The endpoint host comes from `CloudProviderRegistry` when the model
+    /// is cloud-backed; local models report only their provider name.
+    func makeSTTStep(
+        model: any TranscriptionModel,
+        language: String?,
+        durationMs: Int,
+        response: String?,
+        error: String?
+    ) -> APICallLog.Step {
+        let providerName = model.provider.rawValue
+        let isLocal = model.provider == .whisper
+            || model.provider == .fluidAudio
+            || model.provider == .nativeApple
+        let variant = isLocal ? "Local" : "Cloud"
+        let host: String? = isLocal ? nil : CloudProviderRegistry.provider(for: model.provider).flatMap { provider in
+            // Cloud providers don't expose their endpoint here; surface just
+            // the providerKey so the log keeps a stable identifier without
+            // leaking signed URLs.
+            return provider.providerKey
+        }
+        return APICallLog.Step(
+            kind: .stt,
+            provider: providerName,
+            providerVariant: variant,
+            endpointHost: host,
+            model: model.name,
+            languageCode: language,
+            requestSummary: "audio bytes (\(durationMs)ms transcription)",
+            requestSystemMessage: nil,
+            requestUserMessage: nil,
+            responseSummary: response,
+            durationMs: durationMs,
+            errorMessage: error
+        )
     }
 }
