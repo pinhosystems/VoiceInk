@@ -2,10 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- CFBundleDisplayName is set via INFOPLIST_KEY_CFBundleDisplayName in
+	     project.pbxproj ("VoiceInk" in this fork). Setting it here too
+	     would create an ambiguous merge at build time. -->
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
+	<!-- Upstream appcast intentionally disabled in this fork. The pinhosystems
+	     build does NOT pull updates from Beingpax/VoiceInk — that feed publishes
+	     a different binary (different signature, no pt-BR pipeline) and would
+	     replace this app on auto-update. Leaving the key as an empty string is
+	     enough for Sparkle to short-circuit any background check. -->
 	<key>SUFeedURL</key>
-	<string>https://beingpax.github.io/VoiceInk/appcast.xml</string>
+	<string></string>
 	<key>SUPublicEDKey</key>
 	<string>rLRdZIjK3gHKfqNlAF9nT7FbjwSvwkJ8BVn0v2mD1Mo=</string>
 	<key>LSUIElement</key>
