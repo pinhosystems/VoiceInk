@@ -8,6 +8,7 @@ enum ViewType: String, CaseIterable, Identifiable {
     case metrics = "Dashboard"
     case transcribeAudio = "Transcribe Audio"
     case history = "History"
+    case providers = "Providers"
     case models = "AI Models"
     case enhancement = "Enhancement"
     case powerMode = "Power Mode"
@@ -24,6 +25,7 @@ enum ViewType: String, CaseIterable, Identifiable {
         case .metrics: return "gauge.medium"
         case .transcribeAudio: return "waveform.circle.fill"
         case .history: return "doc.text.fill"
+        case .providers: return "powerplug.fill"
         case .models: return "brain.head.profile"
         case .enhancement: return "wand.and.stars"
         case .powerMode: return "sparkles.square.fill.on.square"
@@ -146,6 +148,8 @@ struct ContentView: View {
                 switch destination {
                 case "Settings":
                     selectedView = .settings
+                case "Providers":
+                    selectedView = .providers
                 case "AI Models":
                     selectedView = .models
                 case "VoiceInk Pro":
@@ -172,6 +176,8 @@ struct ContentView: View {
         switch viewType {
         case .metrics:
             MetricsView()
+        case .providers:
+            ProvidersView()
         case .models:
             ModelManagementView()
         case .enhancement:
