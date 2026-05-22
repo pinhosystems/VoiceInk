@@ -35,10 +35,12 @@ if [ "${1:-}" = "--force" ]; then
     FORCE=1
 fi
 
-# Detect existing identity. `security find-identity -p codesigning -v`
-# prints "  1) <SHA> \"<name>\"" lines; we just need the name match.
+# Detect existing identity. Self-signed code-signing certs come up as
+# `CSSMERR_TP_NOT_TRUSTED` under `find-identity -v` even though codesign
+# accepts them for signing (trust matters only for verifying), so the
+# probe omits `-v` and matches on the certificate's common name.
 existing_identity() {
-    security find-identity -p codesigning -v "${KEYCHAIN}" 2>/dev/null \
+    security find-identity -p codesigning "${KEYCHAIN}" 2>/dev/null \
         | grep -F "\"${CERT_NAME}\"" || true
 }
 
@@ -86,17 +88,23 @@ openssl req -x509 -newkey rsa:2048 -nodes \
     -days "${VALID_DAYS}" \
     -config "${TMP_DIR}/openssl.cnf" 2>/dev/null
 
+# macOS `security import` silently fails on PKCS#12 archives that carry
+# an empty password — give the bundle a throwaway non-empty passphrase
+# that lives only inside this script run, then hand the same string to
+# the importer below.
+P12_PASS="setup-local-signing"
+
 openssl pkcs12 -export -legacy \
     -inkey "${TMP_DIR}/key.pem" \
     -in "${TMP_DIR}/cert.pem" \
     -name "${CERT_NAME}" \
     -out "${TMP_DIR}/bundle.p12" \
-    -passout pass: 2>/dev/null
+    -passout "pass:${P12_PASS}" 2>/dev/null
 
 log "Importing into login keychain (granting codesign tool access)"
 security import "${TMP_DIR}/bundle.p12" \
     -k "${KEYCHAIN}" \
-    -P "" \
+    -P "${P12_PASS}" \
     -T /usr/bin/codesign \
     -T /usr/bin/security \
     -T /usr/bin/productbuild \

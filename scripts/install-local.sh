@@ -33,7 +33,10 @@ warn() { printf "\033[1;33m!\033[0m %s\n" "$*"; }
 # rebuilds, so TCC grants persist and we can skip the destructive
 # tccutil reset below.
 has_stable_signing_identity() {
-    security find-identity -p codesigning -v "${LOGIN_KEYCHAIN}" 2>/dev/null \
+    # Drop `-v` so self-signed identities (CSSMERR_TP_NOT_TRUSTED) still
+    # match — `codesign` accepts them for signing even when they aren't
+    # trusted for verification.
+    security find-identity -p codesigning "${LOGIN_KEYCHAIN}" 2>/dev/null \
         | grep -qF "\"${LOCAL_SIGNING_IDENTITY}\""
 }
 

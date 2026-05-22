@@ -65,7 +65,7 @@ build: setup
 local: check setup
 	@echo "Building VoiceInk for local use..."
 	@rm -rf "$(LOCAL_DERIVED_DATA)"
-	@if security find-identity -p codesigning -v "${HOME}/Library/Keychains/login.keychain-db" 2>/dev/null | grep -qF "\"$(LOCAL_SIGNING_IDENTITY)\""; then \
+	@if security find-identity -p codesigning "${HOME}/Library/Keychains/login.keychain-db" 2>/dev/null | grep -qF "\"$(LOCAL_SIGNING_IDENTITY)\""; then \
 		echo "Signing with stable identity: $(LOCAL_SIGNING_IDENTITY)"; \
 		SIGN_IDENTITY="$(LOCAL_SIGNING_IDENTITY)"; \
 		SIGN_REQUIRED="YES"; \
