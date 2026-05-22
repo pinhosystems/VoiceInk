@@ -12,6 +12,19 @@ CODE_SIGN_STYLE = Manual
 DEVELOPMENT_TEAM =
 PROVISIONING_PROFILE_SPECIFIER =
 
+// Hardened Runtime is auto-enabled by Xcode when a real signing
+// identity is present — but a self-signed cert has no TeamIdentifier,
+// and Hardened Runtime forbids loading dylibs whose TeamIdentifier
+// differs from the host process. The main binary and Swift debug
+// dylib both end up "TeamIdentifier=not set", which the loader treats
+// as distinct per-binary values, so the app crashes at launch with:
+//   Library not loaded: @rpath/VoiceInk.debug.dylib
+//   ... mapping process and mapped file have different Team IDs
+// Hardened Runtime is irrelevant for a local dev build, so we turn
+// it off explicitly here (Xcode would otherwise re-enable it because
+// CODE_SIGN_IDENTITY is no longer "-").
+ENABLE_HARDENED_RUNTIME = NO
+
 // Entitlements are set via absolute path in the Makefile command line
 // (relative paths break SPM package targets that resolve from their own source root)
 
