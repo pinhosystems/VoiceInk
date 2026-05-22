@@ -85,7 +85,12 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
     let isPredefined: Bool
     let triggerWords: [String]
     let useSystemInstructions: Bool
-    
+    /// Vocabulary buckets to pull in for this prompt. Resolved at transcription
+    /// time by `VocabularyResolver`. Defaults to `[.userVocabulary]` so any
+    /// prompt persisted by an older build keeps its prior behavior (user's
+    /// manual vocab only).
+    let vocabularyDomains: [VocabularyDomain]
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -95,7 +100,8 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         description: String? = nil,
         isPredefined: Bool = false,
         triggerWords: [String] = [],
-        useSystemInstructions: Bool = true
+        useSystemInstructions: Bool = true,
+        vocabularyDomains: [VocabularyDomain] = [.userVocabulary]
     ) {
         self.id = id
         self.title = title
@@ -106,10 +112,11 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         self.isPredefined = isPredefined
         self.triggerWords = triggerWords
         self.useSystemInstructions = useSystemInstructions
+        self.vocabularyDomains = vocabularyDomains
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions
+        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions, vocabularyDomains
     }
 
     init(from decoder: Decoder) throws {
@@ -123,11 +130,13 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         isPredefined = try container.decode(Bool.self, forKey: .isPredefined)
         triggerWords = try container.decode([String].self, forKey: .triggerWords)
         useSystemInstructions = try container.decodeIfPresent(Bool.self, forKey: .useSystemInstructions) ?? true
+        vocabularyDomains = try container.decodeIfPresent([VocabularyDomain].self, forKey: .vocabularyDomains) ?? [.userVocabulary]
     }
     
     var finalPromptText: String {
         if useSystemInstructions {
-            return String(format: AIPrompts.customPromptTemplate, self.promptText)
+            return AIPrompts.customPromptTemplate
+                .replacingOccurrences(of: "{{USER_RULES}}", with: self.promptText)
         } else {
             return self.promptText
         }

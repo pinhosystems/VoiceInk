@@ -193,22 +193,13 @@ class CloudTranscriptionService: TranscriptionService {
     }
 
     private func getCustomDictionaryTerms() -> [String] {
-        let descriptor = FetchDescriptor<VocabularyWord>(sortBy: [SortDescriptor(\.word)])
-        guard let vocabularyWords = try? modelContext.fetch(descriptor) else {
-            return []
-        }
-        var seen = Set<String>()
-        var unique: [String] = []
-        for word in vocabularyWords {
-            let trimmed = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            let key = trimmed.lowercased()
-            if !seen.contains(key) {
-                seen.insert(key)
-                unique.append(trimmed)
-            }
-        }
-        return unique
+        // Domain-aware resolution: the active prompt's `vocabularyDomains`
+        // determines which buckets we pull from (user vocab, technical,
+        // brazilian). Capped at 100 entries / 50 chars each — xAI's documented
+        // limits for the `keyterm` field; other providers tolerate but ignore
+        // the excess silently. Same list goes to the LLM enhancement step via
+        // `CustomVocabularyService`, so STT bias and LLM hint stay in sync.
+        return VocabularyResolver.resolveFromUserDefaults(context: modelContext)
     }
 
     private func mapLLMKitError(_ error: LLMKitError, resourceTimeout: TimeInterval) -> CloudTranscriptionError {

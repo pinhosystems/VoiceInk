@@ -52,6 +52,7 @@ struct TranscriptionOutputFilter {
     /// Whisper-style non-verbal annotations that legitimately appear inside brackets/parens.
     /// Strip only these — never plain user content like "(o gerente novo)" or "[ver depois]".
     private static let hallucinationKeywords: Set<String> = [
+        // English
         "music", "music playing", "soft music", "loud music", "upbeat music",
         "instrumental", "instrumental music", "intro music", "outro music",
         "applause", "cheering", "crowd", "chatter", "background noise", "noise",
@@ -63,8 +64,25 @@ struct TranscriptionOutputFilter {
         "inaudible", "indistinct", "unintelligible",
         "click", "clicking", "tap", "tapping", "thump",
         "intro", "outro", "music ends", "music fades",
-        "música", "música ao fundo", "risos", "aplausos", "silêncio",
-        "tosse", "suspiro", "inaudível"
+        // Português brasileiro: Whisper costuma alucinar essas marcações entre
+        // colchetes/parênteses em transcrições pt-BR (especialmente em silêncios
+        // ou áudio com ruído de fundo). Cobre singular/plural, gerúndio e variações.
+        "música", "músicas", "música ao fundo", "música de fundo", "música tocando",
+        "música suave", "música alta", "música animada", "música instrumental",
+        "abertura", "encerramento", "vinheta", "trilha", "trilha sonora",
+        "risos", "risada", "risadas", "rindo", "gargalhada", "gargalhadas",
+        "aplausos", "palmas", "vivas",
+        "silêncio", "pausa", "longa pausa", "pausa longa",
+        "tosse", "tossindo", "tossiu", "espirro", "espirra", "espirrando",
+        "respiração", "respira", "respirando", "suspiro", "suspirando", "suspira", "suspiros",
+        "gemido", "gemidos", "gemendo",
+        "sussurro", "sussurrando", "sussurra", "abafado",
+        "inaudível", "ininteligível", "incompreensível", "indistinto",
+        "estalo", "estalido", "clique", "batida", "batidas",
+        "barulho", "barulhos", "ruído", "ruídos", "ruído de fundo", "barulho de fundo",
+        "burburinho", "conversa", "conversa de fundo", "conversas",
+        "ronco", "roncos", "roncando",
+        "música encerra", "música termina", "música começa", "fim da música"
     ]
 
     static func filter(_ text: String) -> String {
@@ -79,11 +97,20 @@ struct TranscriptionOutputFilter {
         // legitimate dictated content such as HTML, JSX, or XML samples.
         filteredText = removeKnownAnnotations(in: filteredText)
 
-        // Remove filler words (if enabled)
+        // Remove filler words (if enabled). Uses `effectiveFillerWords` so that the
+        // pt-BR set ("né", "tipo", "sei lá", ...) is included automatically when the
+        // selected language begins with "pt", without mutating the user's saved list.
         if FillerWordManager.shared.isEnabled {
-            for fillerWord in FillerWordManager.shared.fillerWords {
+            // Sort longest-first so multi-word fillers ("tipo assim") match before
+            // their substrings ("tipo"); avoids leaving an orphaned "assim".
+            let words = FillerWordManager.shared.effectiveFillerWords
+                .sorted { $0.count > $1.count }
+            for fillerWord in words {
                 let pattern = "\\b\(NSRegularExpression.escapedPattern(for: fillerWord))\\b[,.]?"
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                if let regex = try? NSRegularExpression(
+                    pattern: pattern,
+                    options: [.caseInsensitive, .useUnicodeWordBoundaries]
+                ) {
                     let range = NSRange(filteredText.startIndex..., in: filteredText)
                     filteredText = regex.stringByReplacingMatches(in: filteredText, options: [], range: range, withTemplate: "")
                 }

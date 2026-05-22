@@ -31,9 +31,27 @@ enum TranscriptionLanguageSupport {
             return language
         }
 
-        if model.provider == .nativeApple {
+        // Apple Native uses BCP-47 ("pt-BR", "en-US"), while every other provider
+        // uses Whisper-style 2-letter codes ("pt", "en"). When switching between
+        // providers, map the user's stripped/region-tagged code to the closest
+        // equivalent so a Brazilian user who chose "pt" once doesn't see Apple
+        // Native silently fall back to English.
+        if model.provider == .nativeApple, let language {
+            if let mapped = mapToAppleNative(language, in: languages) {
+                return mapped
+            }
             if languages["en-US"] != nil {
                 return "en-US"
+            }
+        }
+
+        // Inverse direction: a user on Apple Native chose "pt-BR" and switched to a
+        // Whisper-based provider. Strip the region tag to land on the 2-letter code
+        // that Whisper, OpenAI, Groq, etc. expect.
+        if let language, language.contains("-") {
+            let base = String(language.prefix { $0 != "-" })
+            if languages[base] != nil {
+                return base
             }
         }
 
@@ -48,6 +66,53 @@ enum TranscriptionLanguageSupport {
         return languages.keys.sorted { lhs, rhs in
             languages[lhs, default: lhs] < languages[rhs, default: rhs]
         }.first ?? "en"
+    }
+
+    /// Maps a Whisper-style or region-less code to the most natural Apple Native
+    /// BCP-47 identifier. For ambiguous bases (e.g., "pt" → pt-BR or pt-PT), the
+    /// system locale is consulted: if it starts with the same base and the region
+    /// is supported, that region wins; otherwise a sensible Brazilian-/US-first
+    /// default is used. This favors the (much larger) pt-BR user base without
+    /// stealing the choice from a Portuguese speaker whose system says pt-PT.
+    private static func mapToAppleNative(_ language: String, in available: [String: String]) -> String? {
+        let normalized = language.lowercased()
+
+        // Already a regioned code (case-insensitive match)
+        if let exact = available.keys.first(where: { $0.lowercased() == normalized }) {
+            return exact
+        }
+
+        // Try system locale first when the base matches.
+        let systemRegion = Locale.current.region?.identifier
+            ?? Locale.current.identifier.split(separator: "_").dropFirst().first.map(String.init)
+        if let systemRegion {
+            let candidate = "\(normalized)-\(systemRegion.uppercased())"
+            if let match = available.keys.first(where: { $0.lowercased() == candidate.lowercased() }) {
+                return match
+            }
+        }
+
+        // Curated defaults for the common cases. pt → pt-BR because the Brazilian
+        // user base dwarfs the Portuguese one; en → en-US for parity with Whisper's
+        // "en" semantics; es → es-ES; fr → fr-FR; de → de-DE; it → it-IT;
+        // zh → zh-CN.
+        let defaultsByBase: [String: String] = [
+            "pt": "pt-BR",
+            "en": "en-US",
+            "es": "es-ES",
+            "fr": "fr-FR",
+            "de": "de-DE",
+            "it": "it-IT",
+            "zh": "zh-CN"
+        ]
+        if let preferred = defaultsByBase[normalized],
+           let match = available.keys.first(where: { $0.lowercased() == preferred.lowercased() }) {
+            return match
+        }
+
+        // Last resort: any locale whose base matches.
+        let basePrefix = "\(normalized)-"
+        return available.keys.first { $0.lowercased().hasPrefix(basePrefix) }
     }
 
     private static func assemblyAILanguages(usesRealtime: Bool) -> [String: String] {
