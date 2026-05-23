@@ -32,7 +32,7 @@ class WindowManager: NSObject {
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.isReleasedWhenClosed = false
-        window.title = "VoiceInk"
+        window.title = "Open Voice"
         window.collectionBehavior = [.fullScreenPrimary]
         window.level = .normal
         window.isOpaque = true

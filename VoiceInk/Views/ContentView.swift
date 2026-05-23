@@ -138,7 +138,7 @@ struct ContentView: View {
                                 .cornerRadius(8)
                         }
 
-                        Text("VoiceInk")
+                        Text("Open Voice")
                             .font(.system(size: 14, weight: .semibold))
 
                         if case .licensed = licenseViewModel.licenseState {
@@ -186,7 +186,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
-            .navigationTitle("VoiceInk")
+            .navigationTitle("Open Voice")
             .navigationSplitViewColumnWidth(210)
         } detail: {
             if let selectedView = selectedView {
