@@ -630,6 +630,26 @@ class AIEnhancementService: ObservableObject {
         // loop replaces them in the picker.
         customPrompts.removeAll { !$0.isPredefined && predefinedTitles.contains($0.title) }
 
+        // De-duplicate user-cloned templates: every "Add new prompt
+        // from template" click spawned a fresh CustomPrompt with a new
+        // UUID but identical title + promptText. Users who explored
+        // the template library now see four "Code Comment" and three
+        // "Chat" entries in the picker. Collapse exact (title,
+        // promptText) duplicates among non-predefined prompts, keeping
+        // the earliest occurrence so any persisted selectedPromptId
+        // referencing it still resolves. Prompts the user actually
+        // edited (different promptText) are untouched.
+        var seenSignatures: Set<String> = []
+        customPrompts = customPrompts.filter { prompt in
+            guard !prompt.isPredefined else { return true }
+            let signature = "\(prompt.title)\u{1F}\(prompt.promptText)"
+            if seenSignatures.contains(signature) {
+                return false
+            }
+            seenSignatures.insert(signature)
+            return true
+        }
+
         for template in predefinedTemplates {
             if let existingIndex = customPrompts.firstIndex(where: { $0.id == template.id }) {
                 var updatedPrompt = customPrompts[existingIndex]
