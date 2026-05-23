@@ -54,14 +54,17 @@ struct PowerModeConfigurationsGrid: View {
     let onEditConfig: (PowerModeConfig) -> Void
     @EnvironmentObject var enhancementService: AIEnhancementService
 
-    /// Adaptive 1-to-2 column layout. Below the minimum width we keep
-    /// the single full-width column the screen used to ship with —
-    /// above ~720pt of available content area the grid breaks into two
-    /// columns, which is the common case on the 950pt main window
-    /// (sidebar removed). The maximum cap prevents cards from going
-    /// absurdly wide on tertiary monitors.
+    /// Adaptive 1-to-2 column layout that *stretches* cells to fill
+    /// the available row width. The previous max: 480 cap left a wide
+    /// trailing trough on a single-column layout because cells stopped
+    /// growing at 480pt even when the window had 720pt of usable
+    /// content area. Dropping the explicit max lets the grid divide
+    /// row space evenly between however many columns fit above the
+    /// 320pt minimum — typically 2 cols on the standard 950pt main
+    /// window, 1 col when the user collapses or narrows the sidebar,
+    /// 3+ cols on tertiary monitors.
     private let columns: [GridItem] = [
-        GridItem(.adaptive(minimum: 340, maximum: 480), spacing: 12, alignment: .top)
+        GridItem(.adaptive(minimum: 320), spacing: 12, alignment: .top)
     ]
 
     var body: some View {
