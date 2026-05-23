@@ -51,16 +51,19 @@ enum PredefinedPrompts {
                 promptText: """
                 Convert <TRANSCRIPT> into a clear, structured task brief for an AI coding agent (Claude Code, Cursor, Copilot Chat).
 
-                Rules:
-                - Do NOT write code. Output a prompt the agent will then act on.
-                - Drop fillers, restate-corrections, tangents.
-                - Preserve file paths, function names, library names, commands EXACTLY as spoken.
-                - Preserve numeric constraints (timeouts, limits, versions).
-                - When the user enumerates steps or requirements, format as a bullet list.
-                - When the user gives context AND a goal, separate them: brief context paragraph, then "Task:" line, then constraints.
-                - Imperative voice. Specific. No hedging.
+                PRESERVE EVERYTHING THE USER ASKED FOR:
+                - If the user raised TWO or THREE distinct requests, the brief MUST contain all of them — never collapse multiple goals into one.
+                - Render every distinct request as a separate item: bullet, numbered step, or its own "Task:" line.
+                - Preserve every constraint, qualifier, edge case, and clarifying detail the user mentioned. Trim disfluencies (uh, um, restate-corrections, tangents), not substance.
 
-                Output only the cleaned brief — no preamble, no closing.
+                Format:
+                - Imperative voice. Specific. No hedging.
+                - Preserve file paths, function names, library names, commands EXACTLY as spoken.
+                - Preserve numeric constraints (timeouts, limits, versions, line numbers).
+                - When the user gives context AND a goal, separate them: brief context paragraph, then "Task:" line(s), then constraints.
+                - Multiple distinct asks → numbered list under one "Tasks:" header, never merged into prose.
+
+                Do NOT write code. Output the brief only — no preamble, no closing, no markdown fences.
                 """,
                 icon: "brain.head.profile",
                 description: "Clean task brief for Claude Code, Cursor, Copilot Chat",
@@ -72,33 +75,45 @@ enum PredefinedPrompts {
             CustomPrompt(
                 id: rewritePromptId,
                 title: "Rewrite",
-                promptText: "Rewrite <TRANSCRIPT> with better clarity and flow. Preserve meaning, tone, and facts. Output only the rewritten text.",
+                promptText: """
+                Rewrite <TRANSCRIPT> with better clarity and flow.
+
+                Preserve EVERY point, request, fact, name, date, number, and technical term exactly. Never drop, merge, or summarize away ideas the user expressed. Tone and intent stay intact. Output only the rewritten text.
+                """,
                 icon: "pencil.circle.fill",
                 description: "Rewrite with better clarity",
                 isPredefined: true,
-                useSystemInstructions: false,
+                useSystemInstructions: true,
                 category: .writing
             ),
 
             CustomPrompt(
                 id: emailPromptId,
                 title: "Email",
-                promptText: "Rewrite <TRANSCRIPT> as an email: greeting, 2–4 sentence body, closing. Match the <TRANSCRIPT> language. Friendly tone unless clearly professional. Keep all facts, names, dates, action items.",
+                promptText: """
+                Rewrite <TRANSCRIPT> as an email: greeting, body, closing.
+
+                Preserve every fact, name, date, number, action item, and distinct point the user mentioned — never drop or merge them. Body length follows the source: short asks stay 2–4 sentences; multi-topic dictation expands into separate short paragraphs or a bullet list rather than collapsing into one paragraph. Friendly tone unless the source clearly calls for formal.
+                """,
                 icon: "envelope.fill",
                 description: "Professional email formatting",
                 isPredefined: true,
-                useSystemInstructions: false,
+                useSystemInstructions: true,
                 category: .writing
             ),
 
             CustomPrompt(
                 id: chatPromptId,
                 title: "Chat",
-                promptText: "Rewrite <TRANSCRIPT> as a short informal chat message. Keep emojis. No greetings or sign-offs.",
+                promptText: """
+                Rewrite <TRANSCRIPT> as a short, informal chat message. Keep emojis. No greetings or sign-offs.
+
+                Preserve every distinct point, fact, name, number, and link the user mentioned — chat shortness is about register, not about dropping content. Multiple ideas → multiple sentences or a short bulleted list, not a merged blob.
+                """,
                 icon: "bubble.left.and.bubble.right.fill",
                 description: "Casual chat-style formatting",
                 isPredefined: true,
-                useSystemInstructions: false,
+                useSystemInstructions: true,
                 category: .chat
             ),
 
@@ -113,14 +128,14 @@ enum PredefinedPrompts {
                 - Explain *why*, not what the code obviously does.
                 - Imperative or declarative tone, not first-person.
                 - No leading `//` or `#` — the editor adds those.
-                - Preserve identifiers, file paths, and numeric values exactly.
+                - Preserve identifiers, file paths, numeric values, and every distinct rationale the user gave exactly — never drop a reason.
 
                 Output only the comment text.
                 """,
                 icon: "text.bubble.fill",
                 description: "Short inline code comment",
                 isPredefined: true,
-                useSystemInstructions: false,
+                useSystemInstructions: true,
                 category: .coding
             ),
         ]

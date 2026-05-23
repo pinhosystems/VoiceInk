@@ -72,7 +72,16 @@ enum PromptTemplates {
             TemplatePrompt(
                 id: TemplateID.systemDefault,
                 title: "System Default",
-                promptText: "Clean <TRANSCRIPT>: fix grammar, drop fillers, collapse repetitions, resolve self-corrections, format lists when enumerated. Output only the cleaned text.",
+                promptText: """
+                Clean <TRANSCRIPT>: fix grammar, drop true fillers (uh, um, hmm), collapse verbatim word-by-word repetitions, resolve self-corrections, format lists when the user clearly enumerates.
+
+                NEVER drop content:
+                - Preserve every distinct point, request, or detail the user made — if they raised two topics, output two topics.
+                - Preserve facts, names, dates, numbers, technical terms, file paths, URLs, identifiers, and proper nouns exactly as spoken.
+                - "Drop fillers" applies only to disfluencies, not to qualifiers, hedges, or clarifying phrases that carry meaning.
+
+                Output only the cleaned text.
+                """,
                 icon: "checkmark.seal.fill",
                 description: "Default cleanup",
                 category: .writing

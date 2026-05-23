@@ -268,11 +268,20 @@ class AIEnhancementService: ObservableObject {
             hasVocabulary: !customVocabulary.isEmpty
         )
 
+        // Audio language hint — the BCP-47 code the STT engine was
+        // configured with. Prepended to every variant of the system
+        // message so the LLM never has to guess from a 3-word
+        // transcript whether it should respond in English or
+        // Portuguese.
+        let selectedLanguageCode = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        let languageBlock = AIPrompts.audioLanguageBlock(code: selectedLanguageCode)
+
+        let promptBody: String
         if let activePrompt = activePrompt {
             if activePrompt.id == PredefinedPrompts.assistantPromptId {
-                return AIPrompts.assistantMode(flags: flags) + finalContextSection
+                promptBody = AIPrompts.assistantMode(flags: flags)
             } else {
-                return activePrompt.finalPromptText(flags: flags) + finalContextSection
+                promptBody = activePrompt.finalPromptText(flags: flags)
             }
         } else {
             // Fallback chain, in order of preference:
@@ -285,10 +294,11 @@ class AIEnhancementService: ObservableObject {
                 ?? allPrompts.first
                 ?? PredefinedPrompts.createDefaultPrompts().first
             guard let defaultPrompt = fallback else {
-                return finalContextSection
+                return languageBlock + finalContextSection
             }
-            return defaultPrompt.finalPromptText(flags: flags) + finalContextSection
+            promptBody = defaultPrompt.finalPromptText(flags: flags)
         }
+        return languageBlock + promptBody + finalContextSection
     }
 
     private func makeRequest(text: String, mode: EnhancementPrompt) async throws -> String {
