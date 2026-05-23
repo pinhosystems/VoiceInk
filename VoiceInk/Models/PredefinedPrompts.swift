@@ -4,16 +4,15 @@ import SwiftUI    // Import to ensure we have access to SwiftUI types if needed
 enum PredefinedPrompts {
     private static let predefinedPromptsKey = "PredefinedPrompts"
 
-    // Static UUIDs for predefined prompts
-    static let defaultPromptId   = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-    static let assistantPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-    /// Speech-to-clean-task-brief for AI coding agents (Claude Code,
-    /// Cursor chat, Copilot Chat). Promoted from a clonable template
-    /// to a predefined prompt so the Power Mode \"AI Coding Agent\"
-    /// preset can reference one shared instance instead of cloning a
-    /// fresh \"Task Prompt\" copy every time the user applies the
-    /// preset.
-    static let taskPromptId      = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+    // Static UUIDs for predefined prompts. Stable across releases —
+    // rotating one orphans every user-saved selection pointing at it.
+    static let defaultPromptId     = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let assistantPromptId   = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+    static let taskPromptId        = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+    static let rewritePromptId     = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+    static let emailPromptId       = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
+    static let chatPromptId        = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
+    static let codeCommentPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
 
     static var all: [CustomPrompt] {
         // Always return the latest predefined prompts from source code
@@ -68,6 +67,61 @@ enum PredefinedPrompts {
                 isPredefined: true,
                 useSystemInstructions: false,
                 category: .dev_ai
+            ),
+
+            CustomPrompt(
+                id: rewritePromptId,
+                title: "Rewrite",
+                promptText: "Rewrite <TRANSCRIPT> with better clarity and flow. Preserve meaning, tone, and facts. Output only the rewritten text.",
+                icon: "pencil.circle.fill",
+                description: "Rewrite with better clarity",
+                isPredefined: true,
+                useSystemInstructions: false,
+                category: .writing
+            ),
+
+            CustomPrompt(
+                id: emailPromptId,
+                title: "Email",
+                promptText: "Rewrite <TRANSCRIPT> as an email: greeting, 2–4 sentence body, closing. Match the <TRANSCRIPT> language. Friendly tone unless clearly professional. Keep all facts, names, dates, action items.",
+                icon: "envelope.fill",
+                description: "Professional email formatting",
+                isPredefined: true,
+                useSystemInstructions: false,
+                category: .writing
+            ),
+
+            CustomPrompt(
+                id: chatPromptId,
+                title: "Chat",
+                promptText: "Rewrite <TRANSCRIPT> as a short informal chat message. Keep emojis. No greetings or sign-offs.",
+                icon: "bubble.left.and.bubble.right.fill",
+                description: "Casual chat-style formatting",
+                isPredefined: true,
+                useSystemInstructions: false,
+                category: .chat
+            ),
+
+            CustomPrompt(
+                id: codeCommentPromptId,
+                title: "Code Comment",
+                promptText: """
+                Rewrite <TRANSCRIPT> as an inline code comment.
+
+                Rules:
+                - One or two lines. Concise. No prose padding.
+                - Explain *why*, not what the code obviously does.
+                - Imperative or declarative tone, not first-person.
+                - No leading `//` or `#` — the editor adds those.
+                - Preserve identifiers, file paths, and numeric values exactly.
+
+                Output only the comment text.
+                """,
+                icon: "text.bubble.fill",
+                description: "Short inline code comment",
+                isPredefined: true,
+                useSystemInstructions: false,
+                category: .coding
             ),
         ]
     }

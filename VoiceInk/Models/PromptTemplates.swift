@@ -77,53 +77,14 @@ enum PromptTemplates {
                 description: "Default cleanup",
                 category: .writing
             ),
-            TemplatePrompt(
-                id: TemplateID.rewrite,
-                title: "Rewrite",
-                promptText: "Rewrite <TRANSCRIPT> with better clarity and flow. Preserve meaning, tone, and facts. Output only the rewritten text.",
-                icon: "pencil.circle.fill",
-                description: "Rewrite with better clarity",
-                category: .writing
-            ),
-            TemplatePrompt(
-                id: TemplateID.email,
-                title: "Email",
-                promptText: "Rewrite <TRANSCRIPT> as an email: greeting, 2–4 sentence body, closing. Match the <TRANSCRIPT> language. Friendly tone unless clearly professional. Keep all facts, names, dates, action items.",
-                icon: "envelope.fill",
-                description: "Professional email formatting",
-                category: .writing
-            ),
 
-            // MARK: - Chat
-            TemplatePrompt(
-                id: TemplateID.chat,
-                title: "Chat",
-                promptText: "Rewrite <TRANSCRIPT> as a short informal chat message. Keep emojis. No greetings or sign-offs.",
-                icon: "bubble.left.and.bubble.right.fill",
-                description: "Casual chat-style formatting",
-                category: .chat
-            ),
+            // Rewrite, Email, Chat, Code Comment were promoted to
+            // PredefinedPrompts — they ship to every install and the
+            // PromptTemplates entries here would just spawn duplicates.
+            // TemplateID UUIDs are kept on the enum for any external
+            // reference that survived the migration.
 
             // MARK: - Coding (output stays inside an editor)
-            TemplatePrompt(
-                id: TemplateID.codeComment,
-                title: "Code Comment",
-                promptText: """
-                Rewrite <TRANSCRIPT> as an inline code comment.
-
-                Rules:
-                - One or two lines. Concise. No prose padding.
-                - Explain *why*, not what the code obviously does.
-                - Imperative or declarative tone, not first-person.
-                - No leading `//` or `#` — the editor adds those.
-                - Preserve identifiers, file paths, and numeric values exactly.
-
-                Output only the comment text.
-                """,
-                icon: "text.bubble.fill",
-                description: "Short inline code comment",
-                category: .coding
-            ),
             TemplatePrompt(
                 id: TemplateID.commitMessage,
                 title: "Commit Message",
