@@ -14,7 +14,7 @@ struct HelpAndResourcesSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 resourceLink(
                     icon: "chevron.left.forwardslash.chevron.right",
-                    title: "Fork repository (pinhosystems/VoiceInk)",
+                    title: "Repository (pinhosystems/VoiceInk)",
                     url: "https://github.com/pinhosystems/VoiceInk"
                 )
 
