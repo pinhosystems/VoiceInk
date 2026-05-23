@@ -148,59 +148,146 @@ struct ConfigurationRow: View {
     private var visibleAppConfigs: [AppConfig] {
         return Array(config.appConfigs?.prefix(maxAppIconsToShow) ?? [])
     }
+
+    /// Emoji rendered in a soft gradient tile rather than a plain
+    /// circle, mirroring the visual weight of macOS app-grid tiles.
+    private var emojiTile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.primary.opacity(0.08),
+                            Color.primary.opacity(0.04),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                )
+                .frame(width: 44, height: 44)
+
+            Text(config.emoji)
+                .font(.system(size: 22))
+        }
+    }
+
+    /// Dock-style strip of small app icons + a website count chip, in
+    /// place of the older "N Apps · N Websites" text. Falls back to the
+    /// text version when no apps + no websites are configured.
+    @ViewBuilder
+    private var triggersStrip: some View {
+        if appCount == 0 && websiteCount == 0 {
+            Text("No triggers")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.7))
+        } else {
+            HStack(spacing: 4) {
+                ForEach(visibleAppConfigs) { appConfig in
+                    PowerModeAppIcon(bundleId: appConfig.bundleIdentifier)
+                        .frame(width: 18, height: 18)
+                }
+                if extraAppsCount > 0 {
+                    Text("+\(extraAppsCount)")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
+                if websiteCount > 0 {
+                    if appCount > 0 {
+                        Text("·")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.5))
+                            .padding(.horizontal, 2)
+                    }
+                    HStack(spacing: 3) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 10, weight: .medium))
+                        Text(websiteCount == 1 ? "1 site" : "\(websiteCount) sites")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
     
+    /// Build a pill view used in the bottom summary row. Centralized so
+    /// every pill shares typography, padding, and chrome — the previous
+    /// version inlined identical Capsule().fill / overlay blocks for
+    /// each entry, which made the row drift visually over time.
+    @ViewBuilder
+    private func summaryPill(icon: String, text: String, tint: Color = .secondary, emphasized: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .foregroundColor(emphasized ? .accentColor : .primary.opacity(0.8))
+        .background(
+            Capsule().fill(
+                emphasized
+                    ? Color.accentColor.opacity(0.10)
+                    : tint.opacity(0.08)
+            )
+        )
+        .overlay(
+            Capsule().stroke(
+                emphasized
+                    ? Color.accentColor.opacity(0.18)
+                    : Color.primary.opacity(0.06),
+                lineWidth: 0.5
+            )
+        )
+    }
+
+    private var hasSummaryRow: Bool {
+        (selectedModel != nil && selectedModel != "Default")
+            || (selectedLanguage != nil && selectedLanguage != "Default")
+            || config.isAIEnhancementEnabled
+            || config.autoSendKey.isEnabled
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color(NSColor.controlBackgroundColor))
-                        .frame(width: 40, height: 40)
-                    
-                    Text(config.emoji)
-                        .font(.system(size: 20))
-                }
-                
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: 14) {
+                emojiTile
+
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(config.name)
                             .font(.system(size: 15, weight: .semibold))
-                        
-                        if config.isDefault {
-                            Text("Default")
-                                .font(.system(size: 11, weight: .medium))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.accentColor))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    
-                    HStack(spacing: 12) {
-                        if appCount > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "app.fill")
-                                    .font(.system(size: 10))
-                                Text(appText)
-                                    .font(.caption2)
-                            }
-                        }
+                            .foregroundColor(.primary)
 
-                        if websiteCount > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "globe")
-                                    .font(.system(size: 10))
-                                Text(websiteText)
-                                    .font(.caption2)
+                        if config.isDefault {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 5, height: 5)
+                                Text("Default")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.accentColor)
                             }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.10)))
                         }
                     }
-                    .padding(.top, 2)
-                    .foregroundColor(.secondary)
+
+                    triggersStrip
                 }
-                
-                Spacer()
-                
+
+                Spacer(minLength: 8)
+
                 Toggle("", isOn: $config.isEnabled)
                     .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                     .labelsHidden()
@@ -208,127 +295,70 @@ struct ConfigurationRow: View {
                         powerModeManager.updateConfiguration(config)
                     }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
-            
-            if selectedModel != nil || selectedLanguage != nil || config.isAIEnhancementEnabled || config.autoSendKey.isEnabled {
-                Divider()
-                
-                HStack(spacing: 8) {
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+
+            if hasSummaryRow {
+                Divider().opacity(0.4)
+
+                HStack(spacing: 6) {
                     if let model = selectedModel, model != "Default" {
-                        HStack(spacing: 4) {
-                            Image(systemName: "waveform")
-                                .font(.system(size: 10))
-                            Text(model)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
+                        summaryPill(icon: "waveform", text: model)
                     }
-                    
                     if let language = selectedLanguage, language != "Default" {
-                        HStack(spacing: 4) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 10))
-                            Text(language)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+                        summaryPill(icon: "globe", text: language)
+                    }
+                    if config.isAIEnhancementEnabled,
+                       let modelName = config.selectedAIModel, !modelName.isEmpty {
+                        summaryPill(
+                            icon: "cpu",
+                            text: modelName.count > 20 ? String(modelName.prefix(18)) + "…" : modelName
                         )
                     }
-                    
-                    if config.isAIEnhancementEnabled, let modelName = config.selectedAIModel, !modelName.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "cpu")
-                                .font(.system(size: 10))
-                            Text(modelName.count > 20 ? String(modelName.prefix(18)) + "..." : modelName)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
-                    }
-                    
                     if config.autoSendKey.isEnabled {
-                        HStack(spacing: 4) {
-                            Image(systemName: "keyboard")
-                                .font(.system(size: 10))
-                            Text(config.autoSendKey.displayName)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
+                        summaryPill(icon: "return", text: config.autoSendKey.displayName)
+                    }
+                    if config.isAIEnhancementEnabled, config.useScreenCapture {
+                        summaryPill(icon: "camera.viewfinder", text: "Context")
                     }
                     if config.isAIEnhancementEnabled {
-                        if config.useScreenCapture {
-                            HStack(spacing: 4) {
-                                Image(systemName: "camera.viewfinder")
-                                    .font(.system(size: 10))
-                                Text("Context Awareness")
-                                    .font(.caption)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule()
-                                .fill(Color(NSColor.controlBackgroundColor)))
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                            )
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 10))
-                            Text(selectedPrompt?.title ?? "AI")
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color.accentColor.opacity(0.1)))
-                        .foregroundColor(.accentColor)
+                        summaryPill(
+                            icon: "sparkles",
+                            text: selectedPrompt?.title ?? "AI",
+                            emphasized: true
+                        )
                     }
-
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
-                
-                .padding(.vertical, 6)
+                .padding(.vertical, 8)
                 .padding(.horizontal, 16)
-                .background(Color.secondary.opacity(0.1))
+                .background(Color.primary.opacity(0.025))
             }
     }
-    .clipShape(RoundedRectangle(cornerRadius: 16))
-    .background(CardBackground(isSelected: isEditing))
-    .opacity(config.isEnabled ? 1.0 : 0.5)
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color(NSColor.windowBackgroundColor))
+    )
+    .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(
+                isHovering ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
+                lineWidth: isHovering ? 1 : 0.5
+            )
+    )
+    .shadow(
+        color: .black.opacity(isHovering ? 0.06 : 0.03),
+        radius: isHovering ? 6 : 3,
+        x: 0,
+        y: isHovering ? 2 : 1
+    )
+    .opacity(config.isEnabled ? 1.0 : 0.55)
+    .scaleEffect(isHovering ? 1.005 : 1.0)
+    .animation(.easeOut(duration: 0.15), value: isHovering)
 
     .onHover { hovering in
-        withAnimation(.easeInOut(duration: 0.15)) {
-            isHovering = hovering
-        }
+        isHovering = hovering
     }
     .onTapGesture(count: 2) {
         onEditConfig(config)
