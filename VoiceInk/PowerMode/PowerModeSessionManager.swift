@@ -131,7 +131,21 @@ class PowerModeSessionManager {
 
             if config.isAIEnhancementEnabled {
                 if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
-                    enhancementService.selectedPromptId = uuid
+                    // Guard against orphan references: Power Mode
+                    // configs persisted before recent dedup /
+                    // template-promotion migrations may point at a
+                    // CustomPrompt that no longer exists. Setting the
+                    // invalid UUID would make activePrompt resolve to
+                    // nil — silently — and the history row's prompt
+                    // pill would render blank. Validate the lookup
+                    // and fall back to nil (Default) when the prompt
+                    // is gone, so getSystemMessage and enhance() both
+                    // route through the predefined Default.
+                    if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
+                        enhancementService.selectedPromptId = uuid
+                    } else {
+                        enhancementService.selectedPromptId = nil
+                    }
                 }
 
                 if let aiService = enhancementService.getAIService() {

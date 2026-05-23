@@ -557,7 +557,17 @@ class AIEnhancementService: ObservableObject {
     func enhance(_ text: String) async throws -> (String, TimeInterval, String?) {
         let startTime = Date()
         let enhancementPrompt: EnhancementPrompt = .transcriptionEnhancement
-        let promptName = activePrompt?.title
+        // Report the prompt that *actually* drove the LLM call so the
+        // history row's prompt pill is faithful even when activePrompt
+        // is nil — Power Mode configs whose stored selectedPrompt
+        // UUID points at a CustomPrompt removed by the dedup
+        // migrations resolve to nil here, but getSystemMessage falls
+        // back to Default. The history should show "Default", not
+        // empty.
+        let effectivePrompt: CustomPrompt? = activePrompt
+            ?? allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId })
+            ?? allPrompts.first
+        let promptName = effectivePrompt?.title
 
         do {
             let result = try await makeRequestWithRetry(text: text, mode: enhancementPrompt)
