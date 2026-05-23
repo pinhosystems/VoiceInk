@@ -242,25 +242,35 @@ struct PowerModeView: View {
             .slidingPanel(isPresented: .init(
                 get: { isPresetGalleryOpen },
                 set: { if !$0 { closePresetGallery() } }
-            ), width: 520) {
+            ), width: 720) {
                 VStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        Text("Power Mode Presets")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Button(action: closePresetGallery) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .padding(6)
-                                .background(Color.secondary.opacity(0.1))
-                                .clipShape(Circle())
+                    // Title row + close. Spans the full panel width so
+                    // the close button sits where users habitually
+                    // reach for it. Subtitle below sets context so the
+                    // panel doesn't read like "list of profiles".
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Power Mode Presets")
+                                    .font(.system(size: 18, weight: .semibold))
+                                Text("Each card creates a new Power Mode prefilled for a common context.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button(action: closePresetGallery) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .padding(6)
+                                    .background(Color.secondary.opacity(0.1))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 18)
                     .background(Color(NSColor.windowBackgroundColor))
                     .overlay(Divider().opacity(0.5), alignment: .bottom)
 
@@ -271,7 +281,8 @@ struct PowerModeView: View {
                                 applyPreset(preset)
                             }
                         )
-                        .padding(20)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 20)
                     }
                 }
                 .background(Color(NSColor.windowBackgroundColor))

@@ -12,15 +12,16 @@ import SwiftUI
 struct PowerModePresetGallery: View {
     let onSelect: (PowerModePreset) -> Void
 
-    /// One adaptive grid for every preset. Per-category sections used
-    /// to wrap each preset in its own section header with a single
-    /// card underneath, which on the current 6-preset catalog read
-    /// like six tiny one-row sections stacked vertically — exactly
-    /// the "everything looks the same" complaint the user filed. A
-    /// flat grid keeps the category metadata visible on each card
-    /// (as a tag) while letting 2-3 cards share a row.
+    /// Fixed 2-column grid. Adaptive sizing kept collapsing to one
+    /// column inside the sliding panel because each PresetCard
+    /// reports a wide intrinsic width via its description text — even
+    /// at 480pt usable, the layout pass picked a single column.
+    /// Pinning to two flexible columns makes the row predictable in
+    /// the panel (720pt) and on the inline empty-state (wherever the
+    /// content area happens to be wide enough).
     private let columns = [
-        GridItem(.adaptive(minimum: 240, maximum: 320), spacing: 12, alignment: .top)
+        GridItem(.flexible(minimum: 240), spacing: 12, alignment: .top),
+        GridItem(.flexible(minimum: 240), spacing: 12, alignment: .top),
     ]
 
     var body: some View {
@@ -40,43 +41,62 @@ private struct PresetCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    Text(preset.emoji)
-                        .font(.system(size: 26))
-                        .frame(width: 40, height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color(NSColor.windowBackgroundColor))
+            HStack(alignment: .top, spacing: 12) {
+                // Emoji tile with subtle gradient — same visual weight
+                // as the ConfigurationRow emoji tile so the two
+                // surfaces (browse vs configured) feel like one
+                // language.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.primary.opacity(0.08),
+                                    Color.primary.opacity(0.04),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    VStack(alignment: .leading, spacing: 3) {
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                        )
+                        .frame(width: 44, height: 44)
+                    Text(preset.emoji)
+                        .font(.system(size: 22))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
                         Text(preset.name)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(1)
-                        categoryTag
-                        installedFootnote
+
+                        Spacer(minLength: 0)
+
+                        // "Add" affordance — the whole card is the
+                        // tap target but the icon makes the action
+                        // visible without hover. Gets brighter on
+                        // hover to confirm the click target.
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.tint)
+                            .opacity(isHovering ? 1.0 : 0.6)
                     }
-                    Spacer(minLength: 0)
 
-                    // Explicit "create from preset" affordance — the
-                    // whole card is still clickable, but the chevron
-                    // tells the user something will happen if they
-                    // do click. Without it the cards read like read-
-                    // only summaries of configured profiles.
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.tint)
-                        .opacity(isHovering ? 1.0 : 0.5)
+                    installedFootnote
+
+                    Text(preset.description)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
                 }
-
-                Text(preset.description)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,16 +120,6 @@ private struct PresetCard: View {
                 isHovering = hovering
             }
         }
-    }
-
-    /// Small uppercase tag identifying the preset's category. Replaces
-    /// the per-section header from the older layout — each card now
-    /// carries its own classification.
-    private var categoryTag: some View {
-        Text(preset.category.displayName.uppercased())
-            .font(.system(size: 9, weight: .heavy))
-            .tracking(0.4)
-            .foregroundColor(.secondary.opacity(0.7))
     }
 
     /// Footnote line summarizing what the preset will actually trigger
