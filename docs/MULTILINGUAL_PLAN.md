@@ -66,6 +66,8 @@ it.
 | 10 | Settings toggle copy | `VoiceInk/Views/Settings/SettingsView.swift` | "Brazilian normalization" label hardcoded. |
 | 11 | UI buttons | `VoiceInk/Views/Dictionary/WordReplacementView.swift`, `VoiceInk/Views/Dictionary/VocabularyView.swift` | "Add pt-BR abbreviations" / "Add pt-BR vocabulary". |
 | 12 | Pipeline application | `VoiceInk/Transcription/Engine/TranscriptionPipeline.swift` | Calls `BrazilianTextNormalizer.isEnabled(for:)` + `normalize(...)`. |
+| 13 | Vocabulary resolver | `VoiceInk/Services/VocabularyResolver.swift` | Iterates `VocabularyDomain.brazilian` and hardcodes the domain priority `[.userVocabulary, .technical, .brazilian]`. Direct consumer of item 7; must change alongside it in Phase 4. |
+| 14 | Output filter comments | `VoiceInk/Transcription/Processing/TranscriptionOutputFilter.swift` | Two pt-BR references are in comments only (lines ~68, ~101). Logic is generic. No code change required; touch only if comments mislead future readers. |
 
 Components that are **already generic** and need no work:
 
@@ -334,6 +336,16 @@ means "let Whisper decide", and we should not paper over that
 with a locale guess. But this should be confirmed against the
 actual STT engines' behavior.
 
+**Resolved 2026-05-23 (pre-Phase-1):** Stay nil. `LocalePackRegistry.pack(for:)`
+returns nil for `"auto"`, `nil`, `""`, and any `en*` code. Rationale:
+the STT engine is responsible for detecting language when the user
+picks "auto"; we should not synthesize a locale-specific pipeline
+from a system-locale guess that may not match the audio. The
+audio-language hint + tech-term salvage already cover the common
+case where Whisper detects a non-EN audio and we still want LLM
+guidance — they read the *transcript's* detected language at
+runtime, not the user setting.
+
 ### 7.2 Pack precedence vs user-curated overrides
 
 When a curated pack ships filler words like "tipo" but the user
@@ -342,6 +354,16 @@ removed "tipo" from their personal filler list, what wins?
 Current `FillerWordManager.effectiveFillerWords` unions the user
 list with the BR list — pack would replicate that. Confirm this
 is desired, or whether the user's removal should be a veto.
+
+**Resolved 2026-05-23 (pre-Phase-5):** Phase 5 ships the union
+semantics unchanged. `effectiveFillerWords = userList ∪ packList`.
+There is no per-user "removed-from-pack" set today, and adding one
+is out of scope for this refactor — escalate to a dedicated commit
+only if a user reports drift. Same rule applies to
+`wordReplacements` and `vocabularyTerms`: the pack is the additive
+default; the user list is the source of truth for explicit
+additions. Pack-side removals (user wants "tipo" gone from the
+filler list) require a future opt-out store.
 
 ### 7.3 Word replacement migration
 
@@ -354,6 +376,16 @@ they click "Add pt-BR abbreviations". After the refactor:
   detect duplicates (current behavior) or always append?
 
 Confirm before Phase 6.
+
+**Resolved 2026-05-23 (pre-Phase-6):**
+- **No re-tagging of existing rows.** The `WordReplacement`
+  SwiftData model has no locale column today; adding one is out
+  of scope for this refactor. Existing rows stay as-is.
+- **Re-click stays idempotent.** Keep current dedup-by-signature
+  behavior. Re-seeding from `pack.wordReplacements` is a no-op
+  for already-present entries; only net-new rows are inserted.
+- Future commits may add a locale column + per-pack re-seed
+  filter; that's deferred until a contributor needs it.
 
 ### 7.4 Locale-specific number / date formatting in *output*
 
@@ -371,6 +403,19 @@ contributor wants** (most flexible). Default recommendation:
 input-only is acceptable; output-only is degenerate (LLM has no
 input to fix); both is the gold standard.
 
+**Resolved 2026-05-23 (pre-Phase-2/5):**
+- **Curated packs MUST provide both** input normalization rules
+  and output `aiPromptFormatRules`. Reviewer rejects curated-pack
+  PRs missing either side. This keeps the gold standard the only
+  shipped depth for curated content.
+- **`GenericLocalePack` ships output-only** — empty
+  `normalizerRules` + `wordReplacements` + `vocabularyTerms` +
+  `fillerWords`, with a single-sentence `aiPromptFormatRules`
+  derived from the locale name. That's by design; the generic
+  fallback is "tell the LLM the language and let it format". It
+  is not subject to the "both required" rule because it ships
+  zero curated input rules by construction.
+
 ### 7.5 Multiple regions per primary subtag
 
 `PortuguesePack` covers both pt-BR and pt-PT under the same pack
@@ -385,6 +430,15 @@ region-specific pack exists?
 
 Defer to **after the refactor** — solve it when the first contributor
 wants region-specific content. Document the path then.
+
+**Audit note 2026-05-23:** `VoiceInk/Models/LanguageDictionary.swift`
+already encodes a primary→region default (`"pt" → "pt-BR"`,
+lines ~95–100). After the refactor, that default is the bridge
+between a user who picked plain `"pt"` in some flow and the
+`PortuguesePack` (which matches by primary subtag `"pt"`). The
+refactor must keep `LocalePackRegistry.pack(for:)` matching on
+primary subtag so this fallback stays compatible; region-aware
+matching is a future extension that this path will not block.
 
 ### 7.6 Power Mode preset prompts and locale
 
