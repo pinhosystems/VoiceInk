@@ -267,84 +267,112 @@ struct ConfigurationRow: View {
             || config.autoSendKey.isEnabled
     }
 
+    /// Flat list of pills to render — order is the same as the old
+    /// dedicated summary band. Holding them as a list (instead of an
+    /// inline @ViewBuilder block) lets the body use a ForEach against
+    /// the count, and lets us drive a horizontal-overflow ScrollView
+    /// from the same data when the card is narrow.
+    private struct PillItem: Identifiable {
+        let id: String
+        let icon: String
+        let text: String
+        let emphasized: Bool
+    }
+
+    private var summaryPillItems: [PillItem] {
+        var items: [PillItem] = []
+        if let model = selectedModel, model != "Default" {
+            items.append(PillItem(id: "stt", icon: "waveform", text: model, emphasized: false))
+        }
+        if let language = selectedLanguage, language != "Default" {
+            items.append(PillItem(id: "lang", icon: "globe", text: language, emphasized: false))
+        }
+        if config.isAIEnhancementEnabled,
+           let modelName = config.selectedAIModel, !modelName.isEmpty {
+            let trimmed = modelName.count > 20 ? String(modelName.prefix(18)) + "…" : modelName
+            items.append(PillItem(id: "llm", icon: "cpu", text: trimmed, emphasized: false))
+        }
+        if config.autoSendKey.isEnabled {
+            items.append(PillItem(id: "send", icon: "return", text: config.autoSendKey.displayName, emphasized: false))
+        }
+        if config.isAIEnhancementEnabled, config.useScreenCapture {
+            items.append(PillItem(id: "ctx", icon: "camera.viewfinder", text: "Context", emphasized: false))
+        }
+        if config.isAIEnhancementEnabled {
+            items.append(PillItem(id: "prompt", icon: "sparkles", text: selectedPrompt?.title ?? "AI", emphasized: true))
+        }
+        return items
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 14) {
-                emojiTile
+        HStack(alignment: .top, spacing: 14) {
+            emojiTile
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(config.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
+            // Content column expands to fill all available horizontal
+            // space between the emoji tile and the toggle, so the row
+            // never leaves a wide trough in the middle when the card
+            // is rendered at full window width.
+            VStack(alignment: .leading, spacing: 8) {
+                // Identity row: name + Default + inline pills. The pills
+                // sit on the same baseline as the name so the configured
+                // STT model, language, LLM, prompt, etc. read as
+                // metadata of the profile rather than a separate band.
+                HStack(spacing: 8) {
+                    Text(config.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .layoutPriority(2)
 
-                        if config.isDefault {
-                            HStack(spacing: 3) {
-                                Circle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 5, height: 5)
-                                Text("Default")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.accentColor)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.10)))
+                    if config.isDefault {
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 5, height: 5)
+                            Text("Default")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.accentColor)
                         }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.10)))
+                        .layoutPriority(2)
                     }
 
-                    triggersStrip
-                }
+                    if !summaryPillItems.isEmpty {
+                        // Horizontal overflow scroll for narrow cards.
+                        // showsIndicators is off so we don't end up
+                        // with a scrollbar inside a card. On a card
+                        // wide enough to fit all pills, the ScrollView
+                        // is functionally a static HStack.
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 5) {
+                                ForEach(summaryPillItems) { pill in
+                                    summaryPill(icon: pill.icon, text: pill.text, emphasized: pill.emphasized)
+                                }
+                            }
+                            .padding(.trailing, 4)
+                        }
+                        .scrollClipDisabled()
+                    }
 
-                Spacer(minLength: 8)
-
-                Toggle("", isOn: $config.isEnabled)
-                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                    .labelsHidden()
-                    .onChange(of: config.isEnabled) { _, _ in
-                        powerModeManager.updateConfiguration(config)
-                    }
-            }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 16)
-
-            if hasSummaryRow {
-                Divider().opacity(0.4)
-
-                HStack(spacing: 6) {
-                    if let model = selectedModel, model != "Default" {
-                        summaryPill(icon: "waveform", text: model)
-                    }
-                    if let language = selectedLanguage, language != "Default" {
-                        summaryPill(icon: "globe", text: language)
-                    }
-                    if config.isAIEnhancementEnabled,
-                       let modelName = config.selectedAIModel, !modelName.isEmpty {
-                        summaryPill(
-                            icon: "cpu",
-                            text: modelName.count > 20 ? String(modelName.prefix(18)) + "…" : modelName
-                        )
-                    }
-                    if config.autoSendKey.isEnabled {
-                        summaryPill(icon: "return", text: config.autoSendKey.displayName)
-                    }
-                    if config.isAIEnhancementEnabled, config.useScreenCapture {
-                        summaryPill(icon: "camera.viewfinder", text: "Context")
-                    }
-                    if config.isAIEnhancementEnabled {
-                        summaryPill(
-                            icon: "sparkles",
-                            text: selectedPrompt?.title ?? "AI",
-                            emphasized: true
-                        )
-                    }
                     Spacer(minLength: 0)
                 }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 16)
-                .background(Color.primary.opacity(0.025))
+
+                triggersStrip
             }
-    }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Toggle("", isOn: $config.isEnabled)
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                .labelsHidden()
+                .onChange(of: config.isEnabled) { _, _ in
+                    powerModeManager.updateConfiguration(config)
+                }
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     .background(
         RoundedRectangle(cornerRadius: 14, style: .continuous)
