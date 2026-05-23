@@ -9,29 +9,21 @@
 
 ---
 
-## About this project
+Open Voice is a local-first dictation app for macOS. Speech goes through your choice of on-device or cloud STT, the LLM enhancement layer cleans and reformats the transcript for the active context, and a Power Mode picks the right model + prompt automatically based on the app or website you're using.
 
-Open Voice is a personal fork of **[Beingpax/VoiceInk](https://github.com/Beingpax/VoiceInk)** by Prakash Joshi Pax — the upstream project ships an excellent local-first dictation app for macOS, and the entire foundation of Open Voice is its work: the SwiftUI surface, the Whisper integration, the global hotkey pipeline, the Power Mode concept, the system-instruction wrapper, and the AI-enhancement plumbing. Open Voice cannot exist without it, and every meaningful feature listed below stands on that base.
-
-This fork is local-first, free, does not sell licenses, and does not talk to any commerce backend. It exists to explore multilingual dictation (pt-BR first), a richer multi-provider STT/LLM pipeline, and a more opinionated Power Mode preset library. If you want a polished, supported product, install the original from [tryvoiceink.com](https://tryvoiceink.com) — that release ships features that aren't part of this fork (signed binaries, automatic updates, customer support, paid tier).
+The fork is free, does not sell licenses, and does not talk to any commerce backend. It exists to explore multilingual dictation (pt-BR first), a richer multi-provider pipeline, and an opinionated set of Power Mode presets.
 
 ![Open Voice screenshot](docs/screenshot.png)
 
 ## Features
 
-Inherited from upstream and refined in this fork:
-
 - **Local + cloud STT** — Whisper.cpp, Parakeet (FluidAudio), and Apple's native speech engine on-device. xAI Grok, Groq, Deepgram, ElevenLabs, OpenAI, Soniox, Gemini, and Mistral via direct API for low-latency cloud transcription.
 - **LLM enhancement** — Anthropic, OpenAI, OpenRouter, Ollama, custom OpenAI-compatible endpoints, and arbitrary Local CLI agents. Multi-instance support per provider.
-- **Power Mode profiles** — Auto-apply STT model + language + LLM prompt + auto-send key based on the active app or open URL. Per-config hotkeys for manual activation.
-- **Per-history retry flow** — Re-analyze the LLM step in place, or re-transcribe from the saved audio with a different model / profile.
-
-Added in this fork:
-
-- **Six Power Mode presets** ship out of the box — AI Coding Agent, Dev Environment, Messaging, Email, Writing, AI Chat — each pre-binding apps, URLs, prompts, and behavior for a common dictation context.
+- **Power Mode profiles** — Auto-apply STT model + language + LLM prompt + auto-send key based on the active app or open URL. Per-config hotkeys for manual activation. Six starter presets ship: AI Coding Agent, Dev Environment, Messaging, Email, Writing, AI Chat.
 - **Native system prompts** — Default, Assistant, Task Prompt (speech → clean brief for Claude Code / Cursor / Copilot Chat), Rewrite, Email, Chat, Code Comment.
 - **Multilingual tech-term salvage** — When the STT language is non-English, an `<AUDIO_LANGUAGE>` block plus a per-locale salvage table tells the LLM how to recover canonical English spellings for tech jargon mistranscribed phonetically (commit → comêti / cómit, push → puxe / puch, ...). Curated tables for pt-* and es-*, generic fallback for every other non-English locale.
 - **Brazilian Portuguese pipeline** — Native vocabulary biasing for pt-BR speakers (CPF, CNPJ, CEP, R$, dd/mm/aaaa formatting), Brazilian post-processing, and pt-specific salvage tables.
+- **Per-history retry flow** — Re-analyze the LLM step in place, or re-transcribe from the saved audio with a different model / profile.
 - **Troubleshooting log per transcription** — Every outbound API call (STT, LLM, Local CLI) records its request + response in a per-record fixture with configurable retention. Bearer tokens are never written by construction.
 
 ## Requirements
@@ -52,14 +44,6 @@ The first `install-local` after `setup-signing` prompts for Accessibility, Scree
 
 For full build details (whisper.cpp framework, Swift packages, signing internals), see [BUILDING.md](BUILDING.md).
 
-## License & attribution
-
-Licensed under [GPL v3](LICENSE).
-
-**Open Voice is derived from [Beingpax/VoiceInk](https://github.com/Beingpax/VoiceInk) by Prakash Joshi Pax.** That project is the load-bearing dependency — not a side reference — and full credit for the underlying architecture, the original feature set, and the years of design judgment behind it belongs to its author. If this fork is useful to you and you can spare it, please consider supporting the original project at [tryvoiceink.com](https://tryvoiceink.com) — the paid release funds continued development on the upstream side.
-
-Modifications and additions in this fork are documented in the git commit history.
-
 ## Issues
 
 Report bugs or request features in the fork's [issue tracker](https://github.com/pinhosystems/VoiceInk/issues).
@@ -77,5 +61,15 @@ Report bugs or request features in the fork's [issue tracker](https://github.com
 - [Zip](https://github.com/marmelroy/Zip) — File compression utilities
 - [SelectedTextKit](https://github.com/tisfeng/SelectedTextKit) — Selected-text capture on macOS
 - [Swift Atomics](https://github.com/apple/swift-atomics) — Low-level atomic primitives
-</content>
-</invoke>
+
+## License
+
+Licensed under [GPL v3](LICENSE). Modifications and additions in this fork are documented in the git commit history.
+
+---
+
+<div align="center">
+  <sub>
+    Open Voice is a personal fork of <a href="https://github.com/Beingpax/VoiceInk">Beingpax/VoiceInk</a> by Prakash Joshi Pax. The upstream project is the load-bearing foundation this fork builds on — full credit for the original architecture, design judgment, and feature set belongs to its author. If this fork is useful to you and you can spare it, please consider supporting the original at <a href="https://tryvoiceink.com">tryvoiceink.com</a>.
+  </sub>
+</div>
