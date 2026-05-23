@@ -23,12 +23,6 @@ struct HelpAndResourcesSection: View {
                     title: "Report an issue",
                     url: "https://github.com/pinhosystems/VoiceInk/issues"
                 )
-
-                resourceLink(
-                    icon: "arrow.up.right.square.fill",
-                    title: "Upstream project (Beingpax/VoiceInk)",
-                    url: "https://github.com/Beingpax/VoiceInk"
-                )
             }
         }
         .padding(18)

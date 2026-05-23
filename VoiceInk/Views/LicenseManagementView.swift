@@ -13,7 +13,6 @@ struct LicenseManagementView: View {
 
     private static let forkRepoURL    = URL(string: "https://github.com/pinhosystems/VoiceInk")!
     private static let forkIssuesURL  = URL(string: "https://github.com/pinhosystems/VoiceInk/issues")!
-    private static let upstreamURL    = URL(string: "https://github.com/Beingpax/VoiceInk")!
 
     var body: some View {
         ScrollView {
@@ -53,17 +52,19 @@ struct LicenseManagementView: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionTitle("About this build", icon: "info.circle.fill")
 
-            Text("This is a personal fork maintained at pinhosystems/VoiceInk. It does not sell licenses, validate keys against any commerce backend, or carry the upstream paid tier. All features ship enabled to the developer; the upstream paid product is unrelated to this build.")
+            Text("Personal fork maintained at pinhosystems/VoiceInk. It does not sell licenses, validate keys against any commerce backend, or carry the upstream paid tier.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineSpacing(2)
 
-            Divider().padding(.vertical, 4)
-
-            Text("Originally derived from Beingpax/VoiceInk by Prakash Joshi Pax. Credit and gratitude for the upstream work that made this fork possible.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineSpacing(2)
+            // Upstream credit is intentionally a non-clickable line — GPL v3
+            // attribution is satisfied by the repository LICENSE, README,
+            // and commit history; an in-app link is courtesy, and we keep
+            // it understated to let the fork feel like its own product.
+            Text("Originally derived from Beingpax/VoiceInk.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary.opacity(0.7))
+                .padding(.top, 4)
         }
         .padding(24)
         .background(CardBackground(isSelected: false))
@@ -86,13 +87,6 @@ struct LicenseManagementView: View {
                 title: "Report an issue",
                 subtitle: "pinhosystems/VoiceInk/issues",
                 url: Self.forkIssuesURL
-            )
-
-            linkRow(
-                icon: "arrow.up.right.square.fill",
-                title: "Upstream project",
-                subtitle: "Beingpax/VoiceInk",
-                url: Self.upstreamURL
             )
         }
         .padding(24)

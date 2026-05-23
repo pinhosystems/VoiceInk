@@ -344,13 +344,10 @@ struct TranscriptionHistoryView: View {
                 .buttonStyle(.plain)
                 .help("Export")
 
-                Button(action: { showDeleteConfirmation = true }) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Delete")
+                // Delete button intentionally removed — see the matching
+                // comment in InlineHistoryView. Retention services own
+                // record + audio cleanup; configure them in Settings →
+                // Cleanup if a faster sweep is needed.
             }
 
             Spacer()

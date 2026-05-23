@@ -200,13 +200,14 @@ struct InlineHistoryView: View {
             .foregroundColor(.secondary)
             .softTooltip("Export the selected transcriptions to CSV")
 
-            Button(action: { showDeleteConfirmation = true }) {
-                Label("Delete", systemImage: "trash")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.red.opacity(0.8))
-            .softTooltip("Delete the selected transcriptions (audio + metadata)")
+            // Manual Delete intentionally removed from the selection
+            // bar — transcriptions and their audio are reaped by the
+            // retention services (TranscriptionAutoCleanupService for
+            // records + audio, TranscriptionLogRetentionService for
+            // troubleshooting JSON). Surfacing a destructive button
+            // alongside Analyze / Export invited fat-fingered losses.
+            // Tweak retention windows in Settings → Cleanup if a faster
+            // sweep is needed.
 
             Divider()
                 .frame(height: 16)
