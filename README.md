@@ -13,8 +13,6 @@ Open Voice is a local-first dictation app for macOS. Speech goes through your ch
 
 The fork is free, does not sell licenses, and does not talk to any commerce backend. It exists to explore multilingual dictation (pt-BR first), a richer multi-provider pipeline, and an opinionated set of Power Mode presets.
 
-![Open Voice screenshot](docs/screenshot.png)
-
 ## Features
 
 - **Local + cloud STT** — Whisper.cpp, Parakeet (FluidAudio), and Apple's native speech engine on-device. xAI Grok, Groq, Deepgram, ElevenLabs, OpenAI, Soniox, Gemini, and Mistral via direct API for low-latency cloud transcription.
