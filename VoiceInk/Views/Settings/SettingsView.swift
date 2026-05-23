@@ -17,7 +17,9 @@ struct SettingsView: View {
     @ObservedObject private var mediaController = MediaController.shared
     @ObservedObject private var playbackController = PlaybackController.shared
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
-    @AppStorage("autoUpdateCheck") private var autoUpdateCheck = true
+    // `autoUpdateCheck` no longer surfaced in the UI — see UpdaterViewModel
+    // in VoiceInk.swift. The default is registered in AppDefaults so any code
+    // reading the key still gets a stable value.
     @AppStorage("enableAnnouncements") private var enableAnnouncements = true
     @AppStorage("restoreClipboardAfterPaste") private var restoreClipboardAfterPaste = true
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
@@ -189,6 +191,7 @@ struct SettingsView: View {
                         InfoTip("Enable this if pasting doesn't work with your keyboard layout (e.g. Neo2). Uses AppleScript instead of simulated key events.")
                     }
                 }
+
             }
 
             // MARK: - Power Mode
@@ -213,10 +216,11 @@ struct SettingsView: View {
 
                 LaunchAtLogin.Toggle("Launch at Login")
 
-                Toggle("Auto-check Updates", isOn: $autoUpdateCheck)
-                    .onChange(of: autoUpdateCheck) { _, newValue in
-                        updaterViewModel.toggleAutoUpdates(newValue)
-                    }
+                // Auto-update and "Check for Updates" intentionally removed in
+                // this fork — the upstream Beingpax appcast is not consumed.
+                // See `UpdaterViewModel` in VoiceInk.swift for the full
+                // rationale. Toggling those controls would have been a no-op
+                // and confusing for users.
 
                 Toggle("Show Announcements", isOn: $enableAnnouncements)
                     .onChange(of: enableAnnouncements) { _, newValue in
@@ -228,11 +232,6 @@ struct SettingsView: View {
                     }
 
                 HStack {
-                    Button("Check for Updates") {
-                        updaterViewModel.checkForUpdates()
-                    }
-                    .disabled(!updaterViewModel.canCheckForUpdates)
-
                     Button("Reset Onboarding") {
                         showResetOnboardingAlert = true
                     }

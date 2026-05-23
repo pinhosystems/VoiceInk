@@ -24,11 +24,22 @@ struct WordReplacementView: View {
     @State private var replacementWord = ""
     @State private var showInfoPopover = false
 
+    @State private var showingBulkConfirmation = false
+    @State private var showingClearConfirmation = false
+
     init() {
         if let savedSort = UserDefaults.standard.string(forKey: "wordReplacementSortMode"),
            let mode = SortMode(rawValue: savedSort) {
             _sortMode = State(initialValue: mode)
         }
+    }
+
+    /// Visible only when the user's selected language is Portuguese. There is no
+    /// value in offering pt-BR templates to non-Portuguese speakers, and showing
+    /// the button would clutter the panel for them.
+    private var shouldShowBrazilianTemplate: Bool {
+        let lang = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "").lowercased()
+        return lang.hasPrefix("pt")
     }
 
     private var sortedReplacements: [WordReplacement] {
@@ -106,6 +117,62 @@ struct WordReplacementView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
+
+            HStack(spacing: 8) {
+                if shouldShowBrazilianTemplate {
+                    Button {
+                        showingBulkConfirmation = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wand.and.sparkles")
+                            Text("Add pt-BR abbreviations")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Inserts common Brazilian abbreviations (vc → você, tb → também, pq → porque, ...). Idempotent: existing entries are not duplicated.")
+                    .confirmationDialog(
+                        "Add pt-BR abbreviations?",
+                        isPresented: $showingBulkConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Add \(BrazilianWordReplacements.count) abbreviations") {
+                            applyBrazilianTemplate()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Will insert abbreviations like 'vc → você', 'tb → também', 'pq → porque'. Existing entries are skipped.")
+                    }
+                }
+
+                Spacer()
+
+                if !wordReplacements.isEmpty {
+                    Button(role: .destructive) {
+                        showingClearConfirmation = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash")
+                            Text("Clear all")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Deletes every word replacement. This cannot be undone.")
+                    .confirmationDialog(
+                        "Clear all word replacements?",
+                        isPresented: $showingClearConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete \(wordReplacements.count) replacements", role: .destructive) {
+                            clearAll()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Removes every word replacement. This cannot be undone.")
+                    }
+                }
+            }
 
             if !wordReplacements.isEmpty {
                 VStack(spacing: 0) {
@@ -210,6 +277,28 @@ struct WordReplacementView: View {
             showAlert = true
         }
     }
+
+    private func applyBrazilianTemplate() {
+        let result = DictionaryService.addBrazilianAbbreviations(
+            existing: Array(wordReplacements),
+            context: modelContext
+        )
+        if !result.errors.isEmpty {
+            alertMessage = "Added: \(result.added). Skipped: \(result.skipped). Errors: \(result.errors.joined(separator: "; "))"
+        } else {
+            alertMessage = "Added: \(result.added). Skipped (already exist): \(result.skipped)."
+        }
+        showAlert = true
+    }
+
+    private func clearAll() {
+        if let deleted = DictionaryService.clearAllWordReplacements(context: modelContext) {
+            alertMessage = "Deleted \(deleted) replacements."
+        } else {
+            alertMessage = "Failed to clear word replacements."
+        }
+        showAlert = true
+    }
 }
 
 struct WordReplacementInfoPopover: View {
@@ -281,7 +370,7 @@ struct WordReplacementInfoPopover: View {
                         Text("Replacement:")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("VoiceInk")
+                        Text("Open Voice")
                             .font(.callout)
                     }
                 }

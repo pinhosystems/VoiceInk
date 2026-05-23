@@ -242,14 +242,16 @@ struct AudioTranscribeView: View {
 
     private var enhancementControls: some View {
         HStack(spacing: 8) {
-            Toggle("AI Enhancement", isOn: $isEnhancementEnabled)
+            Toggle("LLM Enhancement", isOn: $isEnhancementEnabled)
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .onChange(of: isEnhancementEnabled) { _, newValue in
                     enhancementService.isEnhancementEnabled = newValue
                 }
 
-            if isEnhancementEnabled && !enhancementService.allPrompts.isEmpty {
+            // Profile picker is always rendered: it controls STT vocabulary
+            // bias regardless of the LLM Enhancement toggle.
+            if !enhancementService.allPrompts.isEmpty {
                 Divider().frame(height: 16)
 
                 let promptBinding = Binding<UUID>(
@@ -262,7 +264,7 @@ struct AudioTranscribeView: View {
                     }
                 )
 
-                Picker("Prompt", selection: promptBinding) {
+                Picker("Profile", selection: promptBinding) {
                     ForEach(enhancementService.allPrompts) { prompt in
                         Text(prompt.title).tag(prompt.id)
                     }

@@ -11,7 +11,6 @@ class AudioTranscriptionService: ObservableObject {
 
     private let modelContext: ModelContext
     private let enhancementService: AIEnhancementService?
-    private let promptDetectionService = PromptDetectionService()
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "AudioTranscriptionService")
     private let serviceRegistry: TranscriptionServiceRegistry
 
@@ -43,12 +42,22 @@ class AudioTranscriptionService: ObservableObject {
             isTranscribing = true
         }
         
+        var apiLog = APICallLog()
+
         do {
             let transcriptionStart = Date()
             var text = try await serviceRegistry.transcribe(audioURL: url, model: model)
             let transcriptionDuration = Date().timeIntervalSince(transcriptionStart)
             text = TranscriptionOutputFilter.filter(text)
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            apiLog.steps.append(Self.makeSTTStep(
+                model: model,
+                language: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+                durationMs: Int(transcriptionDuration * 1000),
+                response: text,
+                error: nil
+            ))
 
             let powerModeManager = PowerModeManager.shared
             let activePowerModeConfig = powerModeManager.currentActiveConfiguration
@@ -82,23 +91,25 @@ class AudioTranscriptionService: ObservableObject {
             
             let permanentURLString = permanentURL.absoluteString
 
-            // Apply prompt detection for trigger words
+            // Retry path: skip trigger-word prompt detection so the LLM call
+            // honours the user's *current* profile. The detection service is
+            // for hands-free first-pass dictation ("hey assistant, do X") —
+            // when the user clicks Retry in History they have already picked
+            // a model and profile in the UI; re-running detection on the
+            // same audio would silently override that choice (e.g. with the
+            // Assistant prompt that triggered the original run).
             let originalText = cleanedText
-            var promptDetectionResult: PromptDetectionService.PromptDetectionResult? = nil
-
-            if let enhancementService = enhancementService, enhancementService.isConfigured {
-                let detectionResult = await promptDetectionService.analyzeText(text, with: enhancementService)
-                promptDetectionResult = detectionResult
-                await promptDetectionService.applyDetectionResult(detectionResult, to: enhancementService)
-            }
 
             // Apply AI enhancement if enabled
             if let enhancementService = enhancementService,
                enhancementService.isEnhancementEnabled,
                enhancementService.isConfigured {
                 do {
-                    let textForAI = promptDetectionResult?.processedText ?? text
+                    let textForAI = text
                     let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(textForAI)
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
+                    }
                     let newTranscription = Transcription(
                         text: originalText,
                         duration: duration,
@@ -109,10 +120,9 @@ class AudioTranscriptionService: ObservableObject {
                         promptName: promptName,
                         transcriptionDuration: transcriptionDuration,
                         enhancementDuration: enhancementDuration,
-                        aiRequestSystemMessage: enhancementService.lastSystemMessageSent,
-                        aiRequestUserMessage: enhancementService.lastUserMessageSent,
                         powerModeName: powerModeName,
-                        powerModeEmoji: powerModeEmoji
+                        powerModeEmoji: powerModeEmoji,
+                        troubleshootingLogJSON: apiLog.encoded()
                     )
                     modelContext.insert(newTranscription)
                     do {
@@ -123,18 +133,15 @@ class AudioTranscriptionService: ObservableObject {
                         logger.error("❌ Failed to save transcription: \(error.localizedDescription, privacy: .public)")
                     }
 
-                    // Restore original prompt settings if AI was temporarily enabled
-                    if let result = promptDetectionResult,
-                       result.shouldEnableAI {
-                        await promptDetectionService.restoreOriginalSettings(result, to: enhancementService)
-                    }
-
                     await MainActor.run {
                         isTranscribing = false
                     }
 
                     return newTranscription
                 } catch {
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
+                    }
                     let newTranscription = Transcription(
                         text: originalText,
                         duration: duration,
@@ -143,7 +150,8 @@ class AudioTranscriptionService: ObservableObject {
                         promptName: nil,
                         transcriptionDuration: transcriptionDuration,
                         powerModeName: powerModeName,
-                        powerModeEmoji: powerModeEmoji
+                        powerModeEmoji: powerModeEmoji,
+                        troubleshootingLogJSON: apiLog.encoded()
                     )
                     modelContext.insert(newTranscription)
                     do {
@@ -169,7 +177,8 @@ class AudioTranscriptionService: ObservableObject {
                     promptName: nil,
                     transcriptionDuration: transcriptionDuration,
                     powerModeName: powerModeName,
-                    powerModeEmoji: powerModeEmoji
+                    powerModeEmoji: powerModeEmoji,
+                    troubleshootingLogJSON: apiLog.encoded()
                 )
                 modelContext.insert(newTranscription)
                 do {
@@ -191,5 +200,35 @@ class AudioTranscriptionService: ObservableObject {
             isTranscribing = false
             throw error
         }
+    }
+
+    /// Builds the STT entry attached to a retried transcription's
+    /// troubleshooting fixture. Mirrors `TranscriptionPipeline.makeSTTStep`
+    /// — kept as a static to avoid coupling AudioTranscriptionService to
+    /// the pipeline.
+    static func makeSTTStep(
+        model: any TranscriptionModel,
+        language: String?,
+        durationMs: Int,
+        response: String?,
+        error: String?
+    ) -> APICallLog.Step {
+        let isLocal = model.provider == .whisper
+            || model.provider == .fluidAudio
+            || model.provider == .nativeApple
+        return APICallLog.Step(
+            kind: .stt,
+            provider: model.provider.rawValue,
+            providerVariant: isLocal ? "Local" : "Cloud",
+            endpointHost: isLocal ? nil : CloudProviderRegistry.provider(for: model.provider)?.providerKey,
+            model: model.name,
+            languageCode: language,
+            requestSummary: "audio bytes (\(durationMs)ms transcription)",
+            requestSystemMessage: nil,
+            requestUserMessage: nil,
+            responseSummary: response,
+            durationMs: durationMs,
+            errorMessage: error
+        )
     }
 }

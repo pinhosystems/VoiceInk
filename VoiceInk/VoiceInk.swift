@@ -22,6 +22,7 @@ struct VoiceInkApp: App {
     @StateObject private var menuBarManager: MenuBarManager
     @StateObject private var aiService = AIService()
     @StateObject private var enhancementService: AIEnhancementService
+    @StateObject private var providerCatalog: ProviderCatalog
     @StateObject private var activeWindowService = ActiveWindowService.shared
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("enableAnnouncements") private var enableAnnouncements = true
@@ -111,6 +112,16 @@ struct VoiceInkApp: App {
         // 2. Create model managers
         let whisperModelManager = WhisperModelManager(modelsDirectory: modelsDirectory)
         let fluidAudioModelManager = FluidAudioModelManager()
+
+        // ProviderCatalog needs both model managers to derive `isConfigured`
+        // for local STT providers (Whisper / Parakeet), so it must be built
+        // after the managers exist but before any view tries to enumerate it.
+        let providerCatalog = ProviderCatalog(
+            aiService: aiService,
+            whisperModelManager: whisperModelManager,
+            fluidAudioModelManager: fluidAudioModelManager
+        )
+        _providerCatalog = StateObject(wrappedValue: providerCatalog)
         let transcriptionModelManager = TranscriptionModelManager(
             whisperModelManager: whisperModelManager,
             fluidAudioModelManager: fluidAudioModelManager
@@ -177,7 +188,11 @@ struct VoiceInkApp: App {
         let mainContext = resolvedContainer.mainContext
         Task {
             await migrationTask?.value
+            await MainActor.run {
+                DictionaryService.runDedupeMigrationIfNeeded(context: mainContext)
+            }
             TranscriptionAutoCleanupService.shared.startMonitoring(modelContext: mainContext)
+            TranscriptionLogRetentionService.shared.start(modelContext: mainContext)
         }
     }
 
@@ -286,6 +301,7 @@ struct VoiceInkApp: App {
                     .environmentObject(menuBarManager)
                     .environmentObject(aiService)
                     .environmentObject(enhancementService)
+                    .environmentObject(providerCatalog)
                     .modelContainer(container)
                     .onAppear {
                         // Check if container initialization failed
@@ -301,7 +317,10 @@ struct VoiceInkApp: App {
                             return
                         }
 
-                        updaterViewModel.silentlyCheckForUpdates()
+                        // Background update probe disabled in this fork — the
+                        // upstream appcast URL has been cleared in Info.plist
+                        // and `autoUpdateCheck` defaults to false. Re-enable
+                        // only when we ship our own signed appcast endpoint.
                         if enableAnnouncements {
                             AnnouncementsService.shared.start()
                         }
@@ -313,7 +332,7 @@ struct VoiceInkApp: App {
 
                         // Process any pending open-file request now that the main ContentView is ready.
                         if let pendingURL = appDelegate.pendingOpenFileURL {
-                            NotificationCenter.default.post(name: .navigateToDestination, object: nil, userInfo: ["destination": "Transcribe Audio"])
+                            NotificationCenter.default.post(name: .navigateToDestination, object: nil, userInfo: ["destination": "Transcribe File"])
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 NotificationCenter.default.post(name: .openFileForTranscription, object: nil, userInfo: ["url": pendingURL])
                             }
@@ -340,6 +359,7 @@ struct VoiceInkApp: App {
                     .environmentObject(recorderUIManager)
                     .environmentObject(aiService)
                     .environmentObject(enhancementService)
+                    .environmentObject(providerCatalog)
                     .frame(minWidth: 880, minHeight: 780)
                     .background(WindowAccessor { window in
                         if window.identifier == nil || window.identifier != NSUserInterfaceItemIdentifier("com.prakashjoshipax.voiceink.onboardingWindow") {
@@ -354,9 +374,9 @@ struct VoiceInkApp: App {
         .commands {
             CommandGroup(replacing: .newItem) { }
 
-            CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updaterViewModel: updaterViewModel)
-            }
+            // "Check for Updates…" intentionally omitted in this fork — see
+            // UpdaterViewModel docstring. The menu entry has nothing useful to
+            // do because Sparkle would only consult the (cleared) upstream feed.
         }
 
         MenuBarExtra(isInserted: $showMenuBarIcon) {
@@ -371,6 +391,7 @@ struct VoiceInkApp: App {
                 .environmentObject(updaterViewModel)
                 .environmentObject(aiService)
                 .environmentObject(enhancementService)
+                .environmentObject(providerCatalog)
         } label: {
             let image: NSImage = {
                 let ratio = $0.size.height / $0.size.width
@@ -394,35 +415,36 @@ struct VoiceInkApp: App {
 }
 
 class UpdaterViewModel: ObservableObject {
-    @AppStorage("autoUpdateCheck") private var autoUpdateCheck = true
-
     private let updaterController: SPUStandardUpdaterController
 
     @Published var canCheckForUpdates = false
 
+    /// The pinhosystems/VoiceInk fork ships its own pt-BR-tuned binary and does
+    /// not consume the upstream Beingpax appcast. We instantiate Sparkle so the
+    /// app remains source-compatible (it still references SPUStandardUpdater),
+    /// but force `automaticallyChecksForUpdates = false` regardless of the
+    /// `autoUpdateCheck` UserDefault, and `canCheckForUpdates` never flips to
+    /// true. Effect: no background probe, no manual check button enabled, and
+    /// no risk of an upstream binary replacing this fork on a user's machine.
+    /// To re-enable updates, point SUFeedURL at a feed we control and remove
+    /// the hard-coded `false` below.
     init() {
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
-
-        // Enable automatic update checking
-        updaterController.updater.automaticallyChecksForUpdates = autoUpdateCheck
+        updaterController.updater.automaticallyChecksForUpdates = false
         updaterController.updater.updateCheckInterval = 24 * 60 * 60
-
-        updaterController.updater.publisher(for: \.canCheckForUpdates)
-            .assign(to: &$canCheckForUpdates)
     }
 
     func toggleAutoUpdates(_ value: Bool) {
-        updaterController.updater.automaticallyChecksForUpdates = value
+        // Intentionally no-op in this fork; see init() comment.
     }
 
     func checkForUpdates() {
-        // This is for manual checks - will show UI
-        updaterController.checkForUpdates(nil)
+        // Manual check disabled in this fork. Kept as a no-op so existing call
+        // sites compile without a feature flag dance.
     }
 
     func silentlyCheckForUpdates() {
-        // This checks for updates in the background without showing UI unless an update is found
-        updaterController.updater.checkForUpdatesInBackground()
+        // Silent background check disabled in this fork.
     }
 }
 

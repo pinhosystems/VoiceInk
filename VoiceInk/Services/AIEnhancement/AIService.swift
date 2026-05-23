@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import LLMkit
 
@@ -99,8 +100,6 @@ enum AIProvider: String, CaseIterable {
         case .cerebras:
             return [
                 "gpt-oss-120b",
-                "llama3.1-8b",
-                "qwen-3-235b-a22b-instruct-2507",
                 "zai-glm-4.7"
             ]
         case .groq:
@@ -115,7 +114,7 @@ enum AIProvider: String, CaseIterable {
             return [
                 "gemini-3.1-pro-preview",
                 "gemini-3-flash-preview",
-                "gemini-3.1-flash-lite-preview",
+                "gemini-3.1-flash-lite",
                 "gemini-2.5-pro",
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite"
@@ -147,7 +146,7 @@ enum AIProvider: String, CaseIterable {
                 "mistral-small-latest"
             ]
         case .elevenLabs:
-            return ["scribe_v1", "scribe_v1_experimental"]
+            return ["scribe_v1", "scribe_v2"]
         case .deepgram:
             return ["whisper-1"]
         case .soniox:
@@ -192,10 +191,43 @@ class AIService: ObservableObject {
             userDefaults.set(customModel, forKey: "customProviderModel")
         }
     }
+    /// Which user-defined `CustomProvider` is the currently active LLM
+    /// custom. `nil` means "no custom LLM picked yet" — in that state
+    /// `selectedProvider == .custom` is considered unconfigured.
+    @Published var selectedCustomLLMProviderID: UUID? {
+        didSet {
+            if let id = selectedCustomLLMProviderID {
+                userDefaults.set(id.uuidString, forKey: "selectedCustomLLMProviderID")
+            } else {
+                userDefaults.removeObject(forKey: "selectedCustomLLMProviderID")
+            }
+            if selectedProvider == .custom {
+                syncFromActiveCustomLLM()
+            }
+        }
+    }
+
+    /// Which user-defined `LocalCLIProvider` is the currently active CLI.
+    /// `nil` with no providers = unconfigured; with at least one configured
+    /// record the runtime auto-picks the first.
+    @Published var selectedLocalCLIProviderID: UUID? {
+        didSet {
+            if let id = selectedLocalCLIProviderID {
+                userDefaults.set(id.uuidString, forKey: "selectedLocalCLIProviderID")
+            } else {
+                userDefaults.removeObject(forKey: "selectedLocalCLIProviderID")
+            }
+            if selectedProvider == .localCLI {
+                self.isAPIKeyValid = activeLocalCLIProvider != nil
+            }
+        }
+    }
     @Published var selectedProvider: AIProvider {
         didSet {
             userDefaults.set(selectedProvider.rawValue, forKey: "selectedAIProvider")
-            if selectedProvider.requiresAPIKey {
+            if selectedProvider == .custom {
+                syncFromActiveCustomLLM()
+            } else if selectedProvider.requiresAPIKey {
                 if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
                     self.apiKey = savedKey
                     self.isAPIKeyValid = true
@@ -205,7 +237,9 @@ class AIService: ObservableObject {
                 }
             } else {
                 self.apiKey = ""
-                self.isAPIKeyValid = selectedProvider == .localCLI ? localCLIService.isConfigured : true
+                self.isAPIKeyValid = selectedProvider == .localCLI
+                    ? activeLocalCLIProvider != nil
+                    : true
                 if selectedProvider == .ollama {
                     Task {
                         await ollamaService.checkConnection()
@@ -216,24 +250,75 @@ class AIService: ObservableObject {
             NotificationCenter.default.post(name: .AppSettingsDidChange, object: nil)
         }
     }
-    
+
     @Published private var selectedModels: [AIProvider: String] = [:]
     private let userDefaults = UserDefaults.standard
     private lazy var ollamaService = OllamaService()
     private lazy var localCLIService = LocalCLIService()
-    
+
     @Published private var openRouterModels: [String] = []
-    
+    private var customProvidersCancellable: AnyCancellable?
+    private var localCLIProvidersCancellable: AnyCancellable?
+
     var connectedProviders: [AIProvider] {
         AIProvider.allCases.filter { provider in
             if provider == .ollama {
                 return ollamaService.isConnected
             } else if provider == .localCLI {
-                return localCLIService.isConfigured
+                return !LocalCLIProviderManager.shared.configuredProviders.isEmpty
+            } else if provider == .custom {
+                // .custom is connected when at least one LLM-capable
+                // CustomProvider has a stored Keychain entry *and* its
+                // URL+model fields are filled. Half-configured records
+                // (LLM toggle on, empty fields) used to silently appear
+                // in Enhancement's picker.
+                return CustomProviderManager.shared.providers.contains {
+                    $0.hasUsableLLM
+                        && APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
+                }
             } else if provider.requiresAPIKey {
                 return APIKeyManager.shared.hasAPIKey(forProvider: provider.rawValue)
             }
             return false
+        }
+    }
+
+    /// Pull the active custom LLM provider's URL/model/key into the
+    /// `customBaseURL`/`customModel`/`apiKey` published cache so existing
+    /// consumers (AIEnhancementService routing via `AIProvider.custom.baseURL`,
+    /// the Enhancement picker display) work without provider-specific
+    /// branching.
+    func syncFromActiveCustomLLM() {
+        guard selectedProvider == .custom else { return }
+        let manager = CustomProviderManager.shared
+        let provider: CustomProvider?
+        if let id = selectedCustomLLMProviderID {
+            provider = manager.provider(for: id)
+        } else {
+            // Auto-select the first LLM-capable custom that is fully usable.
+            provider = manager.providers.first {
+                $0.hasUsableLLM
+                    && APIKeyManager.shared.getCustomModelAPIKey(forModelId: $0.id) != nil
+            }
+            if let auto = provider {
+                selectedCustomLLMProviderID = auto.id
+                return // didSet re-enters and finishes the sync
+            }
+        }
+
+        if let p = provider, p.hasUsableLLM {
+            customBaseURL = p.llmEndpointURL
+            customModel = p.llmModelName
+            if let key = APIKeyManager.shared.getCustomModelAPIKey(forModelId: p.id), !key.isEmpty {
+                apiKey = key
+                isAPIKeyValid = true
+            } else {
+                apiKey = ""
+                isAPIKeyValid = false
+            }
+        } else {
+            apiKey = ""
+            isAPIKeyValid = false
         }
     }
     
@@ -283,7 +368,18 @@ class AIService: ObservableObject {
             self.selectedProvider = .gemini
         }
 
-        if selectedProvider.requiresAPIKey {
+        if let raw = userDefaults.string(forKey: "selectedCustomLLMProviderID"),
+           let id = UUID(uuidString: raw) {
+            self.selectedCustomLLMProviderID = id
+        }
+        if let raw = userDefaults.string(forKey: "selectedLocalCLIProviderID"),
+           let id = UUID(uuidString: raw) {
+            self.selectedLocalCLIProviderID = id
+        }
+
+        if selectedProvider == .custom {
+            // Will pull from active CustomProvider once init returns.
+        } else if selectedProvider.requiresAPIKey {
             if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
                 self.apiKey = savedKey
                 self.isAPIKeyValid = true
@@ -294,6 +390,41 @@ class AIService: ObservableObject {
 
         loadSavedModelSelections()
         loadSavedOpenRouterModels()
+
+        if selectedProvider == .custom {
+            syncFromActiveCustomLLM()
+        }
+
+        // Track edits to the active custom provider so the LLM enhancement
+        // path always sees the latest endpoint URL / model / API key, and
+        // force-publish so observing views (Enhancement picker) re-evaluate
+        // `connectedProviders` even when the currently-selected provider is
+        // not .custom — they still need to know that .custom flipped from
+        // "no LLM-capable record" to "one available" or vice-versa.
+        customProvidersCancellable = CustomProviderManager.shared.$providers
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.selectedProvider == .custom {
+                    self.syncFromActiveCustomLLM()
+                }
+                self.objectWillChange.send()
+            }
+
+        // Same fan-out for Local CLI providers: any add / edit / delete
+        // must refresh `connectedProviders` and the picker sub-selection
+        // shown in EnhancementSettingsView.
+        localCLIProvidersCancellable = LocalCLIProviderManager.shared.$providers
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.selectedProvider == .localCLI {
+                    self.isAPIKeyValid = self.activeLocalCLIProvider != nil
+                }
+                self.objectWillChange.send()
+            }
     }
     
     private func loadSavedModelSelections() {
@@ -406,6 +537,35 @@ class AIService: ObservableObject {
         APIKeyManager.shared.deleteAPIKey(forProvider: selectedProvider.rawValue)
         NotificationCenter.default.post(name: .aiProviderKeyChanged, object: nil)
     }
+
+    /// Re-reads the API-key / configured state for `selectedProvider` from
+    /// the source of truth (Keychain, Ollama, LocalCLI, or — for .custom —
+    /// the active `CustomProvider`).
+    ///
+    /// Needed because the Providers tab can mutate credentials for any
+    /// provider — including the one that happens to be `selectedProvider` —
+    /// while this object's `apiKey` / `isAPIKeyValid` cache would otherwise
+    /// drift. The provider's `didSet` already does this on switch, but a
+    /// save/remove without a switch needs this manual nudge.
+    func refreshKeyStateForCurrentProvider() {
+        if selectedProvider == .custom {
+            syncFromActiveCustomLLM()
+        } else if selectedProvider.requiresAPIKey {
+            if let savedKey = APIKeyManager.shared.getAPIKey(forProvider: selectedProvider.rawValue) {
+                apiKey = savedKey
+                isAPIKeyValid = true
+            } else {
+                apiKey = ""
+                isAPIKeyValid = false
+            }
+        } else {
+            apiKey = ""
+            isAPIKeyValid = selectedProvider == .localCLI
+                ? activeLocalCLIProvider != nil
+                : true
+        }
+        objectWillChange.send()
+    }
     
     func checkOllamaConnection(completion: @escaping (Bool) -> Void) {
         Task { [weak self] in
@@ -422,13 +582,8 @@ class AIService: ObservableObject {
         return ollamaService.availableModels
     }
     
-    func enhanceWithOllama(text: String, systemPrompt: String) async throws -> String {
-        do {
-            let result = try await ollamaService.enhance(text, withSystemPrompt: systemPrompt)
-            return result
-        } catch {
-            throw error
-        }
+    func enhanceWithOllama(text: String, systemPrompt: String, timeout: TimeInterval = 30) async throws -> String {
+        try await ollamaService.enhance(text, withSystemPrompt: systemPrompt, timeout: timeout)
     }
     
     func updateOllamaBaseURL(_ newURL: String) {
@@ -456,13 +611,33 @@ class AIService: ObservableObject {
         refreshLocalCLIConfigurationState()
     }
 
+    /// Resolves to the user's currently selected Local CLI provider, or
+    /// auto-selects the first configured one if no explicit selection was
+    /// made. Returns nil only when no configured providers exist.
+    var activeLocalCLIProvider: LocalCLIProvider? {
+        if let id = selectedLocalCLIProviderID,
+           let provider = LocalCLIProviderManager.shared.provider(for: id),
+           provider.isConfigured {
+            return provider
+        }
+        return LocalCLIProviderManager.shared.configuredProviders.first
+    }
+
     func enhanceWithLocalCLI(systemPrompt: String, userPrompt: String) async throws -> String {
-        try await localCLIService.enhance(systemPrompt: systemPrompt, userPrompt: userPrompt)
+        guard let provider = activeLocalCLIProvider else {
+            throw LocalCLIError.commandNotConfigured
+        }
+        return try await LocalCLIService.enhance(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            commandTemplate: provider.commandTemplate,
+            timeoutSeconds: provider.timeoutSeconds
+        )
     }
 
     private func refreshLocalCLIConfigurationState() {
         if selectedProvider == .localCLI {
-            isAPIKeyValid = localCLIService.isConfigured
+            isAPIKeyValid = activeLocalCLIProvider != nil
         }
         objectWillChange.send()
         NotificationCenter.default.post(name: .AppSettingsDidChange, object: nil)

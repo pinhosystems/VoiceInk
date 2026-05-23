@@ -1,13 +1,58 @@
 import Foundation
 
+enum PunctuationCleanupMode: String, Codable, CaseIterable, Identifiable {
+    case keep = "keep"
+    case removeAll = "removeAll"
+    case removeTrailingPeriod = "removeTrailingPeriod"
+
+    static let userDefaultsKey = "PunctuationCleanupMode"
+    static let legacyRemovePunctuationKey = "RemovePunctuation"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .keep:
+            return "Keep"
+        case .removeAll:
+            return "Remove all"
+        case .removeTrailingPeriod:
+            return "Remove trailing period"
+        }
+    }
+
+    static func current(in defaults: UserDefaults = .standard) -> PunctuationCleanupMode {
+        if let rawValue = defaults.string(forKey: userDefaultsKey),
+           let mode = PunctuationCleanupMode(rawValue: rawValue) {
+            return mode
+        }
+
+        return defaults.bool(forKey: legacyRemovePunctuationKey) ? .removeAll : .keep
+    }
+
+    static func setCurrent(_ mode: PunctuationCleanupMode, in defaults: UserDefaults = .standard) {
+        defaults.set(mode.rawValue, forKey: userDefaultsKey)
+        defaults.set(mode == .removeAll, forKey: legacyRemovePunctuationKey)
+    }
+
+    static func migrateLegacyUserDefaultIfNeeded(in defaults: UserDefaults = .standard) {
+        if let rawValue = defaults.string(forKey: userDefaultsKey),
+           PunctuationCleanupMode(rawValue: rawValue) != nil {
+            return
+        }
+
+        setCurrent(defaults.bool(forKey: legacyRemovePunctuationKey) ? .removeAll : .keep, in: defaults)
+    }
+}
+
 struct TranscriptionOutputFilter {
-    private static let removePunctuationKey = "RemovePunctuation"
     private static let lowercaseTranscriptionKey = "LowercaseTranscription"
     private static let apostropheLikeCharacters = CharacterSet(charactersIn: "'’‘ʼ＇")
     
     /// Whisper-style non-verbal annotations that legitimately appear inside brackets/parens.
     /// Strip only these — never plain user content like "(o gerente novo)" or "[ver depois]".
     private static let hallucinationKeywords: Set<String> = [
+        // English
         "music", "music playing", "soft music", "loud music", "upbeat music",
         "instrumental", "instrumental music", "intro music", "outro music",
         "applause", "cheering", "crowd", "chatter", "background noise", "noise",
@@ -19,8 +64,25 @@ struct TranscriptionOutputFilter {
         "inaudible", "indistinct", "unintelligible",
         "click", "clicking", "tap", "tapping", "thump",
         "intro", "outro", "music ends", "music fades",
-        "música", "música ao fundo", "risos", "aplausos", "silêncio",
-        "tosse", "suspiro", "inaudível"
+        // Português brasileiro: Whisper costuma alucinar essas marcações entre
+        // colchetes/parênteses em transcrições pt-BR (especialmente em silêncios
+        // ou áudio com ruído de fundo). Cobre singular/plural, gerúndio e variações.
+        "música", "músicas", "música ao fundo", "música de fundo", "música tocando",
+        "música suave", "música alta", "música animada", "música instrumental",
+        "abertura", "encerramento", "vinheta", "trilha", "trilha sonora",
+        "risos", "risada", "risadas", "rindo", "gargalhada", "gargalhadas",
+        "aplausos", "palmas", "vivas",
+        "silêncio", "pausa", "longa pausa", "pausa longa",
+        "tosse", "tossindo", "tossiu", "espirro", "espirra", "espirrando",
+        "respiração", "respira", "respirando", "suspiro", "suspirando", "suspira", "suspiros",
+        "gemido", "gemidos", "gemendo",
+        "sussurro", "sussurrando", "sussurra", "abafado",
+        "inaudível", "ininteligível", "incompreensível", "indistinto",
+        "estalo", "estalido", "clique", "batida", "batidas",
+        "barulho", "barulhos", "ruído", "ruídos", "ruído de fundo", "barulho de fundo",
+        "burburinho", "conversa", "conversa de fundo", "conversas",
+        "ronco", "roncos", "roncando",
+        "música encerra", "música termina", "música começa", "fim da música"
     ]
 
     static func filter(_ text: String) -> String {
@@ -35,11 +97,20 @@ struct TranscriptionOutputFilter {
         // legitimate dictated content such as HTML, JSX, or XML samples.
         filteredText = removeKnownAnnotations(in: filteredText)
 
-        // Remove filler words (if enabled)
+        // Remove filler words (if enabled). Uses `effectiveFillerWords` so that the
+        // pt-BR set ("né", "tipo", "sei lá", ...) is included automatically when the
+        // selected language begins with "pt", without mutating the user's saved list.
         if FillerWordManager.shared.isEnabled {
-            for fillerWord in FillerWordManager.shared.fillerWords {
+            // Sort longest-first so multi-word fillers ("tipo assim") match before
+            // their substrings ("tipo"); avoids leaving an orphaned "assim".
+            let words = FillerWordManager.shared.effectiveFillerWords
+                .sorted { $0.count > $1.count }
+            for fillerWord in words {
                 let pattern = "\\b\(NSRegularExpression.escapedPattern(for: fillerWord))\\b[,.]?"
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                if let regex = try? NSRegularExpression(
+                    pattern: pattern,
+                    options: [.caseInsensitive, .useUnicodeWordBoundaries]
+                ) {
                     let range = NSRange(filteredText.startIndex..., in: filteredText)
                     filteredText = regex.stringByReplacingMatches(in: filteredText, options: [], range: range, withTemplate: "")
                 }
@@ -54,22 +125,52 @@ struct TranscriptionOutputFilter {
     }
 
     static func applyUserCleanupPreferences(_ text: String) -> String {
-        let shouldRemovePunctuation = UserDefaults.standard.bool(forKey: removePunctuationKey)
+        let punctuationMode = PunctuationCleanupMode.current()
         let shouldLowercase = UserDefaults.standard.bool(forKey: lowercaseTranscriptionKey)
 
-        guard shouldRemovePunctuation || shouldLowercase else {
+        return applyCleanupPreferences(text, punctuationMode: punctuationMode, shouldLowercase: shouldLowercase)
+    }
+
+    static func applyCleanupPreferences(_ text: String, punctuationMode: PunctuationCleanupMode, shouldLowercase: Bool) -> String {
+        guard punctuationMode != .keep || shouldLowercase else {
             return text
         }
 
         var cleanedText = text
-        if shouldRemovePunctuation {
+        switch punctuationMode {
+        case .keep:
+            break
+        case .removeAll:
             cleanedText = removePunctuation(from: cleanedText)
+        case .removeTrailingPeriod:
+            cleanedText = removeTrailingPeriod(from: cleanedText)
         }
+
         if shouldLowercase {
             cleanedText = cleanedText.lowercased()
         }
 
         return cleanedText
+    }
+
+    static func removeTrailingPeriod(from text: String) -> String {
+        guard !text.isEmpty else { return text }
+
+        let trailingWhitespace = text.reversed().prefix { $0.isWhitespace }
+        let trimmedEndIndex = text.index(text.endIndex, offsetBy: -trailingWhitespace.count)
+        guard trimmedEndIndex > text.startIndex else { return text }
+
+        let lastCharIndex = text.index(before: trimmedEndIndex)
+        guard text[lastCharIndex] == "." else { return text }
+
+        if lastCharIndex > text.startIndex {
+            let previousCharIndex = text.index(before: lastCharIndex)
+            guard text[previousCharIndex] != "." else { return text }
+        }
+
+        var result = text
+        result.remove(at: lastCharIndex)
+        return result
     }
 
     static func removePunctuation(from text: String) -> String {

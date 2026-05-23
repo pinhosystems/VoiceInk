@@ -7,34 +7,38 @@ struct EnhancementPromptPopover: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Enhancement Toggle at the top
+            // LLM Enhancement toggle. Independent of the profile picker
+            // below: profile bias is sent to STT either way.
             HStack(spacing: 8) {
-                Toggle("AI Enhancement", isOn: $enhancementService.isEnhancementEnabled)
+                Toggle("LLM Enhancement", isOn: $enhancementService.isEnhancementEnabled)
                     .foregroundColor(.white.opacity(0.9))
                     .font(.headline)
                     .lineLimit(1)
-                
+
                 Spacer()
             }
             .padding(.horizontal)
             .padding(.top, 8)
-            
+
+            Text("Profile always biases STT. LLM rules apply only with Enhancement on.")
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.55))
+                .padding(.horizontal)
+                .padding(.bottom, 4)
+
             Divider()
                 .background(Color.white.opacity(0.1))
-            
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    // Available Enhancement Prompts
+                    // Transcription Profiles — selectable regardless of
+                    // enhancement toggle.
                     ForEach(enhancementService.allPrompts) { prompt in
                         EnhancementPromptRow(
                             prompt: prompt,
                             isSelected: selectedPrompt?.id == prompt.id,
-                            isDisabled: !enhancementService.isEnhancementEnabled,
+                            isDisabled: false,
                             action: {
-                                // If enhancement is disabled, enable it first
-                                if !enhancementService.isEnhancementEnabled {
-                                    enhancementService.isEnhancementEnabled = true
-                                }
                                 enhancementService.setActivePrompt(prompt)
                                 selectedPrompt = prompt
                             }

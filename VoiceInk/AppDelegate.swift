@@ -37,9 +37,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Defer to SwiftUI’s WindowGroup-created ContentView and let it process this later.
             pendingOpenFileURL = url
         } else {
-            // Running: focus current window and route in-place to Transcribe Audio
+            // Running: focus current window and route in-place to Transcribe File
             menuBarManager?.focusMainWindow()
-            NotificationCenter.default.post(name: .navigateToDestination, object: nil, userInfo: ["destination": "Transcribe Audio"])
+            NotificationCenter.default.post(name: .navigateToDestination, object: nil, userInfo: ["destination": "Transcribe File"])
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .openFileForTranscription, object: nil, userInfo: ["url": url])
             }

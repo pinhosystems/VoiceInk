@@ -2,11 +2,28 @@
 // Build configuration for local/unsigned builds (no Apple Developer certificate required).
 // Used by `make local` — does NOT affect Debug or Release configurations.
 
-// Ad-hoc signing (works without a developer account)
-CODE_SIGN_IDENTITY = -
+// CODE_SIGN_IDENTITY is set by the Makefile — either to a stable
+// self-signed identity ("VoiceInk Local Dev") when provisioned via
+// `make setup-signing`, or to "-" (ad-hoc) as a fallback. Don't
+// hardcode it here: xcconfig values outrank command-line build
+// settings on some xcodebuild paths, which silently downgrades
+// stable-identity builds to ad-hoc.
 CODE_SIGN_STYLE = Manual
 DEVELOPMENT_TEAM =
 PROVISIONING_PROFILE_SPECIFIER =
+
+// Hardened Runtime is auto-enabled by Xcode when a real signing
+// identity is present — but a self-signed cert has no TeamIdentifier,
+// and Hardened Runtime forbids loading dylibs whose TeamIdentifier
+// differs from the host process. The main binary and Swift debug
+// dylib both end up "TeamIdentifier=not set", which the loader treats
+// as distinct per-binary values, so the app crashes at launch with:
+//   Library not loaded: @rpath/VoiceInk.debug.dylib
+//   ... mapping process and mapped file have different Team IDs
+// Hardened Runtime is irrelevant for a local dev build, so we turn
+// it off explicitly here (Xcode would otherwise re-enable it because
+// CODE_SIGN_IDENTITY is no longer "-").
+ENABLE_HARDENED_RUNTIME = NO
 
 // Entitlements are set via absolute path in the Makefile command line
 // (relative paths break SPM package targets that resolve from their own source root)

@@ -188,6 +188,7 @@ struct InlineHistoryView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
+            .softTooltip("Open performance analysis for the selected transcriptions")
 
             Button(action: {
                 exportService.exportTranscriptionsToCSV(transcriptions: Array(selectedTranscriptions))
@@ -197,13 +198,16 @@ struct InlineHistoryView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
+            .softTooltip("Export the selected transcriptions to CSV")
 
-            Button(action: { showDeleteConfirmation = true }) {
-                Label("Delete", systemImage: "trash")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.red.opacity(0.8))
+            // Manual Delete intentionally removed from the selection
+            // bar — transcriptions and their audio are reaped by the
+            // retention services (TranscriptionAutoCleanupService for
+            // records + audio, TranscriptionLogRetentionService for
+            // troubleshooting JSON). Surfacing a destructive button
+            // alongside Analyze / Export invited fat-fingered losses.
+            // Tweak retention windows in Settings → Cleanup if a faster
+            // sweep is needed.
 
             Divider()
                 .frame(height: 16)
@@ -215,6 +219,7 @@ struct InlineHistoryView: View {
                 .font(.system(size: 12, weight: .medium))
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
+                .softTooltip("Clear the current selection")
             } else {
                 Button("Select All") {
                     Task { await selectAllTranscriptions() }
@@ -222,6 +227,7 @@ struct InlineHistoryView: View {
                 .font(.system(size: 12, weight: .medium))
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
+                .softTooltip("Select every transcription matching the current search")
             }
         }
         .padding(.horizontal, 20)
@@ -514,36 +520,122 @@ private struct HistoryCardRow: View {
         return false
     }
 
+    /// Trimmed power-mode label. Returns nil when the name is missing or
+    /// blank so we don't render a hollow pill containing only the emoji.
+    private var powerModeLabel: String? {
+        guard let raw = transcription.powerModeName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        return raw
+    }
+
+    /// Short, humane timestamp: "Today at 10:35", "Yesterday at 14:20",
+    /// "Mon at 09:15", or "May 22" for older records. The intent is to
+    /// favor recognition over precision — the exact timestamp is one tap
+    /// away in the info panel.
+    private var humanTimestamp: String {
+        let date = transcription.timestamp
+        let calendar = Calendar.current
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        timeFormatter.dateStyle = .none
+        let timeString = timeFormatter.string(from: date)
+
+        if calendar.isDateInToday(date) {
+            return "Today at \(timeString)"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday at \(timeString)"
+        }
+        if let weekStart = calendar.date(byAdding: .day, value: -6, to: Date()),
+           date > weekStart {
+            let weekdayFormatter = DateFormatter()
+            weekdayFormatter.dateFormat = "EEE"
+            return "\(weekdayFormatter.string(from: date)) at \(timeString)"
+        }
+        let dateFormatter = DateFormatter()
+        dateFormatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return dateFormatter.string(from: date)
+    }
+
+    /// Compact model label — the full name is preserved on hover via help,
+    /// and the info panel always carries the unabbreviated value.
+    private static func shortModelName(_ raw: String?, limit: Int = 18) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        if raw.count <= limit { return raw }
+        return String(raw.prefix(limit - 1)) + "…"
+    }
+
+    @ViewBuilder
+    private func metadataPill(icon: String?, emoji: String?, text: String, tint: Color, help: String? = nil) -> some View {
+        HStack(spacing: 4) {
+            if let emoji, !emoji.isEmpty {
+                Text(emoji)
+                    .font(.system(size: 10))
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(tint)
+            }
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(tint)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(
+            Capsule().fill(tint.opacity(0.12))
+        )
+        .softTooltip(help ?? text)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
                 Toggle("", isOn: Binding(
                     get: { isChecked },
                     set: { _ in onToggleCheck() }
                 ))
                 .toggleStyle(CircularCheckboxStyle())
                 .labelsHidden()
+                .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(transcription.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(humanTimestamp)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.primary)
+
+                        Text("·")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.5))
+
+                        Text(transcription.duration.formatTiming())
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+
+                    metadataRow
 
                     if !isExpanded {
                         Text(transcription.enhancedText ?? transcription.text)
                             .font(.system(size: 13))
                             .lineLimit(2)
-                            .foregroundColor(.primary)
+                            .foregroundColor(.primary.opacity(0.85))
+                            .padding(.top, 2)
                     }
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
                     .foregroundColor(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                    .padding(.top, 4)
             }
             .contentShape(Rectangle())
             .onTapGesture { onToggleExpand() }
@@ -551,6 +643,61 @@ private struct HistoryCardRow: View {
             if isExpanded {
                 expandedContent
                     .padding(.top, 10)
+            }
+        }
+    }
+
+    /// Pills row carrying — in priority order — the power mode, the prompt
+    /// profile, the STT model, and the LLM model. Renders nothing when no
+    /// metadata is present so legacy rows don't reserve dead space.
+    @ViewBuilder
+    private var metadataRow: some View {
+        let powerMode = powerModeLabel
+        let prompt = transcription.promptName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sttFull = transcription.transcriptionModelName
+        let llmFull = transcription.aiEnhancementModelName
+        let sttShort = Self.shortModelName(sttFull)
+        let llmShort = Self.shortModelName(llmFull)
+
+        if powerMode != nil || (prompt?.isEmpty == false) || sttShort != nil || llmShort != nil {
+            HStack(spacing: 5) {
+                if let powerMode {
+                    metadataPill(
+                        icon: nil,
+                        emoji: transcription.powerModeEmoji,
+                        text: powerMode,
+                        tint: .blue,
+                        help: "Power Mode profile"
+                    )
+                }
+                if let prompt, !prompt.isEmpty {
+                    metadataPill(
+                        icon: "sparkles",
+                        emoji: nil,
+                        text: prompt,
+                        tint: .purple,
+                        help: "Enhancement prompt"
+                    )
+                }
+                if let sttShort {
+                    metadataPill(
+                        icon: "waveform",
+                        emoji: nil,
+                        text: sttShort,
+                        tint: .teal,
+                        help: "Transcription model: \(sttFull ?? sttShort)"
+                    )
+                }
+                if let llmShort {
+                    metadataPill(
+                        icon: "cpu",
+                        emoji: nil,
+                        text: llmShort,
+                        tint: .orange,
+                        help: "Enhancement model: \(llmFull ?? llmShort)"
+                    )
+                }
+                Spacer(minLength: 0)
             }
         }
     }
@@ -610,7 +757,7 @@ private struct HistoryCardRow: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("View details")
+                    .softTooltip("View details")
                 }
             }
         }

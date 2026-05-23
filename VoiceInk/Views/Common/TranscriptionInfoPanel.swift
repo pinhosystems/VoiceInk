@@ -8,10 +8,146 @@ struct TranscriptionInfoPanel: View {
     var body: some View {
         Form {
             detailsSection
-            aiRequestSection
+            troubleshootingLogSection
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+    }
+
+    // MARK: - Troubleshooting log
+
+    @ViewBuilder
+    private var troubleshootingLogSection: some View {
+        if let log = APICallLog.decoded(from: transcription.troubleshootingLogJSON),
+           !log.steps.isEmpty {
+            Section {
+                ForEach(log.steps) { step in
+                    troubleshootingStepCard(step)
+                }
+                Text("Retention: 7 days. Tokens never stored — only assembled payloads and responses are captured.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            } header: {
+                HStack(spacing: 6) {
+                    Image(systemName: "ladybug.fill")
+                        .font(.system(size: 11))
+                    Text("Troubleshooting Log")
+                    Spacer()
+                    Text("\(log.steps.count) call\(log.steps.count == 1 ? "" : "s")")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func troubleshootingStepCard(_ step: APICallLog.Step) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: stepIcon(step))
+                    .foregroundColor(stepTint(step))
+                    .font(.system(size: 11, weight: .semibold))
+                Text(stepHeader(step))
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if let duration = step.durationMs {
+                    Text("\(duration) ms")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack(spacing: 6) {
+                if let model = step.model {
+                    pill(model)
+                }
+                if let lang = step.languageCode {
+                    pill(lang)
+                }
+                if let host = step.endpointHost {
+                    Text(host)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            if let req = step.requestSystemMessage, !req.isEmpty {
+                logBlock(title: "System message", text: req)
+            }
+            if let user = step.requestUserMessage, !user.isEmpty {
+                logBlock(title: "User message", text: user)
+            }
+            if let summary = step.requestSummary, !summary.isEmpty,
+               step.requestSystemMessage == nil, step.requestUserMessage == nil {
+                logBlock(title: "Request", text: summary)
+            }
+            if let response = step.responseSummary, !response.isEmpty {
+                logBlock(title: "Response", text: response)
+            }
+            if let err = step.errorMessage, !err.isEmpty {
+                logBlock(title: "Error", text: err, tint: .red)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06))
+        .cornerRadius(8)
+    }
+
+    private func pill(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Color.secondary.opacity(0.12))
+            .cornerRadius(3)
+    }
+
+    private func logBlock(title: String, text: String, tint: Color = .secondary) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(tint)
+                Spacer()
+                CopyIconButton(textToCopy: text)
+            }
+            ScrollView(.vertical, showsIndicators: true) {
+                Text(text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 160)
+            .padding(8)
+            .background(Color(NSColor.textBackgroundColor).opacity(0.6))
+            .cornerRadius(6)
+        }
+    }
+
+    private func stepHeader(_ step: APICallLog.Step) -> String {
+        let variant = step.providerVariant.map { " (\($0))" } ?? ""
+        switch step.kind {
+        case .stt: return "STT — \(step.provider)\(variant)"
+        case .llm: return "LLM — \(step.provider)\(variant)"
+        case .localCLI: return "Local CLI — \(step.provider)\(variant)"
+        }
+    }
+
+    private func stepIcon(_ step: APICallLog.Step) -> String {
+        switch step.kind {
+        case .stt: return "waveform"
+        case .llm: return "bubble.left.and.bubble.right.fill"
+        case .localCLI: return "terminal.fill"
+        }
+    }
+
+    private func stepTint(_ step: APICallLog.Step) -> Color {
+        switch step.kind {
+        case .stt: return .blue
+        case .llm: return .purple
+        case .localCLI: return .accentColor
+        }
     }
 
     // MARK: - Details Section
@@ -85,59 +221,7 @@ struct TranscriptionInfoPanel: View {
         }
     }
 
-    // MARK: - AI Request Section
-
-    @ViewBuilder
-    private var aiRequestSection: some View {
-        if transcription.aiRequestSystemMessage != nil || transcription.aiRequestUserMessage != nil {
-            Section {
-                if let systemMsg = transcription.aiRequestSystemMessage, !systemMsg.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("System Prompt")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text(systemMsg)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .lineSpacing(2)
-                            .textSelection(.enabled)
-                            .foregroundColor(.primary)
-                    }
-                }
-
-                if let userMsg = transcription.aiRequestUserMessage, !userMsg.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("User Message")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text(userMsg)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .lineSpacing(2)
-                            .textSelection(.enabled)
-                            .foregroundColor(.primary)
-                    }
-                }
-            } header: {
-                HStack {
-                    Text("AI Request")
-                    Spacer()
-                    CopyIconButton(textToCopy: fullRequestText)
-                }
-            }
-        }
-    }
-
     // MARK: - Helpers
-
-    private var fullRequestText: String {
-        var parts: [String] = []
-        if let sys = transcription.aiRequestSystemMessage, !sys.isEmpty {
-            parts.append("System Prompt:\n\(sys)")
-        }
-        if let user = transcription.aiRequestUserMessage, !user.isEmpty {
-            parts.append("User Message:\n\(user)")
-        }
-        return parts.joined(separator: "\n\n")
-    }
 
     private func metadataRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 8) {

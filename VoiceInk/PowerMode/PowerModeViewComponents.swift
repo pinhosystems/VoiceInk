@@ -53,9 +53,22 @@ struct PowerModeConfigurationsGrid: View {
     @ObservedObject var powerModeManager: PowerModeManager
     let onEditConfig: (PowerModeConfig) -> Void
     @EnvironmentObject var enhancementService: AIEnhancementService
-    
+
+    /// Adaptive 1-to-2 column layout that *stretches* cells to fill
+    /// the available row width. The previous max: 480 cap left a wide
+    /// trailing trough on a single-column layout because cells stopped
+    /// growing at 480pt even when the window had 720pt of usable
+    /// content area. Dropping the explicit max lets the grid divide
+    /// row space evenly between however many columns fit above the
+    /// 320pt minimum — typically 2 cols on the standard 950pt main
+    /// window, 1 col when the user collapses or narrows the sidebar,
+    /// 3+ cols on tertiary monitors.
+    private let columns: [GridItem] = [
+        GridItem(.adaptive(minimum: 320), spacing: 12, alignment: .top)
+    ]
+
     var body: some View {
-        LazyVStack(spacing: 12) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
             ForEach($powerModeManager.configurations) { $config in
                 ConfigurationRow(
                     config: $config,
@@ -148,59 +161,194 @@ struct ConfigurationRow: View {
     private var visibleAppConfigs: [AppConfig] {
         return Array(config.appConfigs?.prefix(maxAppIconsToShow) ?? [])
     }
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color(NSColor.controlBackgroundColor))
-                        .frame(width: 40, height: 40)
-                    
-                    Text(config.emoji)
-                        .font(.system(size: 20))
+
+    /// Emoji rendered in a soft gradient tile rather than a plain
+    /// circle, mirroring the visual weight of macOS app-grid tiles.
+    private var emojiTile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.primary.opacity(0.08),
+                            Color.primary.opacity(0.04),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                )
+                .frame(width: 44, height: 44)
+
+            Text(config.emoji)
+                .font(.system(size: 22))
+        }
+    }
+
+    /// Dock-style strip of small app icons + a website count chip, in
+    /// place of the older "N Apps · N Websites" text. Falls back to the
+    /// text version when no apps + no websites are configured.
+    @ViewBuilder
+    private var triggersStrip: some View {
+        if appCount == 0 && websiteCount == 0 {
+            Text("No triggers")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.7))
+        } else {
+            HStack(spacing: 4) {
+                ForEach(visibleAppConfigs) { appConfig in
+                    PowerModeAppIcon(bundleId: appConfig.bundleIdentifier)
+                        .frame(width: 18, height: 18)
                 }
-                
-                VStack(alignment: .leading, spacing: 3) {
+                if extraAppsCount > 0 {
+                    Text("+\(extraAppsCount)")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
+                if websiteCount > 0 {
+                    if appCount > 0 {
+                        Text("·")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.5))
+                            .padding(.horizontal, 2)
+                    }
+                    HStack(spacing: 3) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 10, weight: .medium))
+                        Text(websiteCount == 1 ? "1 site" : "\(websiteCount) sites")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    /// Build a pill view used in the bottom summary row. Centralized so
+    /// every pill shares typography, padding, and chrome — the previous
+    /// version inlined identical Capsule().fill / overlay blocks for
+    /// each entry, which made the row drift visually over time.
+    @ViewBuilder
+    private func summaryPill(icon: String, text: String, tint: Color = .secondary, emphasized: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .foregroundColor(emphasized ? .accentColor : .primary.opacity(0.8))
+        .background(
+            Capsule().fill(
+                emphasized
+                    ? Color.accentColor.opacity(0.10)
+                    : tint.opacity(0.08)
+            )
+        )
+        .overlay(
+            Capsule().stroke(
+                emphasized
+                    ? Color.accentColor.opacity(0.18)
+                    : Color.primary.opacity(0.06),
+                lineWidth: 0.5
+            )
+        )
+    }
+
+    private var hasSummaryRow: Bool {
+        (selectedModel != nil && selectedModel != "Default")
+            || (selectedLanguage != nil && selectedLanguage != "Default")
+            || config.isAIEnhancementEnabled
+            || config.autoSendKey.isEnabled
+    }
+
+    /// Flat list of pills to render — order is the same as the old
+    /// dedicated summary band. Holding them as a list (instead of an
+    /// inline @ViewBuilder block) lets the body use a ForEach against
+    /// the count, and lets us drive a horizontal-overflow ScrollView
+    /// from the same data when the card is narrow.
+    private struct PillItem: Identifiable {
+        let id: String
+        let icon: String
+        let text: String
+        let emphasized: Bool
+    }
+
+    private var summaryPillItems: [PillItem] {
+        var items: [PillItem] = []
+        if let model = selectedModel, model != "Default" {
+            items.append(PillItem(id: "stt", icon: "waveform", text: model, emphasized: false))
+        }
+        if let language = selectedLanguage, language != "Default" {
+            items.append(PillItem(id: "lang", icon: "globe", text: language, emphasized: false))
+        }
+        if config.isAIEnhancementEnabled,
+           let modelName = config.selectedAIModel, !modelName.isEmpty {
+            let trimmed = modelName.count > 20 ? String(modelName.prefix(18)) + "…" : modelName
+            items.append(PillItem(id: "llm", icon: "cpu", text: trimmed, emphasized: false))
+        }
+        if config.autoSendKey.isEnabled {
+            items.append(PillItem(id: "send", icon: "return", text: config.autoSendKey.displayName, emphasized: false))
+        }
+        if config.isAIEnhancementEnabled, config.useScreenCapture {
+            items.append(PillItem(id: "ctx", icon: "camera.viewfinder", text: "Context", emphasized: false))
+        }
+        if config.isAIEnhancementEnabled {
+            items.append(PillItem(id: "prompt", icon: "sparkles", text: selectedPrompt?.title ?? "AI", emphasized: true))
+        }
+        return items
+    }
+
+    /// Hard cap on how many pills the identity row renders before the
+    /// "+N more" overflow chip kicks in. The card width is bounded by
+    /// the LazyVGrid columns (up to ~480pt), so allowing the pills row
+    /// to grow indefinitely produced horizontal overflow that pushed
+    /// the toggle off the right edge — picking a fixed cap keeps the
+    /// row predictable across configs.
+    private let maxInlinePills = 3
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row: emoji + identity + toggle. The identity column
+            // expands via maxWidth: .infinity so the toggle pins
+            // against the trailing edge of the card.
+            HStack(alignment: .center, spacing: 14) {
+                emojiTile
+
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(config.name)
                             .font(.system(size: 15, weight: .semibold))
-                        
-                        if config.isDefault {
-                            Text("Default")
-                                .font(.system(size: 11, weight: .medium))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.accentColor))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    
-                    HStack(spacing: 12) {
-                        if appCount > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "app.fill")
-                                    .font(.system(size: 10))
-                                Text(appText)
-                                    .font(.caption2)
-                            }
-                        }
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
 
-                        if websiteCount > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "globe")
-                                    .font(.system(size: 10))
-                                Text(websiteText)
-                                    .font(.caption2)
+                        if config.isDefault {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 5, height: 5)
+                                Text("Default")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.accentColor)
                             }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.10)))
                         }
                     }
-                    .padding(.top, 2)
-                    .foregroundColor(.secondary)
+
+                    triggersStrip
                 }
-                
-                Spacer()
-                
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 Toggle("", isOn: $config.isEnabled)
                     .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                     .labelsHidden()
@@ -210,125 +358,59 @@ struct ConfigurationRow: View {
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
-            
-            if selectedModel != nil || selectedLanguage != nil || config.isAIEnhancementEnabled || config.autoSendKey.isEnabled {
-                Divider()
-                
-                HStack(spacing: 8) {
-                    if let model = selectedModel, model != "Default" {
-                        HStack(spacing: 4) {
-                            Image(systemName: "waveform")
-                                .font(.system(size: 10))
-                            Text(model)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
-                    }
-                    
-                    if let language = selectedLanguage, language != "Default" {
-                        HStack(spacing: 4) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 10))
-                            Text(language)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
-                    }
-                    
-                    if config.isAIEnhancementEnabled, let modelName = config.selectedAIModel, !modelName.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "cpu")
-                                .font(.system(size: 10))
-                            Text(modelName.count > 20 ? String(modelName.prefix(18)) + "..." : modelName)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
-                    }
-                    
-                    if config.autoSendKey.isEnabled {
-                        HStack(spacing: 4) {
-                            Image(systemName: "keyboard")
-                                .font(.system(size: 10))
-                            Text(config.autoSendKey.displayName)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color(NSColor.controlBackgroundColor)))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                        )
-                    }
-                    if config.isAIEnhancementEnabled {
-                        if config.useScreenCapture {
-                            HStack(spacing: 4) {
-                                Image(systemName: "camera.viewfinder")
-                                    .font(.system(size: 10))
-                                Text("Context Awareness")
-                                    .font(.caption)
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule()
-                                .fill(Color(NSColor.controlBackgroundColor)))
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                            )
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 10))
-                            Text(selectedPrompt?.title ?? "AI")
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule()
-                            .fill(Color.accentColor.opacity(0.1)))
-                        .foregroundColor(.accentColor)
-                    }
 
-                    Spacer()
+            // Bottom row: summary pills with a hard inline cap so the
+            // card never overflows. Anything past `maxInlinePills`
+            // collapses into a single "+N" chip; the editor still
+            // surfaces the full state.
+            if !summaryPillItems.isEmpty {
+                Divider().opacity(0.35)
+
+                HStack(spacing: 5) {
+                    let visible = summaryPillItems.prefix(maxInlinePills)
+                    let hidden  = max(0, summaryPillItems.count - maxInlinePills)
+                    ForEach(Array(visible)) { pill in
+                        summaryPill(icon: pill.icon, text: pill.text, emphasized: pill.emphasized)
+                    }
+                    if hidden > 0 {
+                        Text("+\(hidden)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    }
+                    Spacer(minLength: 0)
                 }
-                
-                .padding(.vertical, 6)
-                .padding(.horizontal, 16)
-                .background(Color.secondary.opacity(0.1))
+                .padding(.vertical, 7)
+                .padding(.horizontal, 14)
+                .background(Color.primary.opacity(0.02))
             }
-    }
-    .clipShape(RoundedRectangle(cornerRadius: 16))
-    .background(CardBackground(isSelected: isEditing))
-    .opacity(config.isEnabled ? 1.0 : 0.5)
+        }
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color(NSColor.windowBackgroundColor))
+    )
+    .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(
+                isHovering ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
+                lineWidth: isHovering ? 1 : 0.5
+            )
+    )
+    .shadow(
+        color: .black.opacity(isHovering ? 0.06 : 0.03),
+        radius: isHovering ? 6 : 3,
+        x: 0,
+        y: isHovering ? 2 : 1
+    )
+    .opacity(config.isEnabled ? 1.0 : 0.55)
+    .scaleEffect(isHovering ? 1.005 : 1.0)
+    .animation(.easeOut(duration: 0.15), value: isHovering)
 
     .onHover { hovering in
-        withAnimation(.easeInOut(duration: 0.15)) {
-            isHovering = hovering
-        }
+        isHovering = hovering
     }
     .onTapGesture(count: 2) {
         onEditConfig(config)

@@ -9,16 +9,19 @@ struct AudioCleanupSettingsView: View {
     @AppStorage("TranscriptionRetentionMinutes") private var transcriptionRetentionMinutes = 24 * 60
     @AppStorage("IsAudioCleanupEnabled") private var isAudioCleanupEnabled = false
     @AppStorage("AudioRetentionPeriod") private var audioRetentionPeriod = 7
+    @AppStorage("TroubleshootingLogRetentionDays") private var logRetentionDays = 7
     @State private var isPerformingCleanup = false
     @State private var isShowingConfirmation = false
     @State private var cleanupInfo: (fileCount: Int, totalSize: Int64, transcriptions: [Transcription]) = (0, 0, [])
     @State private var showResultAlert = false
     @State private var cleanupResult: (deletedCount: Int, errorCount: Int) = (0, 0)
     @State private var showTranscriptCleanupResult = false
+    @State private var showLogCleanupResult = false
 
     // Expansion states - collapsed by default
     @State private var isTranscriptExpanded = false
     @State private var isAudioExpanded = false
+    @State private var isLogExpanded = false
     @State private var isHandlingTranscriptToggle = false
     @State private var isHandlingAudioToggle = false
 
@@ -206,6 +209,61 @@ struct AudioCleanupSettingsView: View {
                         isHandlingAudioToggle = false
                     }
                 }
+            }
+
+            // Troubleshooting-log retention is independent of the audio +
+            // transcript cleanup choices above: even users who keep their
+            // transcripts forever generally don't want verbose request /
+            // response fixtures hanging around longer than a few days.
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    HStack(spacing: 4) {
+                        Text("Troubleshooting Log Retention")
+                        InfoTip("Per-transcription request/response fixtures used for debugging. Set to Off to disable pruning, or pick a window to drop logs older than that.")
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isLogExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isLogExpanded.toggle()
+                    }
+                }
+
+                if isLogExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Delete Logs After", selection: $logRetentionDays) {
+                            Text("Off (keep forever)").tag(0)
+                            Text("3 days").tag(3)
+                            Text("7 days").tag(7)
+                            Text("14 days").tag(14)
+                            Text("30 days").tag(30)
+                        }
+
+                        Button("Run Cleanup Now") {
+                            Task { @MainActor in
+                                TranscriptionLogRetentionService.shared.runManualSweep()
+                                showLogCleanupResult = true
+                            }
+                        }
+                        .disabled(logRetentionDays == 0)
+                    }
+                    .padding(.top, 12)
+                    .padding(.leading, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: isLogExpanded)
+            .alert("Troubleshooting Log Cleanup", isPresented: $showLogCleanupResult) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Sweep complete.")
             }
         }
     }

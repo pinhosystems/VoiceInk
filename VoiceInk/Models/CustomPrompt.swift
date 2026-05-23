@@ -85,7 +85,15 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
     let isPredefined: Bool
     let triggerWords: [String]
     let useSystemInstructions: Bool
-    
+    /// Vocabulary buckets to pull in for this prompt. Resolved at transcription
+    /// time by `VocabularyResolver`. Defaults to `[.userVocabulary]` so any
+    /// prompt persisted by an older build keeps its prior behavior (user's
+    /// manual vocab only).
+    let vocabularyDomains: [VocabularyDomain]
+    /// Coarse classification surfaced in the prompt picker. Legacy JSON
+    /// without the field decodes to `.writing`.
+    let category: PromptCategory
+
     init(
         id: UUID = UUID(),
         title: String,
@@ -95,7 +103,9 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         description: String? = nil,
         isPredefined: Bool = false,
         triggerWords: [String] = [],
-        useSystemInstructions: Bool = true
+        useSystemInstructions: Bool = true,
+        vocabularyDomains: [VocabularyDomain] = [.userVocabulary],
+        category: PromptCategory = .writing
     ) {
         self.id = id
         self.title = title
@@ -106,10 +116,12 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         self.isPredefined = isPredefined
         self.triggerWords = triggerWords
         self.useSystemInstructions = useSystemInstructions
+        self.vocabularyDomains = vocabularyDomains
+        self.category = category
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions
+        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions, vocabularyDomains, category
     }
 
     init(from decoder: Decoder) throws {
@@ -123,11 +135,19 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         isPredefined = try container.decode(Bool.self, forKey: .isPredefined)
         triggerWords = try container.decode([String].self, forKey: .triggerWords)
         useSystemInstructions = try container.decodeIfPresent(Bool.self, forKey: .useSystemInstructions) ?? true
+        vocabularyDomains = try container.decodeIfPresent([VocabularyDomain].self, forKey: .vocabularyDomains) ?? [.userVocabulary]
+        category = try container.decodeIfPresent(PromptCategory.self, forKey: .category) ?? .writing
     }
     
-    var finalPromptText: String {
+    /// Renders the user-visible promptText through the system wrapper, with
+    /// the system instructions trimmed to mention only the context blocks
+    /// listed in `flags`. Pass `.none` to keep the prompt body but drop all
+    /// context-tag references (e.g. when the user disabled every context
+    /// source).
+    func finalPromptText(flags: AIPrompts.ContextFlags = .all) -> String {
         if useSystemInstructions {
-            return String(format: AIPrompts.customPromptTemplate, self.promptText)
+            return AIPrompts.customPromptTemplate(flags: flags)
+                .replacingOccurrences(of: "{{USER_RULES}}", with: self.promptText)
         } else {
             return self.promptText
         }

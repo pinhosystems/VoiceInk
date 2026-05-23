@@ -2,56 +2,26 @@ import Foundation
 import SwiftUI
 import AppKit
 
+/// Help / support entry point for the fork.
+///
+/// The upstream `EmailSupport` opened a mailto: to support@tryvoiceink.com
+/// and embedded a link to tryvoiceink.com/common-issues — both addresses
+/// the fork has no relationship with. Replaced with a redirect to the
+/// fork's GitHub issues page so users land somewhere actionable.
+///
+/// The type name and `openSupportEmail()` method name are preserved for
+/// back-compat with existing callers (MenuBarView's "Help and Support"
+/// button); the implementation just opens a URL instead of composing a
+/// mail message.
 struct EmailSupport {
-    private static let supportEmailAddress = "support@tryvoiceink.com"
-    private static let supportEmailSubject = "VoiceInk Support Request"
-
-    static func generateSupportEmailBody() -> String {
-        let systemInfo = SystemInfoService.shared.getSystemInfoString()
-
-        return """
-
-        ------------------------
-        ✨ **SCREEN RECORDING HIGHLY RECOMMENDED** ✨
-        ▶️ Create a quick screen recording showing the issue!
-        ▶️ It helps me understand and fix the problem much faster.
-
-        📝 ISSUE DETAILS:
-        - What steps did you take before the issue occurred?
-        - What did you expect to happen?
-        - What actually happened instead?
-
-
-        ## 📋 COMMON ISSUES:
-        Check out our Common Issues page before sending an email: https://tryvoiceink.com/common-issues
-        ------------------------
-
-        System Information:
-        \(systemInfo)
-
-
-        """
-    }
-
-    static func generateSupportEmailURL() -> URL? {
-        let encodedSubject = supportEmailSubject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        return URL(string: "mailto:\(supportEmailAddress)?subject=\(encodedSubject)")
-    }
+    private static let issuesURL = URL(string: "https://github.com/pinhosystems/VoiceInk/issues/new")!
 
     static func openSupportEmail() {
-        let body = generateSupportEmailBody()
-
-        if let sharingService = NSSharingService(named: .composeEmail) {
-            sharingService.recipients = [supportEmailAddress]
-            sharingService.subject = supportEmailSubject
-            sharingService.perform(withItems: [body])
-            return
-        }
-
+        // Copy system info to the clipboard so the user can paste it
+        // into the new issue's body if they want — matches the upstream
+        // behavior of pre-populating system info, just via clipboard
+        // instead of a mailto body.
         SystemInfoService.shared.copySystemInfoToClipboard()
-
-        if let emailURL = generateSupportEmailURL() {
-            NSWorkspace.shared.open(emailURL)
-        }
+        NSWorkspace.shared.open(Self.issuesURL)
     }
 }

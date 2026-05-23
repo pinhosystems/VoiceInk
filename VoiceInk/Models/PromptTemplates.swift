@@ -6,15 +6,37 @@ struct TemplatePrompt: Identifiable {
     let promptText: String
     let icon: PromptIcon
     let description: String
-    
+    let vocabularyDomains: [VocabularyDomain]
+    let category: PromptCategory
+
+    init(
+        id: UUID,
+        title: String,
+        promptText: String,
+        icon: PromptIcon,
+        description: String,
+        vocabularyDomains: [VocabularyDomain] = [.userVocabulary],
+        category: PromptCategory = .writing
+    ) {
+        self.id = id
+        self.title = title
+        self.promptText = promptText
+        self.icon = icon
+        self.description = description
+        self.vocabularyDomains = vocabularyDomains
+        self.category = category
+    }
+
     func toCustomPrompt() -> CustomPrompt {
         CustomPrompt(
-            id: UUID(),  // Generate new UUID for custom prompt
+            id: UUID(),
             title: title,
             promptText: promptText,
             icon: icon,
             description: description,
-            isPredefined: false
+            isPredefined: false,
+            vocabularyDomains: vocabularyDomains,
+            category: category
         )
     }
 }
@@ -23,83 +45,118 @@ enum PromptTemplates {
     static var all: [TemplatePrompt] {
         createTemplatePrompts()
     }
-    
-    
+
+    /// Stable UUIDs for each template. Power Mode presets reference these
+    /// to bind themselves to a specific prompt without depending on the
+    /// localizable `title` field. Keep them stable across releases —
+    /// rotating an ID forces every user-cloned prompt to lose its link.
+    enum TemplateID {
+        static let systemDefault   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000001")!
+        static let chat            = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000002")!
+        static let email           = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000003")!
+        static let rewrite         = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000004")!
+        static let codeComment     = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000010")!
+        static let commitMessage   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000011")!
+        static let prDescription   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000012")!
+        static let codeReview      = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000013")!
+        static let taskPrompt      = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000020")!
+    }
+
+    static func template(withID id: UUID) -> TemplatePrompt? {
+        all.first { $0.id == id }
+    }
+
     static func createTemplatePrompts() -> [TemplatePrompt] {
         [
+            // MARK: - Writing
             TemplatePrompt(
-                id: UUID(),
+                id: TemplateID.systemDefault,
                 title: "System Default",
                 promptText: """
-                    - Clean up the <TRANSCRIPT> text for clarity and natural flow while preserving meaning and the original tone.
-                    - Use informal, plain language unless the <TRANSCRIPT> clearly uses a professional tone; in that case, match it.
-                    - Fix obvious grammar, remove fillers and stutters, collapse repetitions, and keep names and numbers.
-                    - Handle backtracking and self-corrections: When the speaker corrects themselves mid-sentence using phrases like "scratch that", "actually", "sorry not that", "I mean", "wait no", or similar corrections, remove the incorrect part and keep only the corrected version. Example: "The meeting is on Tuesday, sorry not that, actually Wednesday" → "The meeting is on Wednesday."
-                    - Respect formatting commands: When the speaker explicitly says "new line" or "new paragraph", insert the appropriate line break or paragraph break at that point.
-                    - Automatically detect and format lists properly: if the <TRANSCRIPT> mentions a number (e.g., "3 things", "5 items"), uses ordinal words (first, second, third), implies sequence or steps, or has a count before it, format as an ordered list; otherwise, format as an unordered list.
-                    - Apply smart formatting: spell out numbers under 10 in prose; use numerals for 10 and above and always for currency, measurements, dates, and times (e.g., '$20', '3 hours', 'May 15'). Convert common abbreviations to proper format (e.g., 'vs' → 'vs.', 'etc' → 'etc.'), and format dates, times, and measurements consistently.
-                    - Keep the original intent and nuance.
-                    - Organize into short paragraphs of 2–4 sentences for readability.
-                    - Do not add explanations, labels, metadata, or instructions.
-                    - Output only the cleaned text.
-                    - Only output text grounded in the <TRANSCRIPT>; never introduce new facts.
-                    """,
+                Clean <TRANSCRIPT>: fix grammar, drop true fillers (uh, um, hmm), collapse verbatim word-by-word repetitions, resolve self-corrections, format lists when the user clearly enumerates.
+
+                NEVER drop content:
+                - Preserve every distinct point, request, or detail the user made — if they raised two topics, output two topics.
+                - Preserve facts, names, dates, numbers, technical terms, file paths, URLs, identifiers, and proper nouns exactly as spoken.
+                - "Drop fillers" applies only to disfluencies, not to qualifiers, hedges, or clarifying phrases that carry meaning.
+
+                Output only the cleaned text.
+                """,
                 icon: "checkmark.seal.fill",
-                description: "Default system prompt"
+                description: "Default cleanup",
+                category: .writing
+            ),
+
+            // Rewrite, Email, Chat, Code Comment were promoted to
+            // PredefinedPrompts — they ship to every install and the
+            // PromptTemplates entries here would just spawn duplicates.
+            // TemplateID UUIDs are kept on the enum for any external
+            // reference that survived the migration.
+
+            // MARK: - Coding (output stays inside an editor)
+            TemplatePrompt(
+                id: TemplateID.commitMessage,
+                title: "Commit Message",
+                promptText: """
+                Rewrite <TRANSCRIPT> as a git commit message.
+
+                Format:
+                - Line 1: imperative summary, ≤72 characters, no trailing period.
+                - Optional blank line + body of bullet points or short paragraphs explaining the *why*.
+                - Preserve filenames, function names, and version numbers exactly.
+
+                Output only the commit message — no preamble, no closing.
+                """,
+                icon: "checkmark.circle.fill",
+                description: "Imperative commit summary + optional body",
+                category: .coding
             ),
             TemplatePrompt(
-                id: UUID(),
-                title: "Chat",
+                id: TemplateID.prDescription,
+                title: "PR Description",
                 promptText: """
-                    - Rewrite the <TRANSCRIPT> text as a chat message: informal, concise, and conversational.
-                    - Keep emotive markers and emojis if present; don't invent new ones.
-                    - Lightly fix grammar, remove fillers and repeated words, and improve flow without changing meaning.
-                    - Keep the original tone; only be professional if the <TRANSCRIPT> already is.
-                    - Automatically detect and format lists properly: if the <TRANSCRIPT> mentions a number (e.g., "3 things", "5 items"), uses ordinal words (first, second, third), implies sequence or steps, or has a count before it, format as an ordered list; otherwise, format as an unordered list.
-                    - Use numerals for numbers 10 and above and always for currency, measurements, dates, and times (e.g., '$20', '3 hours'); spell out smaller counts in prose.
-                    - Format like a modern chat message - short lines, natural breaks, emoji-friendly.
-                    - Do not add greetings, sign-offs, or commentary.
-                    - Output only the chat message.
-                    - Only output text grounded in the <TRANSCRIPT>; never introduce new facts.
-                    """,
-                icon: "bubble.left.and.bubble.right.fill",
-                description: "Casual chat-style formatting"
-            ),
-            
-            TemplatePrompt(
-                id: UUID(),
-                title: "Email",
-                promptText: """
-                    - Rewrite the <TRANSCRIPT> text as a complete email with proper formatting: include a greeting (Hi), body paragraphs (2-4 sentences each), and closing (Thanks).
-                    - Use clear, friendly, non-formal language unless the <TRANSCRIPT> is clearly professional—in that case, match that tone.
-                    - Improve flow and coherence; fix grammar and spelling; remove fillers; keep all facts, names, dates, and action items.
-                    - Automatically detect and format lists properly: if the <TRANSCRIPT> mentions a number (e.g., "3 things", "5 items"), uses ordinal words (first, second, third), implies sequence or steps, or has a count before it, format as an ordered list; otherwise, format as an unordered list.
-                    - Use numerals for numbers 10 and above and always for currency, measurements, dates, and times (e.g., '$20', '3 hours'); spell out smaller counts in prose.
-                    - Do not invent new content, but structure it as a proper email format.
-                    - Only output text grounded in the <TRANSCRIPT>; never introduce new facts.
-                    """,
-                icon: "envelope.fill",
-                description: "Professional email formatting"
+                Rewrite <TRANSCRIPT> as a pull request description in markdown.
+
+                Structure:
+                ## Summary
+                1–4 short bullets describing what changed and why.
+
+                ## Test plan
+                Bulleted checklist of things to verify before merging.
+
+                Rules:
+                - Preserve filenames, function names, library versions, and command-line flags exactly as spoken.
+                - Imperative voice in the test plan ("Verify…", "Run…").
+                - No emoji, no marketing tone.
+
+                Output only the markdown body.
+                """,
+                icon: "doc.text.fill",
+                description: "Summary + test plan markdown",
+                category: .coding
             ),
             TemplatePrompt(
-                id: UUID(),
-                title: "Rewrite",
+                id: TemplateID.codeReview,
+                title: "Code Review",
                 promptText: """
-                    - Rewrite the <TRANSCRIPT> text with enhanced clarity, improved sentence structure, and rhythmic flow while preserving the original meaning and tone.
-                    - Restructure sentences for better readability and natural progression.
-                    - Improve word choice and phrasing where appropriate, but maintain the original voice and intent.
-                    - Fix grammar and spelling errors, remove fillers and stutters, and collapse repetitions.
-                    - Format any lists as proper bullet points or numbered lists.
-                    - Use numerals for numbers 10 and above and always for currency, measurements, dates, and times (e.g., '$20', '3 hours'); spell out smaller counts in prose.
-                    - Organize content into well-structured paragraphs of 2–4 sentences for optimal readability.
-                    - Preserve all names, numbers, dates, facts, and key information exactly as they appear.
-                    - Do not add explanations, labels, metadata, or instructions.
-                    - Output only the rewritten text.
-                    - Only output text grounded in the <TRANSCRIPT>; never introduce new facts.
-                    """,
-                icon: "pencil.circle.fill",
-                description: "Rewrites with better clarity."
-            )
+                Rewrite <TRANSCRIPT> as a concise pull-request review comment in markdown.
+
+                Rules:
+                - Terse. One short paragraph or a few bullets. No "Hi!", no closing pleasantries.
+                - If multiple distinct points were raised, render them as a bulleted list.
+                - Preserve filenames, function names, and identifiers exactly. Use inline `code spans` for them when natural.
+                - When suggesting a change, lead with the suggestion in imperative voice.
+
+                Output only the comment markdown.
+                """,
+                icon: "checklist",
+                description: "Concise markdown review feedback",
+                category: .coding
+            ),
+
+            // Task Prompt was promoted out of the clonable templates and
+            // into PredefinedPrompts. The TemplateID.taskPrompt UUID is
+            // kept for back-compat with older Power Mode preset entries.
         ]
     }
 }

@@ -88,6 +88,10 @@ class AIEnhancementService: ObservableObject {
 
     @Published var lastSystemMessageSent: String?
     @Published var lastUserMessageSent: String?
+    /// Most recent LLM call expressed as an `APICallLog.Step`. Picked up
+    /// by the orchestrators (TranscriptionPipeline / retranscribeAudio)
+    /// and attached to the Transcription's troubleshooting fixture.
+    @Published var lastLLMCallStep: APICallLog.Step?
 
     var activePrompt: CustomPrompt? {
         allPrompts.first { $0.id == selectedPromptId }
@@ -143,7 +147,12 @@ class AIEnhancementService: ObservableObject {
             self.selectedPromptId = UUID(uuidString: savedPromptId)
         }
 
-        if isEnhancementEnabled && (selectedPromptId == nil || !allPrompts.contains(where: { $0.id == selectedPromptId })) {
+        // Profile selection is independent of `isEnhancementEnabled`: even
+        // when LLM enhancement is off, the active prompt still controls the
+        // vocabulary domains used for STT keyterm bias (see
+        // `VocabularyResolver`). Auto-pick a default whenever the stored
+        // selection is missing or stale.
+        if selectedPromptId == nil || !allPrompts.contains(where: { $0.id == selectedPromptId }) {
             self.selectedPromptId = allPrompts.first?.id
         }
 
@@ -247,11 +256,46 @@ class AIEnhancementService: ObservableObject {
 
         let finalContextSection = allContextSections + customVocabularySection
 
+        // Drive the system-instructions wrapper from the *actual* presence of
+        // each block, not just the user's toggles. A toggle that is on but
+        // produces no content (e.g. an empty clipboard) leaves its tag out
+        // of the system message — no point pointing the model at an
+        // <empty>...</empty> block.
+        let flags = AIPrompts.ContextFlags(
+            hasClipboard: !clipboardContext.isEmpty,
+            hasScreen: !screenCaptureContext.isEmpty,
+            hasSelectedText: !selectedTextContext.isEmpty,
+            hasVocabulary: !customVocabulary.isEmpty
+        )
+
+        // Audio language hint — the BCP-47 code the STT engine was
+        // configured with. Prepended to every variant of the system
+        // message so the LLM never has to guess from a 3-word
+        // transcript whether it should respond in English or
+        // Portuguese.
+        let selectedLanguageCode = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        let languageBlock = AIPrompts.audioLanguageBlock(code: selectedLanguageCode)
+
+        // Per-locale tech-term salvage table. Non-English speakers
+        // routinely mix English dev jargon into their dictation
+        // ("comêti", "puxe", "taipiscripti") — the STT writes the
+        // phonetic form and the LLM has no signal to recover the
+        // canonical English term unless we point at the patterns
+        // explicitly. Inject for ANY active prompt as long as the
+        // configured language has a salvage table. The category gate
+        // used to be coding/dev_ai-only but the same problem hits
+        // chat messages, emails, and freeform writing — anywhere the
+        // user might say "commit" or "deploy" mid-sentence — so we
+        // pay the ~200-token cost across the board on non-EN locales.
+        // EN / auto locales still return nil and skip the block.
+        let salvageBlock = TechTermSalvage.block(forLanguageCode: selectedLanguageCode) ?? ""
+
+        let promptBody: String
         if let activePrompt = activePrompt {
             if activePrompt.id == PredefinedPrompts.assistantPromptId {
-                return activePrompt.promptText + finalContextSection
+                promptBody = AIPrompts.assistantMode(flags: flags)
             } else {
-                return activePrompt.finalPromptText + finalContextSection
+                promptBody = activePrompt.finalPromptText(flags: flags)
             }
         } else {
             // Fallback chain, in order of preference:
@@ -264,10 +308,11 @@ class AIEnhancementService: ObservableObject {
                 ?? allPrompts.first
                 ?? PredefinedPrompts.createDefaultPrompts().first
             guard let defaultPrompt = fallback else {
-                return finalContextSection
+                return languageBlock + salvageBlock + finalContextSection
             }
-            return defaultPrompt.finalPromptText + finalContextSection
+            promptBody = defaultPrompt.finalPromptText(flags: flags)
         }
+        return languageBlock + salvageBlock + promptBody + finalContextSection
     }
 
     private func makeRequest(text: String, mode: EnhancementPrompt) async throws -> String {
@@ -285,31 +330,97 @@ class AIEnhancementService: ObservableObject {
         await MainActor.run {
             self.lastSystemMessageSent = systemMessage
             self.lastUserMessageSent = formattedText
+            // Seed a fresh log step so a downstream throw still ends up
+            // attached to the transcription with the error captured below.
+            self.lastLLMCallStep = APICallLog.Step(
+                kind: .llm,
+                provider: aiService.selectedProvider.rawValue,
+                providerVariant: nil,
+                endpointHost: nil,
+                model: aiService.currentModel,
+                languageCode: nil,
+                requestSummary: nil,
+                requestSystemMessage: systemMessage,
+                requestUserMessage: formattedText,
+                responseSummary: nil,
+                durationMs: nil,
+                errorMessage: nil
+            )
         }
 
-        if aiService.selectedProvider == .ollama {
-            do {
-                let result = try await aiService.enhanceWithOllama(text: formattedText, systemPrompt: systemMessage)
-                return AIEnhancementOutputFilter.filter(result)
-            } catch {
-                if let localError = error as? LocalAIError {
-                    throw EnhancementError.customError(localError.errorDescription ?? "An unknown Ollama error occurred.")
-                } else {
-                    throw EnhancementError.customError(error.localizedDescription)
-                }
+        let provider = aiService.selectedProvider
+        let model = aiService.currentModel
+        let endpointHost = APICallLog.host(from: provider.baseURL)
+        let variant: String = {
+            switch provider {
+            case .ollama: return "Local server"
+            case .localCLI: return "Local CLI"
+            case .custom: return "Custom (OpenAI-compatible)"
+            default: return "Cloud"
+            }
+        }()
+        let startedAt = Date()
+
+        func record(response: String?, error: String?) async {
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            await MainActor.run {
+                self.lastLLMCallStep = APICallLog.Step(
+                    kind: .llm,
+                    provider: provider.rawValue,
+                    providerVariant: variant,
+                    endpointHost: endpointHost,
+                    model: model,
+                    languageCode: nil,
+                    requestSummary: nil,
+                    requestSystemMessage: systemMessage,
+                    requestUserMessage: formattedText,
+                    responseSummary: response,
+                    durationMs: durationMs,
+                    errorMessage: error
+                )
             }
         }
 
-        if aiService.selectedProvider == .localCLI {
+        if provider == .ollama {
+            do {
+                let result = try await aiService.enhanceWithOllama(
+                    text: formattedText,
+                    systemPrompt: systemMessage,
+                    timeout: baseTimeout
+                )
+                let filtered = AIEnhancementOutputFilter.filter(result)
+                await record(response: filtered, error: nil)
+                return filtered
+            } catch {
+                let mapped: EnhancementError
+                if let localError = error as? LocalAIError {
+                    switch localError {
+                    case .timeout: mapped = .timeout
+                    default: mapped = .customError(localError.errorDescription ?? "An unknown Ollama error occurred.")
+                    }
+                } else {
+                    mapped = .customError(error.localizedDescription)
+                }
+                await record(response: nil, error: mapped.errorDescription)
+                throw mapped
+            }
+        }
+
+        if provider == .localCLI {
             do {
                 let result = try await aiService.enhanceWithLocalCLI(systemPrompt: systemMessage, userPrompt: formattedText)
-                return AIEnhancementOutputFilter.filter(result)
+                let filtered = AIEnhancementOutputFilter.filter(result)
+                await record(response: filtered, error: nil)
+                return filtered
             } catch {
+                let mapped: EnhancementError
                 if let localError = error as? LocalCLIError {
-                    throw EnhancementError.customError(localError.errorDescription ?? "An unknown Local CLI error occurred.")
+                    mapped = .customError(localError.errorDescription ?? "An unknown Local CLI error occurred.")
                 } else {
-                    throw EnhancementError.customError(error.localizedDescription)
+                    mapped = .customError(error.localizedDescription)
                 }
+                await record(response: nil, error: mapped.errorDescription)
+                throw mapped
             }
         }
 
@@ -317,32 +428,28 @@ class AIEnhancementService: ObservableObject {
 
         do {
             let result: String
-            switch aiService.selectedProvider {
+            switch provider {
             case .anthropic:
                 result = try await AnthropicLLMClient.chatCompletion(
                     apiKey: aiService.apiKey,
-                    model: aiService.currentModel,
+                    model: model,
                     messages: [.user(formattedText)],
                     systemPrompt: systemMessage,
                     timeout: baseTimeout
                 )
             default:
-                guard let baseURL = URL(string: aiService.selectedProvider.baseURL) else {
-                    throw EnhancementError.customError("\(aiService.selectedProvider.rawValue) has an invalid API endpoint URL. Please update it in AI settings.")
+                guard let baseURL = URL(string: provider.baseURL) else {
+                    let mapped = EnhancementError.customError("\(provider.rawValue) has an invalid API endpoint URL. Please update it in AI settings.")
+                    await record(response: nil, error: mapped.errorDescription)
+                    throw mapped
                 }
-                let temperature = aiService.currentModel.lowercased().hasPrefix("gpt-5") ? 1.0 : 0.3
-                let reasoningEffort = ReasoningConfig.getReasoningParameter(
-                    for: aiService.selectedProvider,
-                    modelName: aiService.currentModel
-                )
-                let extraBody = ReasoningConfig.getExtraBodyParameters(
-                    for: aiService.selectedProvider,
-                    modelName: aiService.currentModel
-                )
+                let temperature = model.lowercased().hasPrefix("gpt-5") ? 1.0 : 0.3
+                let reasoningEffort = ReasoningConfig.getReasoningParameter(for: provider, modelName: model)
+                let extraBody = ReasoningConfig.getExtraBodyParameters(for: provider, modelName: model)
                 result = try await OpenAILLMClient.chatCompletion(
                     baseURL: baseURL,
                     apiKey: aiService.apiKey,
-                    model: aiService.currentModel,
+                    model: model,
                     messages: [.user(formattedText)],
                     systemPrompt: systemMessage,
                     temperature: temperature,
@@ -351,13 +458,20 @@ class AIEnhancementService: ObservableObject {
                     timeout: baseTimeout
                 )
             }
-            return AIEnhancementOutputFilter.filter(result.trimmingCharacters(in: .whitespacesAndNewlines))
+            let filtered = AIEnhancementOutputFilter.filter(result.trimmingCharacters(in: .whitespacesAndNewlines))
+            await record(response: filtered, error: nil)
+            return filtered
         } catch let error as LLMKitError {
-            throw mapLLMKitError(error)
+            let mapped = mapLLMKitError(error)
+            await record(response: nil, error: mapped.errorDescription)
+            throw mapped
         } catch let error as EnhancementError {
+            await record(response: nil, error: error.errorDescription)
             throw error
         } catch {
-            throw EnhancementError.customError(error.localizedDescription)
+            let mapped = EnhancementError.customError(error.localizedDescription)
+            await record(response: nil, error: mapped.errorDescription)
+            throw mapped
         }
     }
 
@@ -443,7 +557,17 @@ class AIEnhancementService: ObservableObject {
     func enhance(_ text: String) async throws -> (String, TimeInterval, String?) {
         let startTime = Date()
         let enhancementPrompt: EnhancementPrompt = .transcriptionEnhancement
-        let promptName = activePrompt?.title
+        // Report the prompt that *actually* drove the LLM call so the
+        // history row's prompt pill is faithful even when activePrompt
+        // is nil — Power Mode configs whose stored selectedPrompt
+        // UUID points at a CustomPrompt removed by the dedup
+        // migrations resolve to nil here, but getSystemMessage falls
+        // back to Default. The history should show "Default", not
+        // empty.
+        let effectivePrompt: CustomPrompt? = activePrompt
+            ?? allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId })
+            ?? allPrompts.first
+        let promptName = effectivePrompt?.title
 
         do {
             let result = try await makeRequestWithRetry(text: text, mode: enhancementPrompt)
@@ -519,6 +643,78 @@ class AIEnhancementService: ObservableObject {
 
     private func initializePredefinedPrompts() {
         let predefinedTemplates = PredefinedPrompts.createDefaultPrompts()
+        let validPredefinedIds = Set(predefinedTemplates.map { $0.id })
+        let predefinedTitles = Set(predefinedTemplates.map { $0.title })
+
+        // Purge orphan predefined prompts: entries persisted with
+        // `isPredefined: true` whose UUID is no longer in the source list.
+        // Without this, a prompt that used to be predefined and was later
+        // removed from `PredefinedPrompts` stays stuck — the delete UI
+        // guards on `!isPredefined`, so the user can never remove it.
+        customPrompts.removeAll { $0.isPredefined && !validPredefinedIds.contains($0.id) }
+
+        // Migrate legacy clones: Task Prompt (and any other prompt) was
+        // previously a clonable template — every application of the
+        // "AI Coding Agent" Power Mode preset spawned a fresh
+        // non-predefined "Task Prompt" entry, so users with multiple
+        // applies ended up with two or three duplicates. Now that the
+        // prompt is a predefined entry with a stable UUID, drop the
+        // non-predefined siblings whose title matches a current
+        // predefined title. The single predefined instance below the
+        // loop replaces them in the picker.
+        customPrompts.removeAll { !$0.isPredefined && predefinedTitles.contains($0.title) }
+
+        // De-duplicate user-cloned templates: every "Add new prompt
+        // from template" click spawned a fresh CustomPrompt with a new
+        // UUID but identical title + promptText. Users who explored
+        // the template library now see four "Code Comment" and three
+        // "Chat" entries in the picker. Collapse exact (title,
+        // promptText) duplicates among non-predefined prompts, keeping
+        // the earliest occurrence so any persisted selectedPromptId
+        // referencing it still resolves. Prompts the user actually
+        // edited (different promptText) are untouched.
+        var seenSignatures: Set<String> = []
+        customPrompts = customPrompts.filter { prompt in
+            guard !prompt.isPredefined else { return true }
+            let signature = "\(prompt.title)\u{1F}\(prompt.promptText)"
+            if seenSignatures.contains(signature) {
+                return false
+            }
+            seenSignatures.insert(signature)
+            return true
+        }
+
+        // Re-tag legacy template clones with the right PromptCategory.
+        // Builds shipped before the category field existed decoded old
+        // CustomPrompts with category=.writing regardless of source, so
+        // a user's cloned "Commit Message" or "Code Comment" never
+        // qualified for the runtime tech-term salvage injection in
+        // getSystemMessage. Look each non-predefined prompt up by title
+        // in PromptTemplates and, if the persisted category doesn't
+        // match the source template's, rewrite it. The prompt's UUID,
+        // promptText edits, trigger words, and other user-owned fields
+        // are preserved.
+        let templateByTitle = Dictionary(
+            uniqueKeysWithValues: PromptTemplates.all.map { ($0.title, $0) }
+        )
+        customPrompts = customPrompts.map { prompt -> CustomPrompt in
+            guard !prompt.isPredefined,
+                  let template = templateByTitle[prompt.title],
+                  prompt.category != template.category else { return prompt }
+            return CustomPrompt(
+                id: prompt.id,
+                title: prompt.title,
+                promptText: prompt.promptText,
+                isActive: prompt.isActive,
+                icon: prompt.icon,
+                description: prompt.description,
+                isPredefined: prompt.isPredefined,
+                triggerWords: prompt.triggerWords,
+                useSystemInstructions: prompt.useSystemInstructions,
+                vocabularyDomains: prompt.vocabularyDomains,
+                category: template.category
+            )
+        }
 
         for template in predefinedTemplates {
             if let existingIndex = customPrompts.firstIndex(where: { $0.id == template.id }) {
@@ -532,7 +728,8 @@ class AIEnhancementService: ObservableObject {
                     description: template.description,
                     isPredefined: true,
                     triggerWords: updatedPrompt.triggerWords,
-                    useSystemInstructions: template.useSystemInstructions
+                    useSystemInstructions: template.useSystemInstructions,
+                    vocabularyDomains: template.vocabularyDomains
                 )
                 customPrompts[existingIndex] = updatedPrompt
             } else {

@@ -68,6 +68,7 @@ class SystemInfoService {
         Transcription Retention: \(UserDefaults.standard.integer(forKey: "TranscriptionRetentionMinutes")) minutes
         Auto-Delete Audio Files: \(UserDefaults.standard.bool(forKey: "IsAudioCleanupEnabled"))
         Audio Retention Period: \(UserDefaults.standard.integer(forKey: "AudioRetentionPeriod")) days
+        Troubleshooting Log Retention: \(UserDefaults.standard.integer(forKey: "TroubleshootingLogRetentionDays")) days (0 = off)
 
         PERMISSIONS:
         Accessibility: \(getAccessibilityStatus())

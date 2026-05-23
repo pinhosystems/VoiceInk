@@ -1,5 +1,9 @@
 import SwiftUI
 
+/// Help & Resources card on the dashboard. The upstream surface linked
+/// to tryvoiceink.com (docs, YouTube channel, recommended-models page),
+/// which the fork doesn't own. Replaced with fork-relevant entries:
+/// the repository, the issues tracker, and the upstream credit link.
 struct HelpAndResourcesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -9,29 +13,15 @@ struct HelpAndResourcesSection: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 resourceLink(
-                    icon: "sparkles",
-                    title: "Recommended Models",
-                    url: "https://tryvoiceink.com/recommended-models"
+                    icon: "chevron.left.forwardslash.chevron.right",
+                    title: "Repository (pinhosystems/VoiceInk)",
+                    url: "https://github.com/pinhosystems/VoiceInk"
                 )
 
-                resourceLink(
-                    icon: "video.fill",
-                    title: "YouTube Videos & Guides",
-                    url: "https://www.youtube.com/@tryvoiceink/videos"
-                )
-
-                resourceLink(
-                    icon: "book.fill",
-                    title: "Documentation",
-                    url: "https://tryvoiceink.com/docs"
-                )
-                
                 resourceLink(
                     icon: "exclamationmark.bubble.fill",
-                    title: "Feedback or Issues?",
-                    action: {
-                        EmailSupport.openSupportEmail()
-                    }
+                    title: "Report an issue",
+                    url: "https://github.com/pinhosystems/VoiceInk/issues"
                 )
             }
         }
@@ -45,7 +35,7 @@ struct HelpAndResourcesSection: View {
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
         )
     }
-    
+
     private func resourceLink(icon: String, title: String, url: String? = nil, action: (() -> Void)? = nil) -> some View {
         Button(action: {
             if let action = action {
@@ -59,20 +49,19 @@ struct HelpAndResourcesSection: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.accentColor)
                     .frame(width: 20)
-                
+
                 Text(title)
                     .font(.system(size: 13))
                     .fontWeight(.semibold)
-                
+
                 Spacer()
-                
+
                 Image(systemName: "arrow.up.right")
                     .foregroundColor(.secondary)
             }
             .padding(12)
             .background(Color.primary.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
         }
         .buttonStyle(.plain)
     }

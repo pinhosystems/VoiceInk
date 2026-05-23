@@ -10,6 +10,7 @@ struct ApplicationState: Codable {
     var selectedLanguage: String?
     var transcriptionModelName: String?
     var isTextFormattingEnabled: Bool?
+    var punctuationCleanupMode: PunctuationCleanupMode?
     var removePunctuation: Bool?
     var lowercaseTranscription: Bool?
 }
@@ -47,6 +48,7 @@ class PowerModeSessionManager {
 
         // Only capture baseline if NO session exists
         if loadSession() == nil {
+            let punctuationCleanupMode = PunctuationCleanupMode.current()
             let originalState = ApplicationState(
                 isEnhancementEnabled: enhancementService.isEnhancementEnabled,
                 useScreenCaptureContext: enhancementService.useScreenCaptureContext,
@@ -56,7 +58,8 @@ class PowerModeSessionManager {
                 selectedLanguage: UserDefaults.standard.string(forKey: "SelectedLanguage"),
                 transcriptionModelName: stateProvider.currentTranscriptionModel?.name,
                 isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
-                removePunctuation: UserDefaults.standard.bool(forKey: "RemovePunctuation"),
+                punctuationCleanupMode: punctuationCleanupMode,
+                removePunctuation: punctuationCleanupMode == .removeAll,
                 lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription")
             )
 
@@ -99,6 +102,7 @@ class PowerModeSessionManager {
               let stateProvider = stateProvider,
               let enhancementService = enhancementService else { return }
 
+        let punctuationCleanupMode = PunctuationCleanupMode.current()
         let updatedState = ApplicationState(
             isEnhancementEnabled: enhancementService.isEnhancementEnabled,
             useScreenCaptureContext: enhancementService.useScreenCaptureContext,
@@ -108,7 +112,8 @@ class PowerModeSessionManager {
             selectedLanguage: UserDefaults.standard.string(forKey: "SelectedLanguage"),
             transcriptionModelName: stateProvider.currentTranscriptionModel?.name,
             isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
-            removePunctuation: UserDefaults.standard.bool(forKey: "RemovePunctuation"),
+            punctuationCleanupMode: punctuationCleanupMode,
+            removePunctuation: punctuationCleanupMode == .removeAll,
             lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription")
         )
 
@@ -126,7 +131,21 @@ class PowerModeSessionManager {
 
             if config.isAIEnhancementEnabled {
                 if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
-                    enhancementService.selectedPromptId = uuid
+                    // Guard against orphan references: Power Mode
+                    // configs persisted before recent dedup /
+                    // template-promotion migrations may point at a
+                    // CustomPrompt that no longer exists. Setting the
+                    // invalid UUID would make activePrompt resolve to
+                    // nil — silently — and the history row's prompt
+                    // pill would render blank. Validate the lookup
+                    // and fall back to nil (Default) when the prompt
+                    // is gone, so getSystemMessage and enhance() both
+                    // route through the predefined Default.
+                    if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
+                        enhancementService.selectedPromptId = uuid
+                    } else {
+                        enhancementService.selectedPromptId = nil
+                    }
                 }
 
                 if let aiService = enhancementService.getAIService() {
@@ -140,7 +159,7 @@ class PowerModeSessionManager {
             }
 
             UserDefaults.standard.set(config.isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
-            UserDefaults.standard.set(config.removePunctuation, forKey: "RemovePunctuation")
+            PunctuationCleanupMode.setCurrent(config.punctuationCleanupMode)
             UserDefaults.standard.set(config.lowercaseTranscription, forKey: "LowercaseTranscription")
         }
 
@@ -180,8 +199,10 @@ class PowerModeSessionManager {
             if let isTextFormattingEnabled = state.isTextFormattingEnabled {
                 UserDefaults.standard.set(isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
             }
-            if let removePunctuation = state.removePunctuation {
-                UserDefaults.standard.set(removePunctuation, forKey: "RemovePunctuation")
+            if let punctuationCleanupMode = state.punctuationCleanupMode {
+                PunctuationCleanupMode.setCurrent(punctuationCleanupMode)
+            } else if let removePunctuation = state.removePunctuation {
+                PunctuationCleanupMode.setCurrent(removePunctuation ? .removeAll : .keep)
             }
             if let lowercaseTranscription = state.lowercaseTranscription {
                 UserDefaults.standard.set(lowercaseTranscription, forKey: "LowercaseTranscription")

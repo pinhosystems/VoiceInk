@@ -80,6 +80,17 @@ class TranscriptionPipeline {
             }
 
             text = WordReplacementService.shared.applyReplacements(to: text, using: modelContext)
+
+            // Brazilian Portuguese normalization (CPF, CNPJ, CEP, phones, hours,
+            // percent, decimals, currency in reais). Runs only when the user's
+            // selected language begins with "pt" and the opt-in default is on.
+            // Placed BEFORE the user-cleanup step so the LLM enhancement and final
+            // output both see well-formed identifiers and currency.
+            let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
+            if BrazilianTextNormalizer.isEnabled(for: selectedLanguage) {
+                text = BrazilianTextNormalizer.normalize(text)
+            }
+
             let cleanedText = TranscriptionOutputFilter.applyUserCleanupPreferences(text)
 
             let audioAsset = AVURLAsset(url: audioURL)
@@ -92,6 +103,15 @@ class TranscriptionPipeline {
             transcription.powerModeName = powerModeName
             transcription.powerModeEmoji = powerModeEmoji
             finalPastedText = cleanedText
+
+            var apiLog = APICallLog()
+            apiLog.steps.append(makeSTTStep(
+                model: model,
+                language: selectedLanguage,
+                durationMs: Int(transcriptionDuration * 1000),
+                response: cleanedText,
+                error: nil
+            ))
 
             if let enhancementService, enhancementService.isConfigured {
                 let detectionResult = await promptDetectionService.analyzeText(text, with: enhancementService)
@@ -119,12 +139,16 @@ class TranscriptionPipeline {
                     transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
                     transcription.promptName = promptName
                     transcription.enhancementDuration = enhancementDuration
-                    transcription.aiRequestSystemMessage = enhancementService.lastSystemMessageSent
-                    transcription.aiRequestUserMessage = enhancementService.lastUserMessageSent
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
+                    }
                     finalPastedText = enhancedText
                 } catch {
                     let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     transcription.enhancedText = "Enhancement failed: \(errorDescription)"
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
+                    }
                     let shortReason = String(errorDescription.prefix(80))
                     await MainActor.run {
                         NotificationManager.shared.showNotification(
@@ -137,6 +161,7 @@ class TranscriptionPipeline {
             }
 
             transcription.transcriptionStatus = TranscriptionStatus.completed.rawValue
+            transcription.troubleshootingLogJSON = apiLog.encoded()
         } catch {
             let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
 
@@ -167,6 +192,15 @@ class TranscriptionPipeline {
 
             transcription.text = "Transcription Failed: \(errorDescription)"
             transcription.transcriptionStatus = TranscriptionStatus.failed.rawValue
+            var failureLog = APICallLog()
+            failureLog.steps.append(makeSTTStep(
+                model: model,
+                language: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+                durationMs: 0,
+                response: nil,
+                error: errorDescription
+            ))
+            transcription.troubleshootingLogJSON = failureLog.encoded()
         }
 
         func saveTranscriptionAndPostCompletion() {
@@ -207,7 +241,6 @@ class TranscriptionPipeline {
             return
         }
 
-        let dismissTask: Task<Void, Never>?
         if var textToPaste = finalPastedText,
            transcription.transcriptionStatus == TranscriptionStatus.completed.rawValue {
             if case .trialExpired = licenseViewModel.licenseState {
@@ -219,17 +252,10 @@ class TranscriptionPipeline {
 
             let appendSpace = UserDefaults.standard.bool(forKey: "AppendTrailingSpace")
             let pastedText = textToPaste + (appendSpace ? " " : "")
-            let pastePostTask = CursorPaster.startPasteAtCursor(pastedText)
-            SoundManager.shared.playStopSound()
+            CursorPaster.startPasteAtCursor(pastedText)
             let autoSendKey = PowerModeManager.shared.currentActiveConfiguration?.autoSendKey
+            SoundManager.shared.playStopSound()
             await restorePromptDetectionSettingsIfNeeded()
-            // Wait for Cmd+V to actually be posted before dismissing the recorder.
-            // Previously dismissTask ran in parallel with the paste task, which could
-            // shift focus away from the target app mid-paste and lose characters.
-            await pastePostTask.value
-            dismissTask = Task { @MainActor in
-                await onDismiss()
-            }
 
             if let autoSendKey, autoSendKey.isEnabled {
                 Task { @MainActor in
@@ -237,14 +263,50 @@ class TranscriptionPipeline {
                     CursorPaster.performAutoSend(autoSendKey)
                 }
             }
+
+            await onDismiss()
         } else {
             await restorePromptDetectionSettingsIfNeeded()
             await onDismiss()
-            dismissTask = nil
         }
 
         saveTranscriptionAndPostCompletion()
+    }
 
-        await dismissTask?.value
+    /// Builds the STT entry that goes into `Transcription.troubleshootingLogJSON`.
+    /// The endpoint host comes from `CloudProviderRegistry` when the model
+    /// is cloud-backed; local models report only their provider name.
+    func makeSTTStep(
+        model: any TranscriptionModel,
+        language: String?,
+        durationMs: Int,
+        response: String?,
+        error: String?
+    ) -> APICallLog.Step {
+        let providerName = model.provider.rawValue
+        let isLocal = model.provider == .whisper
+            || model.provider == .fluidAudio
+            || model.provider == .nativeApple
+        let variant = isLocal ? "Local" : "Cloud"
+        let host: String? = isLocal ? nil : CloudProviderRegistry.provider(for: model.provider).flatMap { provider in
+            // Cloud providers don't expose their endpoint here; surface just
+            // the providerKey so the log keeps a stable identifier without
+            // leaking signed URLs.
+            return provider.providerKey
+        }
+        return APICallLog.Step(
+            kind: .stt,
+            provider: providerName,
+            providerVariant: variant,
+            endpointHost: host,
+            model: model.name,
+            languageCode: language,
+            requestSummary: "audio bytes (\(durationMs)ms transcription)",
+            requestSystemMessage: nil,
+            requestUserMessage: nil,
+            responseSummary: response,
+            durationMs: durationMs,
+            errorMessage: error
+        )
     }
 }

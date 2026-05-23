@@ -14,6 +14,14 @@ struct VocabularyView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var sortMode: VocabularySortMode = .wordAsc
+    @State private var showingBulkConfirmation = false
+    @State private var showingTechnicalConfirmation = false
+    @State private var showingClearConfirmation = false
+
+    private var shouldShowBrazilianTemplate: Bool {
+        let lang = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "").lowercased()
+        return lang.hasPrefix("pt")
+    }
 
     init(whisperPrompt: WhisperPrompt) {
         self.whisperPrompt = whisperPrompt
@@ -76,6 +84,86 @@ struct VocabularyView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
+            HStack(spacing: 8) {
+                if shouldShowBrazilianTemplate {
+                    Button {
+                        showingBulkConfirmation = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wand.and.sparkles")
+                            Text("Add pt-BR vocabulary")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Inserts common Brazilian terms (Receita Federal, PIX, CPF, CNPJ, USP, Bradesco, ...). Helps the LLM and cloud providers (Deepgram keyterm) get the spelling right.")
+                    .confirmationDialog(
+                        "Add pt-BR vocabulary?",
+                        isPresented: $showingBulkConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Add \(BrazilianVocabularyTemplate.count) terms") {
+                            applyBrazilianTemplate()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Will insert common Brazilian terms like Receita Federal, PIX, CPF, CNPJ, Bradesco, USP, ICMS, FGTS. Existing entries are skipped.")
+                    }
+                }
+
+                Button {
+                    showingTechnicalConfirmation = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "curlybraces")
+                        Text("Add technical vocabulary")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .help("Inserts canonical EN technical terms (React, TypeScript, useState, Docker, PostgreSQL, GitHub, ...). Pairs well with the Whisper Domain: Technical setting.")
+                .confirmationDialog(
+                    "Add technical vocabulary?",
+                    isPresented: $showingTechnicalConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Add \(TechnicalVocabularyTemplate.count) terms") {
+                        applyTechnicalTemplate()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Will insert technical terms like React, TypeScript, useState, Docker, Kubernetes, PostgreSQL, GitHub, npm, JWT, OAuth. Existing entries are skipped.")
+                }
+
+                Spacer()
+
+                if !vocabularyWords.isEmpty {
+                    Button(role: .destructive) {
+                        showingClearConfirmation = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash")
+                            Text("Clear all")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Deletes every vocabulary word. This cannot be undone.")
+                    .confirmationDialog(
+                        "Clear all vocabulary?",
+                        isPresented: $showingClearConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete \(vocabularyWords.count) words", role: .destructive) {
+                            clearAll()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Removes every vocabulary word. This cannot be undone.")
+                    }
+                }
+            }
+
             if !vocabularyWords.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Button(action: toggleSort) {
@@ -137,6 +225,40 @@ struct VocabularyView: View {
             alertMessage = "Failed to remove word: \(error.localizedDescription)"
             showAlert = true
         }
+    }
+
+    private func applyBrazilianTemplate() {
+        let result = DictionaryService.addBrazilianVocabulary(
+            existing: Array(vocabularyWords),
+            context: modelContext
+        )
+        presentBulkResult(result)
+    }
+
+    private func applyTechnicalTemplate() {
+        let result = DictionaryService.addTechnicalVocabulary(
+            existing: Array(vocabularyWords),
+            context: modelContext
+        )
+        presentBulkResult(result)
+    }
+
+    private func clearAll() {
+        if let deleted = DictionaryService.clearAllVocabulary(context: modelContext) {
+            alertMessage = "Deleted \(deleted) words."
+        } else {
+            alertMessage = "Failed to clear vocabulary."
+        }
+        showAlert = true
+    }
+
+    private func presentBulkResult(_ result: DictionaryService.BulkInsertResult) {
+        if !result.errors.isEmpty {
+            alertMessage = "Added: \(result.added). Skipped: \(result.skipped). Errors: \(result.errors.joined(separator: "; "))"
+        } else {
+            alertMessage = "Added: \(result.added). Skipped (already exist): \(result.skipped)."
+        }
+        showAlert = true
     }
 }
 
