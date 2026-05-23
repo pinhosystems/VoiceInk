@@ -276,6 +276,23 @@ class AIEnhancementService: ObservableObject {
         let selectedLanguageCode = UserDefaults.standard.string(forKey: "SelectedLanguage")
         let languageBlock = AIPrompts.audioLanguageBlock(code: selectedLanguageCode)
 
+        // Per-locale tech-term salvage table. Non-English speakers
+        // routinely mix English dev jargon into their dictation
+        // ("comêti", "puxe", "taipiscripti") — the STT writes the
+        // phonetic form and the LLM has no signal to recover the
+        // canonical English term unless we point at the patterns
+        // explicitly. Only inject for prompts whose category is dev-
+        // oriented; verbose tables on a Chat or Email prompt would
+        // just burn tokens.
+        let salvageBlock: String = {
+            let category = activePrompt?.category ?? .writing
+            guard category == .coding || category == .dev_ai,
+                  let block = TechTermSalvage.block(forLanguageCode: selectedLanguageCode) else {
+                return ""
+            }
+            return block
+        }()
+
         let promptBody: String
         if let activePrompt = activePrompt {
             if activePrompt.id == PredefinedPrompts.assistantPromptId {
@@ -294,11 +311,11 @@ class AIEnhancementService: ObservableObject {
                 ?? allPrompts.first
                 ?? PredefinedPrompts.createDefaultPrompts().first
             guard let defaultPrompt = fallback else {
-                return languageBlock + finalContextSection
+                return languageBlock + salvageBlock + finalContextSection
             }
             promptBody = defaultPrompt.finalPromptText(flags: flags)
         }
-        return languageBlock + promptBody + finalContextSection
+        return languageBlock + salvageBlock + promptBody + finalContextSection
     }
 
     private func makeRequest(text: String, mode: EnhancementPrompt) async throws -> String {

@@ -13,12 +13,10 @@ enum PredefinedPrompts {
     static let emailPromptId       = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
     static let chatPromptId        = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
     static let codeCommentPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
-    /// PT-BR variant of Task Prompt. Same structured-task-brief output
-    /// as `taskPromptId`, but with an explicit phonetic-misspelling
-    /// table for English dev jargon dictated in Portuguese (commit,
-    /// push, pull request, rebase, ...) and an unambiguous rule to
-    /// keep the brief in Portuguese instead of translating it.
-    static let taskPromptCodePtBRId = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
+    // 00000000-...-0008 was Task Prompt (PT-BR) — replaced by the
+    // runtime TechTermSalvage block injected by AIEnhancementService
+    // based on the user's selected STT language. Kept here as a
+    // tombstone so future predefined IDs don't accidentally reuse it.
 
     static var all: [CustomPrompt] {
         // Always return the latest predefined prompts from source code
@@ -57,6 +55,8 @@ enum PredefinedPrompts {
                 promptText: """
                 Convert <TRANSCRIPT> into a clear, structured task brief for an AI coding agent (Claude Code, Cursor, Copilot Chat).
 
+                Language: write the brief in the same language as the audio (see <AUDIO_LANGUAGE>). When the audio language is not English but the user mixed in English tech jargon, follow the <TECH_TERM_SALVAGE> table to restore canonical English spelling for those terms — never translate the salvaged terms back.
+
                 PRESERVE EVERYTHING THE USER ASKED FOR:
                 - If the user raised TWO or THREE distinct requests, the brief MUST contain all of them — never collapse multiple goals into one.
                 - Render every distinct request as a separate item: bullet, numbered step, or its own "Task:" line.
@@ -75,6 +75,7 @@ enum PredefinedPrompts {
                 description: "Clean task brief for Claude Code, Cursor, Copilot Chat",
                 isPredefined: true,
                 useSystemInstructions: false,
+                vocabularyDomains: [.userVocabulary, .technical],
                 category: .dev_ai
             ),
 
@@ -124,71 +125,6 @@ enum PredefinedPrompts {
             ),
 
             CustomPrompt(
-                id: taskPromptCodePtBRId,
-                title: "Task Prompt (PT-BR)",
-                promptText: """
-                Converta <TRANSCRIPT> em um brief de tarefa claro e estruturado para um agente de IA de código (Claude Code, Cursor, Copilot Chat).
-
-                IDIOMA DO BRIEF: PORTUGUÊS (pt-BR).
-                O usuário está ditando em português brasileiro. O brief DEVE permanecer em português. NÃO traduza para inglês. Apenas termos técnicos canônicos em inglês permanecem em inglês (commit, push, merge, deploy, etc.) — o restante é português.
-
-                TERMOS TÉCNICOS EM INGLÊS DENTRO DE FALA PT-BR:
-                Devs misturam jargão técnico em inglês ao falar. O STT frequentemente erra e escreve a versão fonética em português. Detecte e CORRIJA para a grafia canônica em inglês quando o contexto for técnico:
-
-                | Ouvido (fonético PT) | Correto (canônico EN) |
-                | --- | --- |
-                | comêti, comêtchi, kometi, comêchi | commit |
-                | puxe (em contexto git), puch | push |
-                | pul, pulhequesti, pulrequesti, pulrequest | pull request |
-                | mergi, mêrgi, merdge | merge |
-                | brãnchi, brãnche, brãntche | branch |
-                | rebeisi, rebeise, rebêisi | rebase |
-                | repô, hepô | repo |
-                | chécouti, tchécauti, tchekauti | checkout |
-                | deploi (em git/infra) | deploy |
-                | taipiscripti, taipscripti | TypeScript |
-                | djavaiscripti, javaiscripti | JavaScript |
-                | enepeeme, enpeeme | npm |
-                | iuseteit, iusefect | useState, useEffect |
-                | ridiucs, rêducs | Redux |
-                | búqui (em web context) | hook |
-                | hooky | hook (singular) |
-                | callbéqui | callback |
-                | mídiuér, mídiouér | middleware |
-                | enpoint, indpointi | endpoint |
-                | api (deletrear A-P-I, não "ápi") | API |
-                | jeisson, jésson | JSON |
-                | ésquema (em DB) | schema |
-                | querê, querê pê | query |
-                | builde, buildi | build |
-                | runtaimi | runtime |
-                | bãndoll, bãndle | bundle |
-                | quontêiner | container |
-
-                Use também `<CUSTOM_VOCABULARY>` (quando presente) como referência de grafia para nomes próprios, bibliotecas e identificadores.
-
-                PRESERVE TUDO QUE O USUÁRIO PEDIU:
-                - Se o usuário fez DUAS ou TRÊS solicitações distintas, o brief DEVE conter TODAS — nunca colapse múltiplos objetivos em um só.
-                - Renderize cada solicitação distinta como item separado: bullet, passo numerado, ou linha "Task:" própria.
-                - Preserve toda restrição, qualificador, edge case e detalhe esclarecedor. Corte disfluências (uh, é, então, tipo, restate-corrections, tangentes), nunca substância.
-
-                FORMATO:
-                - Voz imperativa em português ("Implemente", "Adicione", "Refatore").
-                - Preserve EXATAMENTE: caminhos de arquivo, nomes de funções, nomes de bibliotecas, comandos shell, números (timeouts, limites, versões, números de linha).
-                - Quando o usuário der contexto E objetivo, separe: parágrafo curto de contexto, depois linha(s) "Task:" / "Tarefa:", depois restrições.
-                - Múltiplas tarefas → lista numerada sob um único cabeçalho "Tarefas:", nunca prosa colada.
-
-                NÃO escreva código. Saída apenas o brief — sem preâmbulo, sem fechamento, sem cercas de markdown.
-                """,
-                icon: "brain.head.profile",
-                description: "Brief de tarefa em pt-BR — corrige termos técnicos EN ouvidos foneticamente",
-                isPredefined: true,
-                useSystemInstructions: false,
-                vocabularyDomains: [.userVocabulary, .technical, .brazilian],
-                category: .dev_ai
-            ),
-
-            CustomPrompt(
                 id: codeCommentPromptId,
                 title: "Code Comment",
                 promptText: """
@@ -200,6 +136,7 @@ enum PredefinedPrompts {
                 - Imperative or declarative tone, not first-person.
                 - No leading `//` or `#` — the editor adds those.
                 - Preserve identifiers, file paths, numeric values, and every distinct rationale the user gave exactly — never drop a reason.
+                - When the audio is non-English and the user mixed English tech jargon into it, follow the <TECH_TERM_SALVAGE> table to restore canonical English spelling for those terms.
 
                 Output only the comment text.
                 """,
@@ -207,6 +144,7 @@ enum PredefinedPrompts {
                 description: "Short inline code comment",
                 isPredefined: true,
                 useSystemInstructions: true,
+                vocabularyDomains: [.userVocabulary, .technical],
                 category: .coding
             ),
         ]
