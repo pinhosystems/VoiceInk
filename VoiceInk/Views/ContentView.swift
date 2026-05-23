@@ -17,7 +17,10 @@ enum ViewType: String, CaseIterable, Identifiable {
     case audioInput = "Audio Input"
     case dictionary = "Dictionary"
     case settings = "Settings"
-    case license = "VoiceInk Pro"
+    /// Repurposed from the upstream "VoiceInk Pro" tab into a neutral
+    /// About screen for this fork. Routing key `"VoiceInk Pro"` is kept
+    /// for back-compat with stored navigation intents.
+    case license = "About"
 
     var id: String { rawValue }
 
@@ -34,7 +37,7 @@ enum ViewType: String, CaseIterable, Identifiable {
         case .audioInput: return "mic.fill"
         case .dictionary: return "character.book.closed.fill"
         case .settings: return "gearshape.fill"
-        case .license: return "checkmark.seal.fill"
+        case .license: return "info.circle.fill"
         }
     }
 }
@@ -62,12 +65,7 @@ struct SidebarSection: Identifiable {
         SidebarSection(
             id: "system",
             title: "System",
-            items: [.permissions, .settings]
-        ),
-        SidebarSection(
-            id: "account",
-            title: "Account",
-            items: [.license]
+            items: [.permissions, .settings, .license]
         ),
     ]
 }

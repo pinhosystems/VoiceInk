@@ -157,7 +157,11 @@ enum PowerModePresets {
                 .init(bundleID: "com.microsoft.teams",              displayName: "Microsoft Teams (classic)"),
                 .init(bundleID: "com.hnc.Discord",                  displayName: "Discord"),
                 .init(bundleID: "com.apple.MobileSMS",              displayName: "Messages"),
-                .init(bundleID: "WhatsApp",                         displayName: "WhatsApp"),
+                // Mac WhatsApp ships under `net.whatsapp.WhatsApp`. The
+                // earlier `"WhatsApp"` placeholder never resolved via
+                // NSWorkspace and silently dropped out of the preset.
+                .init(bundleID: "net.whatsapp.WhatsApp",            displayName: "WhatsApp"),
+                .init(bundleID: "desktop.WhatsApp",                 displayName: "WhatsApp (legacy)"),
                 .init(bundleID: "ru.keepcoder.Telegram",            displayName: "Telegram"),
             ],
             suggestedURLs: [
