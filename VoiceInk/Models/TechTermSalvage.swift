@@ -19,21 +19,56 @@ import Foundation
 /// don't blindly translate the pt-BR table.
 enum TechTermSalvage {
 
-    /// Returns a `<TECH_TERM_SALVAGE>` block when the locale code maps
-    /// to a known table, `nil` otherwise (i.e. EN audio, "auto", or any
-    /// locale we haven't curated yet — those land on the generic
-    /// instruction inside the prompt itself).
+    /// Returns a `<TECH_TERM_SALVAGE>` block. Three tiers:
+    ///   1. Curated table for languages we have specific data on
+    ///      (pt-*, es-*). Highest precision — explicit phonetic →
+    ///      canonical mappings observed in production transcripts.
+    ///   2. Generic instruction for any other non-English locale.
+    ///      No table; the LLM uses its own knowledge of typical
+    ///      EN tech-jargon mistranscriptions in that language. Lower
+    ///      precision but applies universally.
+    ///   3. nil for EN, en-*, "auto", and empty values — those
+    ///      languages don't have the EN-jargon-mixed-into-non-EN
+    ///      problem.
+    ///
+    /// Matching strategy: BCP-47 codes can arrive as bare primary
+    /// subtags ("pt", "es") or with a region ("pt-BR", "pt-PT",
+    /// "es-MX", "fr-FR"). We match on the primary subtag so any
+    /// regional variant of a supported language picks up its table —
+    /// the LLM still gets the precise region name via
+    /// `<AUDIO_LANGUAGE>` separately, so European Portuguese audio
+    /// still produces output in pt-PT spelling even though it shares
+    /// the pt-BR salvage table (English tech borrowings behave the
+    /// same in both registers).
     static func block(forLanguageCode raw: String?) -> String? {
         guard let normalized = normalize(raw) else { return nil }
+        let primary = String(normalized.prefix(while: { $0 != "-" }))
 
-        switch normalized {
-        case "pt", "pt-br":
-            return ptBrBlock
+        switch primary {
+        case "pt":
+            return ptBlock
         case "es":
             return esBlock
         default:
-            return nil
+            return genericBlock(forPrimary: primary)
         }
+    }
+
+    /// Localized language name used inside the generic block so the
+    /// LLM knows which language to speak. Falls back to the raw BCP-47
+    /// primary subtag if Locale can't resolve it.
+    private static func genericBlock(forPrimary primary: String) -> String {
+        let languageName = Locale(identifier: "en")
+            .localizedString(forLanguageCode: primary)
+            ?? primary
+        return """
+        <TECH_TERM_SALVAGE>
+        The user is speaking \(languageName). Speakers of non-English languages routinely mix English software-engineering jargon into their dictation (commit, push, pull request, merge, branch, deploy, repo, schema, endpoint, build, runtime, JSON, API, npm, TypeScript, etc.). The STT engine often writes those English terms as phonetic spellings in \(languageName). In technical context, detect those phonetic forms and restore the canonical English spelling. Do NOT translate the salvaged English term back into \(languageName).
+
+        When the rest of the sentence is conversational and non-technical, leave words alone — only salvage when the surrounding context (code, commands, library names, tool names) suggests the user meant a known English tech term.
+        </TECH_TERM_SALVAGE>
+
+        """
     }
 
     /// Lower-cased, locale-normalized BCP-47 prefix. Returns nil for
@@ -46,9 +81,9 @@ enum TechTermSalvage {
         return code
     }
 
-    // MARK: - pt-BR
+    // MARK: - pt
 
-    private static let ptBrBlock = """
+    private static let ptBlock = """
     <TECH_TERM_SALVAGE>
     Devs em português frequentemente intercalam jargão técnico em inglês com a fala. O STT escreve a versão fonética. Quando o contexto for técnico, detecte e CORRIJA para a grafia canônica em inglês:
 

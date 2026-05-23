@@ -281,17 +281,14 @@ class AIEnhancementService: ObservableObject {
         // ("comêti", "puxe", "taipiscripti") — the STT writes the
         // phonetic form and the LLM has no signal to recover the
         // canonical English term unless we point at the patterns
-        // explicitly. Only inject for prompts whose category is dev-
-        // oriented; verbose tables on a Chat or Email prompt would
-        // just burn tokens.
-        let salvageBlock: String = {
-            let category = activePrompt?.category ?? .writing
-            guard category == .coding || category == .dev_ai,
-                  let block = TechTermSalvage.block(forLanguageCode: selectedLanguageCode) else {
-                return ""
-            }
-            return block
-        }()
+        // explicitly. Inject for ANY active prompt as long as the
+        // configured language has a salvage table. The category gate
+        // used to be coding/dev_ai-only but the same problem hits
+        // chat messages, emails, and freeform writing — anywhere the
+        // user might say "commit" or "deploy" mid-sentence — so we
+        // pay the ~200-token cost across the board on non-EN locales.
+        // EN / auto locales still return nil and skip the block.
+        let salvageBlock = TechTermSalvage.block(forLanguageCode: selectedLanguageCode) ?? ""
 
         let promptBody: String
         if let activePrompt = activePrompt {
@@ -675,6 +672,38 @@ class AIEnhancementService: ObservableObject {
             }
             seenSignatures.insert(signature)
             return true
+        }
+
+        // Re-tag legacy template clones with the right PromptCategory.
+        // Builds shipped before the category field existed decoded old
+        // CustomPrompts with category=.writing regardless of source, so
+        // a user's cloned "Commit Message" or "Code Comment" never
+        // qualified for the runtime tech-term salvage injection in
+        // getSystemMessage. Look each non-predefined prompt up by title
+        // in PromptTemplates and, if the persisted category doesn't
+        // match the source template's, rewrite it. The prompt's UUID,
+        // promptText edits, trigger words, and other user-owned fields
+        // are preserved.
+        let templateByTitle = Dictionary(
+            uniqueKeysWithValues: PromptTemplates.all.map { ($0.title, $0) }
+        )
+        customPrompts = customPrompts.map { prompt -> CustomPrompt in
+            guard !prompt.isPredefined,
+                  let template = templateByTitle[prompt.title],
+                  prompt.category != template.category else { return prompt }
+            return CustomPrompt(
+                id: prompt.id,
+                title: prompt.title,
+                promptText: prompt.promptText,
+                isActive: prompt.isActive,
+                icon: prompt.icon,
+                description: prompt.description,
+                isPredefined: prompt.isPredefined,
+                triggerWords: prompt.triggerWords,
+                useSystemInstructions: prompt.useSystemInstructions,
+                vocabularyDomains: prompt.vocabularyDomains,
+                category: template.category
+            )
         }
 
         for template in predefinedTemplates {
