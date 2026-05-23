@@ -273,17 +273,25 @@ struct PowerModeView: View {
             }
     }
 
-    /// Clone the preset's prompt template into a new CustomPrompt,
-    /// register it with the enhancement service, then open the editor
-    /// pre-populated with the materialized config.
+    /// Resolve the preset's prompt link. Three cases:
+    ///   1. The ID matches a predefined prompt (Default / Assistant) —
+    ///      reuse that UUID directly, no cloning, no duplicates in the
+    ///      picker.
+    ///   2. The ID matches a template — clone it into a new CustomPrompt
+    ///      registered with the enhancement service.
+    ///   3. The ID matches nothing — leave the prompt selector empty so
+    ///      the user picks one in the editor.
+    /// Then open the editor pre-populated with the materialized config.
     private func applyPreset(_ preset: PowerModePreset) {
-        var clonedPromptID: UUID? = nil
-        if let template = PromptTemplates.template(withID: preset.promptTemplateID) {
+        var promptID: UUID? = nil
+        if PredefinedPrompts.all.contains(where: { $0.id == preset.promptTemplateID }) {
+            promptID = preset.promptTemplateID
+        } else if let template = PromptTemplates.template(withID: preset.promptTemplateID) {
             let cloned = template.toCustomPrompt()
             enhancementService.customPrompts.append(cloned)
-            clonedPromptID = cloned.id
+            promptID = cloned.id
         }
-        let seed = preset.toConfig(clonedPromptID: clonedPromptID)
+        let seed = preset.toConfig(clonedPromptID: promptID)
         openPanel(mode: .addFromPreset(seed))
     }
 

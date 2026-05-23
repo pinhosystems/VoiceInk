@@ -258,7 +258,11 @@ enum PowerModePresets {
                 "perplexity.ai",
                 "copilot.microsoft.com",
             ],
-            promptTemplateID: PromptTemplates.TemplateID.taskPrompt,
+            // AI Chat reuses the built-in Assistant predefined prompt
+            // (no cloning needed). Using the Task Prompt template here
+            // would produce a second "Task Prompt" entry in the picker
+            // alongside the one cloned by the AI Coding Agent preset.
+            promptTemplateID: PredefinedPrompts.assistantPromptId,
             isAIEnhancementEnabled: true,
             useScreenCapture: true,
             autoSendKey: .enter,
