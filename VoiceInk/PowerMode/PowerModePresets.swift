@@ -89,7 +89,11 @@ enum PowerModePresets {
                 // the user's configurations list.
                 "claude.ai/code",
             ],
-            promptTemplateID: PromptTemplates.TemplateID.taskPrompt,
+            // Task Prompt is a predefined prompt — reusing its stable
+            // UUID means applyPreset routes through the "no-clone"
+            // branch and the user only ever sees one entry in the
+            // picker even after multiple AI Coding Agent applies.
+            promptTemplateID: PredefinedPrompts.taskPromptId,
             isAIEnhancementEnabled: true,
             useScreenCapture: true,
             autoSendKey: .none,

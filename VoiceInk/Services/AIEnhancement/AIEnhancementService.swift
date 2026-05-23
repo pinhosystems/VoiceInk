@@ -610,6 +610,7 @@ class AIEnhancementService: ObservableObject {
     private func initializePredefinedPrompts() {
         let predefinedTemplates = PredefinedPrompts.createDefaultPrompts()
         let validPredefinedIds = Set(predefinedTemplates.map { $0.id })
+        let predefinedTitles = Set(predefinedTemplates.map { $0.title })
 
         // Purge orphan predefined prompts: entries persisted with
         // `isPredefined: true` whose UUID is no longer in the source list.
@@ -617,6 +618,17 @@ class AIEnhancementService: ObservableObject {
         // removed from `PredefinedPrompts` stays stuck — the delete UI
         // guards on `!isPredefined`, so the user can never remove it.
         customPrompts.removeAll { $0.isPredefined && !validPredefinedIds.contains($0.id) }
+
+        // Migrate legacy clones: Task Prompt (and any other prompt) was
+        // previously a clonable template — every application of the
+        // "AI Coding Agent" Power Mode preset spawned a fresh
+        // non-predefined "Task Prompt" entry, so users with multiple
+        // applies ended up with two or three duplicates. Now that the
+        // prompt is a predefined entry with a stable UUID, drop the
+        // non-predefined siblings whose title matches a current
+        // predefined title. The single predefined instance below the
+        // loop replaces them in the picker.
+        customPrompts.removeAll { !$0.isPredefined && predefinedTitles.contains($0.title) }
 
         for template in predefinedTemplates {
             if let existingIndex = customPrompts.firstIndex(where: { $0.id == template.id }) {

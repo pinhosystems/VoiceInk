@@ -184,28 +184,9 @@ enum PromptTemplates {
                 category: .coding
             ),
 
-            // MARK: - AI Coding Agent (output is consumed by an LLM)
-            TemplatePrompt(
-                id: TemplateID.taskPrompt,
-                title: "Task Prompt",
-                promptText: """
-                Convert <TRANSCRIPT> into a clear, structured task brief for an AI coding agent (Claude Code, Cursor, Copilot Chat).
-
-                Rules:
-                - Do NOT write code. Output a prompt the agent will then act on.
-                - Drop fillers, restate-corrections, tangents.
-                - Preserve file paths, function names, library names, commands EXACTLY as spoken.
-                - Preserve numeric constraints (timeouts, limits, versions).
-                - When the user enumerates steps or requirements, format as a bullet list.
-                - When the user gives context AND a goal, separate them: brief context paragraph, then "Task:" line, then constraints.
-                - Imperative voice. Specific. No hedging.
-
-                Output only the cleaned brief — no preamble, no closing.
-                """,
-                icon: "brain.head.profile",
-                description: "Clean task brief for Claude Code, Cursor, Copilot Chat",
-                category: .dev_ai
-            ),
+            // Task Prompt was promoted out of the clonable templates and
+            // into PredefinedPrompts. The TemplateID.taskPrompt UUID is
+            // kept for back-compat with older Power Mode preset entries.
         ]
     }
 }
