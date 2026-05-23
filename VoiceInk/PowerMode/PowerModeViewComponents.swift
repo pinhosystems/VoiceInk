@@ -304,75 +304,86 @@ struct ConfigurationRow: View {
         return items
     }
 
+    /// Hard cap on how many pills the identity row renders before the
+    /// "+N more" overflow chip kicks in. The card width is bounded by
+    /// the LazyVGrid columns (up to ~480pt), so allowing the pills row
+    /// to grow indefinitely produced horizontal overflow that pushed
+    /// the toggle off the right edge — picking a fixed cap keeps the
+    /// row predictable across configs.
+    private let maxInlinePills = 3
+
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            emojiTile
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row: emoji + identity + toggle. The identity column
+            // expands via maxWidth: .infinity so the toggle pins
+            // against the trailing edge of the card.
+            HStack(alignment: .center, spacing: 14) {
+                emojiTile
 
-            // Content column expands to fill all available horizontal
-            // space between the emoji tile and the toggle, so the row
-            // never leaves a wide trough in the middle when the card
-            // is rendered at full window width.
-            VStack(alignment: .leading, spacing: 8) {
-                // Identity row: name + Default + inline pills. The pills
-                // sit on the same baseline as the name so the configured
-                // STT model, language, LLM, prompt, etc. read as
-                // metadata of the profile rather than a separate band.
-                HStack(spacing: 8) {
-                    Text(config.name)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .layoutPriority(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(config.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
 
-                    if config.isDefault {
-                        HStack(spacing: 3) {
-                            Circle()
-                                .fill(Color.accentColor)
-                                .frame(width: 5, height: 5)
-                            Text("Default")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.accentColor)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.10)))
-                        .layoutPriority(2)
-                    }
-
-                    if !summaryPillItems.isEmpty {
-                        // Horizontal overflow scroll for narrow cards.
-                        // showsIndicators is off so we don't end up
-                        // with a scrollbar inside a card. On a card
-                        // wide enough to fit all pills, the ScrollView
-                        // is functionally a static HStack.
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 5) {
-                                ForEach(summaryPillItems) { pill in
-                                    summaryPill(icon: pill.icon, text: pill.text, emphasized: pill.emphasized)
-                                }
+                        if config.isDefault {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 5, height: 5)
+                                Text("Default")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.accentColor)
                             }
-                            .padding(.trailing, 4)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.10)))
                         }
-                        .scrollClipDisabled()
                     }
 
+                    triggersStrip
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Toggle("", isOn: $config.isEnabled)
+                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
+                    .labelsHidden()
+                    .onChange(of: config.isEnabled) { _, _ in
+                        powerModeManager.updateConfiguration(config)
+                    }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+
+            // Bottom row: summary pills with a hard inline cap so the
+            // card never overflows. Anything past `maxInlinePills`
+            // collapses into a single "+N" chip; the editor still
+            // surfaces the full state.
+            if !summaryPillItems.isEmpty {
+                Divider().opacity(0.35)
+
+                HStack(spacing: 5) {
+                    let visible = summaryPillItems.prefix(maxInlinePills)
+                    let hidden  = max(0, summaryPillItems.count - maxInlinePills)
+                    ForEach(Array(visible)) { pill in
+                        summaryPill(icon: pill.icon, text: pill.text, emphasized: pill.emphasized)
+                    }
+                    if hidden > 0 {
+                        Text("+\(hidden)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    }
                     Spacer(minLength: 0)
                 }
-
-                triggersStrip
+                .padding(.vertical, 7)
+                .padding(.horizontal, 14)
+                .background(Color.primary.opacity(0.02))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Toggle("", isOn: $config.isEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                .labelsHidden()
-                .onChange(of: config.isEnabled) { _, _ in
-                    powerModeManager.updateConfiguration(config)
-                }
-                .padding(.top, 2)
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     .background(
         RoundedRectangle(cornerRadius: 14, style: .continuous)
