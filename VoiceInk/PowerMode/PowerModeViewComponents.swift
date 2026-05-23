@@ -53,9 +53,19 @@ struct PowerModeConfigurationsGrid: View {
     @ObservedObject var powerModeManager: PowerModeManager
     let onEditConfig: (PowerModeConfig) -> Void
     @EnvironmentObject var enhancementService: AIEnhancementService
-    
+
+    /// Adaptive 1-to-2 column layout. Below the minimum width we keep
+    /// the single full-width column the screen used to ship with —
+    /// above ~720pt of available content area the grid breaks into two
+    /// columns, which is the common case on the 950pt main window
+    /// (sidebar removed). The maximum cap prevents cards from going
+    /// absurdly wide on tertiary monitors.
+    private let columns: [GridItem] = [
+        GridItem(.adaptive(minimum: 340, maximum: 480), spacing: 12, alignment: .top)
+    ]
+
     var body: some View {
-        LazyVStack(spacing: 12) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
             ForEach($powerModeManager.configurations) { $config in
                 ConfigurationRow(
                     config: $config,
