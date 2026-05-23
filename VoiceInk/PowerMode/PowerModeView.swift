@@ -173,20 +173,25 @@ struct PowerModeView: View {
                             ScrollView {
                                 VStack(spacing: 0) {
                                     if powerModeManager.configurations.isEmpty {
-                                        // First-run experience: show the preset gallery
-                                        // inline so the user has working profiles to pick
-                                        // from instead of an empty placeholder.
-                                        VStack(alignment: .leading, spacing: 16) {
-                                            VStack(alignment: .leading, spacing: 4) {
+                                        // First-run experience: show a clear
+                                        // "no profiles yet" callout above the
+                                        // preset gallery so users don't mistake
+                                        // the preset cards for configured Power
+                                        // Modes that are already firing.
+                                        VStack(alignment: .leading, spacing: 18) {
+                                            emptyStateCallout
+                                                .padding(.top, 24)
+                                                .padding(.horizontal, 24)
+
+                                            VStack(alignment: .leading, spacing: 6) {
                                                 Text("Start from a preset")
-                                                    .font(.system(size: 18, weight: .semibold))
+                                                    .font(.system(size: 16, weight: .semibold))
                                                     .foregroundColor(.primary)
-                                                Text("Each preset prefills apps, prompt, and behavior for a common context. Apps you don't have installed are filtered out.")
-                                                    .font(.system(size: 13))
+                                                Text("Each card creates a new Power Mode prefilled with apps, prompt, and behavior for a common context. Apps you don't have installed are filtered out. Click a card to open the editor and save it.")
+                                                    .font(.system(size: 12))
                                                     .foregroundColor(.secondary)
                                                     .lineSpacing(2)
                                             }
-                                            .padding(.top, 24)
                                             .padding(.horizontal, 24)
 
                                             PowerModePresetGallery(
@@ -293,6 +298,40 @@ struct PowerModeView: View {
         }
         let seed = preset.toConfig(clonedPromptID: promptID)
         openPanel(mode: .addFromPreset(seed))
+    }
+
+    /// Banner shown above the empty-state preset gallery. Explicit so
+    /// users don't think Power Mode is "running" with whatever they
+    /// see below — without any saved configurations, no Power Mode
+    /// ever fires, and dictation uses the global Enhancement settings.
+    private var emptyStateCallout: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.bubble.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(.tint)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No Power Modes configured yet")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Power Mode is enabled in Settings but nothing will trigger automatically until you save at least one profile. Until then, dictation uses whatever is selected in the Enhancement tab.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.accentColor.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.20), lineWidth: 1)
+        )
     }
 
     private func openPresetGallery() {
