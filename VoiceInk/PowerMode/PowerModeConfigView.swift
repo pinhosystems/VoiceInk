@@ -599,7 +599,13 @@ struct ConfigurationView: View {
             // Footer
             VStack(spacing: 0) {
                 HStack {
-                    if case .edit = mode {
+                    // The default Power Mode profile is the fallback used
+                    // when no other config matches the active app/URL —
+                    // deleting it would leave the matcher with nothing to
+                    // fall back to. Hide the destructive button on the
+                    // default; users have to clear the "Set as default"
+                    // toggle first before they can delete the entry.
+                    if case .edit = mode, !isDefault {
                         Button("Delete", role: .destructive) {
                             isShowingDeleteConfirmation = true
                         }
