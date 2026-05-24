@@ -421,6 +421,12 @@ struct ConfigurationRow: View {
         }) {
             Label("Edit", systemImage: "pencil")
         }
+        Button(action: {
+            _ = powerModeManager.duplicateConfiguration(config)
+        }) {
+            Label("Duplicate", systemImage: "plus.square.on.square")
+        }
+        Divider()
         Button(role: .destructive, action: {
             let alert = NSAlert()
             alert.messageText = "Delete Power Mode?"
@@ -429,7 +435,7 @@ struct ConfigurationRow: View {
             alert.addButton(withTitle: "Delete")
             alert.addButton(withTitle: "Cancel")
             alert.buttons[0].hasDestructiveAction = true
-            
+
             if alert.runModal() == .alertFirstButtonReturn {
                 powerModeManager.removeConfiguration(with: config.id)
             }

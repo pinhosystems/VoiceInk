@@ -245,6 +245,43 @@ class PowerModeManager: ObservableObject {
         saveConfigurations()
     }
 
+    /// Clones `source` into a new configuration inserted immediately after it
+    /// in the priority list, so the duplicate inherits the next-lower
+    /// priority slot. The copy never inherits `isDefault` (only one default
+    /// allowed) or `hotkeyShortcut` (per-config shortcuts must stay unique)
+    /// and is created disabled to avoid silently shadowing the source on
+    /// the next app match.
+    @discardableResult
+    func duplicateConfiguration(_ source: PowerModeConfig) -> PowerModeConfig? {
+        guard let sourceIndex = configurations.firstIndex(where: { $0.id == source.id }) else {
+            return nil
+        }
+        var copy = source
+        copy.id = UUID()
+        copy.name = uniqueName(basedOn: source.name)
+        copy.isDefault = false
+        copy.hotkeyShortcut = nil
+        copy.isEnabled = false
+
+        configurations.insert(copy, at: sourceIndex + 1)
+        saveConfigurations()
+        return copy
+    }
+
+    /// Produces a duplicate-safe name. First tries "<name> (Copy)"; if that
+    /// already exists, appends " 2", " 3", … until it finds a free slot.
+    private func uniqueName(basedOn original: String) -> String {
+        let base = "\(original) (Copy)"
+        if !configurations.contains(where: { $0.name == base }) {
+            return base
+        }
+        var index = 2
+        while configurations.contains(where: { $0.name == "\(base) \(index)" }) {
+            index += 1
+        }
+        return "\(base) \(index)"
+    }
+
     func getConfigurationForURL(_ url: String) -> PowerModeConfig? {
         for config in configurations.filter({ $0.isEnabled }) {
             if let urlConfigs = config.urlConfigs {
