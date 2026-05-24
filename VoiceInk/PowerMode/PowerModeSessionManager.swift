@@ -149,24 +149,6 @@ class PowerModeSessionManager {
                 enhancementService.isEnhancementEnabled = config.isAIEnhancementEnabled
 
                 if config.isAIEnhancementEnabled {
-                    if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
-                        // Guard against orphan references: Power Mode
-                        // configs persisted before recent dedup /
-                        // template-promotion migrations may point at a
-                        // CustomPrompt that no longer exists. Setting the
-                        // invalid UUID would make activePrompt resolve to
-                        // nil — silently — and the history row's prompt
-                        // pill would render blank. Validate the lookup
-                        // and fall back to nil (Default) when the prompt
-                        // is gone, so getSystemMessage and enhance() both
-                        // route through the predefined Default.
-                        if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
-                            enhancementService.selectedPromptId = uuid
-                        } else {
-                            enhancementService.selectedPromptId = nil
-                        }
-                    }
-
                     if let aiService = enhancementService.getAIService() {
                         if let providerName = config.selectedAIProvider, let provider = AIProvider(rawValue: providerName) {
                             aiService.selectedProvider = provider
@@ -175,6 +157,25 @@ class PowerModeSessionManager {
                             aiService.selectModel(model)
                         }
                     }
+                }
+            }
+
+            // Prompt selection is decoupled from `customizeLLM`. A profile
+            // can pin a prompt without overriding the AI Enhancement
+            // state / provider / model. When the prompt id is nil the
+            // global selection stays in place.
+            if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
+                // Guard against orphan references: profiles persisted
+                // before recent dedup / template-promotion migrations
+                // may point at a CustomPrompt that no longer exists.
+                // Setting the invalid UUID would make activePrompt
+                // resolve to nil silently and the history row's prompt
+                // pill would render blank. Validate the lookup and
+                // fall back to nil (Default) when the prompt is gone.
+                if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
+                    enhancementService.selectedPromptId = uuid
+                } else {
+                    enhancementService.selectedPromptId = nil
                 }
             }
 

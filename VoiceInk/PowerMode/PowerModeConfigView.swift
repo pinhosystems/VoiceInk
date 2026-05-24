@@ -578,33 +578,46 @@ struct ConfigurationView: View {
                             }
                         }
 
-                        if enhancementService.allPrompts.isEmpty {
-                            LabeledContent("Enhancement Prompt") {
-                                Text("No prompts available")
-                                    .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Picker("Enhancement Prompt", selection: $selectedPromptId) {
-                                ForEach(enhancementService.allPrompts) { prompt in
-                                    Text(prompt.title).tag(prompt.id as UUID?)
-                                }
-                            }
-                        }
-
                         Toggle("Context Awareness", isOn: $useScreenCapture)
                     }
                     } else {
-                        Text("Power Mode will keep the system defaults for AI Enhancement, prompt, provider, and model while this profile is active.")
+                        Text("Power Mode will keep the system defaults for AI Enhancement state, provider, and model while this profile is active. The prompt picker below is still editable — it applies whenever enhancement runs, even with the section above on Default.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Prompt picker lives OUTSIDE the customizeLLM gate so the
+                    // user can pin a profile-specific prompt without
+                    // committing to overriding the AI Enhancement state,
+                    // provider, and model. When enhancement runs (either
+                    // because the global setting is on or because the
+                    // customizeLLM section forces it on), this prompt
+                    // applies. "Default" leaves the global prompt in place.
+                    if enhancementService.allPrompts.isEmpty {
+                        LabeledContent("Enhancement Prompt") {
+                            Text("No prompts available")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Picker(selection: $selectedPromptId) {
+                            Text("Default (use global selection)").tag(UUID?.none)
+                            ForEach(enhancementService.allPrompts) { prompt in
+                                Text(prompt.title).tag(prompt.id as UUID?)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("Enhancement Prompt")
+                                InfoTip("Independent from the Customize toggle above. Pick a concrete prompt to apply it whenever this profile runs the LLM step (regardless of whether the rest of the AI Enhancement section is customized). \"Default\" leaves the global prompt in place.")
+                            }
+                        }
                     }
                 } header: {
                     sectionHeader(
                         title: "AI Enhancement",
                         toggleLabel: "Customize",
                         binding: $customizeLLM,
-                        info: "When off, this Power Mode does not change the AI Enhancement state, prompt, provider, or model — they keep the global defaults while the profile is active."
+                        info: "When off, this Power Mode does not change the AI Enhancement state, provider, or model — those keep the global defaults while the profile is active. The prompt picker below this header is independent and stays editable either way."
                     )
                 }
 
