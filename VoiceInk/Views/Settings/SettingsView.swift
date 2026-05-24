@@ -80,7 +80,77 @@ struct SettingsView: View {
         "en", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ja", "ko", "zh"
     ]
 
+    private enum SettingsTab: String, CaseIterable, Identifiable {
+        case general, shortcuts, recording, powerMode, data, advanced
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .general: return "General"
+            case .shortcuts: return "Shortcuts"
+            case .recording: return "Recording"
+            case .powerMode: return "Power Mode"
+            case .data: return "Data"
+            case .advanced: return "Advanced"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .general: return "gear"
+            case .shortcuts: return "keyboard"
+            case .recording: return "mic.fill"
+            case .powerMode: return "bolt.fill"
+            case .data: return "folder.fill"
+            case .advanced: return "wrench.and.screwdriver.fill"
+            }
+        }
+    }
+
+    @State private var selectedTab: SettingsTab = .general
+
     var body: some View {
+        TabView(selection: $selectedTab) {
+            generalTab
+                .tabItem { Label(SettingsTab.general.label, systemImage: SettingsTab.general.icon) }
+                .tag(SettingsTab.general)
+
+            shortcutsTab
+                .tabItem { Label(SettingsTab.shortcuts.label, systemImage: SettingsTab.shortcuts.icon) }
+                .tag(SettingsTab.shortcuts)
+
+            recordingTab
+                .tabItem { Label(SettingsTab.recording.label, systemImage: SettingsTab.recording.icon) }
+                .tag(SettingsTab.recording)
+
+            powerModeTab
+                .tabItem { Label(SettingsTab.powerMode.label, systemImage: SettingsTab.powerMode.icon) }
+                .tag(SettingsTab.powerMode)
+
+            dataTab
+                .tabItem { Label(SettingsTab.data.label, systemImage: SettingsTab.data.icon) }
+                .tag(SettingsTab.data)
+
+            advancedTab
+                .tabItem { Label(SettingsTab.advanced.label, systemImage: SettingsTab.advanced.icon) }
+                .tag(SettingsTab.advanced)
+        }
+        .alert("Reset Onboarding", isPresented: $showResetOnboardingAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                DispatchQueue.main.async {
+                    hasCompletedOnboarding = false
+                }
+            }
+        } message: {
+            Text("You'll see the introduction screens again the next time you launch the app.")
+        }
+    }
+
+    // MARK: - General tab — Language + general app preferences
+
+    private var generalTab: some View {
         Form {
             // MARK: - Language (mandatory)
             Section {
@@ -107,6 +177,36 @@ struct SettingsView: View {
                 Text("Language")
             }
 
+            Section("General") {
+                Toggle("Hide Dock Icon", isOn: $menuBarManager.isMenuBarOnly)
+
+                LaunchAtLogin.Toggle("Launch at Login")
+
+                Toggle("Show Announcements", isOn: $enableAnnouncements)
+                    .onChange(of: enableAnnouncements) { _, newValue in
+                        if newValue {
+                            AnnouncementsService.shared.start()
+                        } else {
+                            AnnouncementsService.shared.stop()
+                        }
+                    }
+
+                HStack {
+                    Button("Reset Onboarding") {
+                        showResetOnboardingAlert = true
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    // MARK: - Shortcuts tab
+
+    private var shortcutsTab: some View {
+        Form {
             // MARK: - Shortcuts
             Section {
                 LabeledContent("Shortcut 1") {
@@ -215,6 +315,16 @@ struct SettingsView: View {
                 }
             }
 
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    // MARK: - Recording tab — feedback + interface
+
+    private var recordingTab: some View {
+        Form {
             // MARK: - Recording Feedback
             Section("Recording Feedback") {
                 // Sound Feedback
@@ -269,9 +379,6 @@ struct SettingsView: View {
 
             }
 
-            // MARK: - Power Mode
-            PowerModeSection()
-
             // MARK: - Interface
             Section("Interface") {
                 Picker("Recorder Style", selection: $recorderUIManager.recorderType) {
@@ -279,40 +386,28 @@ struct SettingsView: View {
                     Text("Mini").tag("mini")
                 }
                 .pickerStyle(.segmented)
-
             }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
 
-            // MARK: - Experimental
-            ExperimentalSection()
+    // MARK: - Power Mode tab
 
-            // MARK: - General
-            Section("General") {
-                Toggle("Hide Dock Icon", isOn: $menuBarManager.isMenuBarOnly)
+    private var powerModeTab: some View {
+        Form {
+            PowerModeSection()
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
 
-                LaunchAtLogin.Toggle("Launch at Login")
+    // MARK: - Data tab — Privacy + Backup
 
-                // Auto-update and "Check for Updates" intentionally removed in
-                // this fork — the upstream Beingpax appcast is not consumed.
-                // See `UpdaterViewModel` in VoiceInk.swift for the full
-                // rationale. Toggling those controls would have been a no-op
-                // and confusing for users.
-
-                Toggle("Show Announcements", isOn: $enableAnnouncements)
-                    .onChange(of: enableAnnouncements) { _, newValue in
-                        if newValue {
-                            AnnouncementsService.shared.start()
-                        } else {
-                            AnnouncementsService.shared.stop()
-                        }
-                    }
-
-                HStack {
-                    Button("Reset Onboarding") {
-                        showResetOnboardingAlert = true
-                    }
-                }
-            }
-
+    private var dataTab: some View {
+        Form {
             // MARK: - Privacy
             Section {
                 AudioCleanupSettingsView()
@@ -362,6 +457,18 @@ struct SettingsView: View {
                 Text("Export all settings, or choose specific categories when importing a backup.")
             }
 
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    // MARK: - Advanced tab — Experimental + Diagnostics
+
+    private var advancedTab: some View {
+        Form {
+            ExperimentalSection()
+
             // MARK: - Diagnostics
             Section("Diagnostics") {
                 DiagnosticsSettingsView()
@@ -370,16 +477,6 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
-        .alert("Reset Onboarding", isPresented: $showResetOnboardingAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
-                DispatchQueue.main.async {
-                    hasCompletedOnboarding = false
-                }
-            }
-        } message: {
-            Text("You'll see the introduction screens again the next time you launch the app.")
-        }
     }
 
     @ViewBuilder
