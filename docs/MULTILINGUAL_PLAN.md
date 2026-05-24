@@ -317,7 +317,7 @@ nothing is rewritten.
   - Disabled / hidden when active pack has empty
     `wordReplacements` / `vocabularyTerms`.
 
-### Phase 7 (DONE in this commit) — Cleanup + docs
+### Phase 7 (DONE in f04cd4a) — Cleanup + docs
 
 - Delete `BrazilianTextNormalizer.swift`,
   `BrazilianWordReplacements.swift`,
