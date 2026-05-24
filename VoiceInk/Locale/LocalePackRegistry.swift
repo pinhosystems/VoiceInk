@@ -57,7 +57,11 @@ enum LocalePackRegistry {
         ItalianPack(),
         JapanesePack(),
         KoreanPack(),
-        ChinesePack()
+        ChinesePack(),
+        HindiPack(),
+        ArabicPack(),
+        RussianPack(),
+        TurkishPack()
     ]
 
     /// True when locale-specific input normalization should run. New key wins
