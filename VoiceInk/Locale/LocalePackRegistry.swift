@@ -50,7 +50,14 @@ enum LocalePackRegistry {
     /// matches by `bcp47` first, then `primarySubtag`.
     static let curatedPacks: [LocalePack] = [
         BrazilianPortuguesePack(),
-        PortuguesePack()
+        PortuguesePack(),
+        SpanishPack(),
+        FrenchPack(),
+        GermanPack(),
+        ItalianPack(),
+        JapanesePack(),
+        KoreanPack(),
+        ChinesePack()
     ]
 
     /// True when locale-specific input normalization should run. New key wins
