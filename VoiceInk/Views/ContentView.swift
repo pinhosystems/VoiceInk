@@ -32,7 +32,7 @@ enum ViewType: String, CaseIterable, Identifiable {
         case .providers: return "powerplug.fill"
         case .models: return "brain.head.profile"
         case .enhancement: return "wand.and.stars"
-        case .powerMode: return "sparkles.square.fill.on.square"
+        case .powerMode: return "bolt.fill"
         case .permissions: return "shield.fill"
         case .audioInput: return "mic.fill"
         case .dictionary: return "character.book.closed.fill"
@@ -53,24 +53,32 @@ struct SidebarSection: Identifiable {
 
     static let allSections: [SidebarSection] = [
         SidebarSection(
-            id: "activity",
-            title: "Activity",
+            id: "daily",
+            title: "Daily",
             items: [.metrics, .history, .transcribeAudio]
         ),
         SidebarSection(
-            id: "pipeline",
-            title: "Voice Pipeline",
-            // Dictionary moved into Settings → Advanced (it's a secondary
-            // power-user feature, not part of the daily voice pipeline).
-            // Sidebar list keeps the high-traffic entries only.
-            items: [.audioInput, .providers, .models, .enhancement, .powerMode]
+            id: "configure",
+            title: "Configure",
+            // Profiles first — they're the central paradigm now and act as
+            // the entry point that ties everything below together.
+            // Enhancement → AI Models → Providers → Audio Input descends
+            // from "things you touch often" to "things you touch once".
+            items: [.powerMode, .enhancement, .models, .providers, .audioInput]
         ),
         SidebarSection(
-            id: "system",
-            title: "System",
-            items: [.permissions, .settings, .license]
+            id: "setup",
+            title: "Setup",
+            // One-time / rarely-touched. Rendered collapsible in the
+            // sidebar so it does not compete with daily-use entries.
+            items: [.permissions, .settings]
         ),
     ]
+
+    /// About lives outside the regular sections and renders as a
+    /// bottom-anchored footer entry. It is a single read-only screen the
+    /// user visits at most once, so it should not consume a section slot.
+    static let footerItem: ViewType = .license
 }
 
 struct VisualEffectView: NSViewRepresentable {
@@ -100,6 +108,7 @@ struct ContentView: View {
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject private var hotkeyManager: HotkeyManager
     @State private var selectedView: ViewType? = .metrics
+    @AppStorage("sidebarSetupSectionExpanded") private var isSetupSectionExpanded = false
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     @StateObject private var licenseViewModel = LicenseViewModel()
 
@@ -115,9 +124,22 @@ struct ContentView: View {
 
     /// Every sidebar destination is routable. Power Mode used to gate on
     /// the legacy `powerModeUIFlag`; the feature is now always-on so the
-    /// check is gone.
+    /// check is gone. Kept as a method so future feature-flag gates can
+    /// hook in without restructuring the sidebar body.
     private func isRoutable(_ viewType: ViewType) -> Bool {
         return true
+    }
+
+    /// Renders a single sidebar row. Extracted so the Setup section's
+    /// DisclosureGroup and the regular sections can share identical row
+    /// styling without duplicating the navigation glue.
+    @ViewBuilder
+    private func sidebarRow(for viewType: ViewType) -> some View {
+        NavigationLink(value: viewType) {
+            SidebarItemView(viewType: viewType)
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .listRowSeparator(.hidden)
     }
 
     var body: some View {
@@ -153,32 +175,39 @@ struct ContentView: View {
                 }
 
                 ForEach(visibleSections) { section in
-                    Section(section.title) {
-                        ForEach(section.items) { viewType in
-                            if isRoutable(viewType) {
-                                NavigationLink(value: viewType) {
-                                    SidebarItemView(viewType: viewType)
+                    if section.id == "setup" {
+                        // Setup section collapses by default — entries here
+                        // are one-time setup actions (permissions, app
+                        // preferences). DisclosureGroup keeps them
+                        // discoverable without consuming vertical real
+                        // estate above Daily / Configure.
+                        Section {
+                            DisclosureGroup(isExpanded: $isSetupSectionExpanded) {
+                                ForEach(section.items) { viewType in
+                                    sidebarRow(for: viewType)
                                 }
-                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .listRowSeparator(.hidden)
-                            } else {
-                                // Power Mode is gated by a feature flag. Render
-                                // a faded, click-through entry that promotes the
-                                // toggle in Settings rather than hiding the
-                                // feature entirely — users couldn't discover it
-                                // before because the sidebar simply didn't list
-                                // it.
-                                Button(action: { selectedView = .settings }) {
-                                    SidebarItemView(viewType: viewType)
-                                        .opacity(0.4)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .listRowSeparator(.hidden)
-                                .help("Open the Profiles tab to manage your context-based configurations.")
+                            } label: {
+                                Text(section.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                    .textCase(nil)
+                            }
+                        }
+                    } else {
+                        Section(section.title) {
+                            ForEach(section.items) { viewType in
+                                sidebarRow(for: viewType)
                             }
                         }
                     }
+                }
+
+                // Footer: About sits at the bottom, visually detached from
+                // the configuration sections. Single read-only screen with
+                // version + credits — does not deserve a section slot.
+                Section {
+                    sidebarRow(for: SidebarSection.footerItem)
+                        .opacity(0.85)
                 }
             }
             .listStyle(.sidebar)
