@@ -43,7 +43,7 @@ enum LocalePackRegistry {
 
     /// Curated packs ship with the binary. Order does not matter — lookup
     /// matches by `bcp47` first, then `primarySubtag`.
-    private static let curated: [LocalePack] = [
+    static let curatedPacks: [LocalePack] = [
         BrazilianPortuguesePack(),
         PortuguesePack()
     ]
@@ -74,10 +74,10 @@ enum LocalePackRegistry {
         let primary = normalized.split(separator: "-").first.map(String.init) ?? normalized
         if primary == "en" { return nil }
 
-        if let exact = curated.first(where: { ($0.bcp47?.lowercased()) == normalized }) {
+        if let exact = curatedPacks.first(where: { ($0.bcp47?.lowercased()) == normalized }) {
             return exact
         }
-        if let primaryMatch = curated.first(where: { $0.primarySubtag == primary }) {
+        if let primaryMatch = curatedPacks.first(where: { $0.primarySubtag == primary }) {
             return primaryMatch
         }
         return GenericLocalePack(primarySubtag: primary)

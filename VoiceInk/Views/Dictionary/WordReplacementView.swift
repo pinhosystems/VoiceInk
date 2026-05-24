@@ -24,7 +24,7 @@ struct WordReplacementView: View {
     @State private var replacementWord = ""
     @State private var showInfoPopover = false
 
-    @State private var showingBulkConfirmation = false
+    @State private var showingTemplateSheet = false
     @State private var showingClearConfirmation = false
 
     init() {
@@ -34,16 +34,8 @@ struct WordReplacementView: View {
         }
     }
 
-    /// Resolves the active locale pack's curated abbreviation list. Returns
-    /// nil when no pack is active or when the pack ships no
-    /// `wordReplacements` — the bulk-add button hides in both cases so we
-    /// don't clutter the panel with an inert action.
-    private var activeAbbreviationPack: LocalePack? {
-        let lang = UserDefaults.standard.string(forKey: "SelectedLanguage")
-        guard let pack = LocalePackRegistry.pack(for: lang),
-              !pack.wordReplacements.isEmpty
-        else { return nil }
-        return pack
+    private var templates: [BulkTemplate] {
+        BulkTemplateRegistry.templatesWithAbbreviations
     }
 
     private var sortedReplacements: [WordReplacement] {
@@ -131,30 +123,18 @@ struct WordReplacementView: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
             HStack(spacing: 8) {
-                if let pack = activeAbbreviationPack {
+                if !templates.isEmpty {
                     Button {
-                        showingBulkConfirmation = true
+                        showingTemplateSheet = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wand.and.sparkles")
-                            Text("Add \(pack.displayName) abbreviations")
+                            Text("Add from template…")
                         }
                         .font(.system(size: 12, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .help("Inserts curated abbreviations for \(pack.displayName). Idempotent: existing entries are not duplicated.")
-                    .confirmationDialog(
-                        "Add \(pack.displayName) abbreviations?",
-                        isPresented: $showingBulkConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Add \(pack.wordReplacements.count) abbreviations") {
-                            applyPackTemplate(pack: pack)
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Inserts the curated \(pack.displayName) abbreviations list. Entries already present are skipped.")
-                    }
+                    .help("Pick a language or region to seed curated abbreviations and chat shortcuts. Brazilian Portuguese ships a full list (\"vc\" → \"você\", \"tb\" → \"também\", ...); future locale packs surface here automatically.")
                 }
 
                 Spacer()
@@ -258,6 +238,21 @@ struct WordReplacementView: View {
         .sheet(item: $editingReplacement) { replacement in
             EditReplacementSheet(replacement: replacement, modelContext: modelContext)
         }
+        .sheet(isPresented: $showingTemplateSheet) {
+            BulkAddTemplateSheet(
+                kind: .abbreviations,
+                templates: templates,
+                preview: { template in
+                    DictionaryService.previewBulkAbbreviations(
+                        pairs: template.wordReplacements,
+                        existing: Array(wordReplacements)
+                    )
+                },
+                onConfirm: { template in
+                    applyTemplate(template)
+                }
+            )
+        }
         .alert("Word Replacement", isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -290,9 +285,10 @@ struct WordReplacementView: View {
         }
     }
 
-    private func applyPackTemplate(pack: LocalePack) {
-        let result = DictionaryService.addPackAbbreviations(
-            pack: pack,
+    private func applyTemplate(_ template: BulkTemplate) {
+        let result = DictionaryService.addBulkAbbreviations(
+            pairs: template.wordReplacements,
+            label: "\(template.displayName) abbreviations",
             existing: Array(wordReplacements),
             context: modelContext
         )

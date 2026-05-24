@@ -14,20 +14,11 @@ struct VocabularyView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var sortMode: VocabularySortMode = .wordAsc
-    @State private var showingBulkConfirmation = false
-    @State private var showingTechnicalConfirmation = false
+    @State private var showingTemplateSheet = false
     @State private var showingClearConfirmation = false
 
-    /// Resolves the active locale pack's curated vocabulary list. nil when no
-    /// pack is active or when the pack's `vocabularyTerms` is empty — the
-    /// bulk-add button is hidden in both cases to keep inert actions off the
-    /// panel.
-    private var activeVocabularyPack: LocalePack? {
-        let lang = UserDefaults.standard.string(forKey: "SelectedLanguage")
-        guard let pack = LocalePackRegistry.pack(for: lang),
-              !pack.vocabularyTerms.isEmpty
-        else { return nil }
-        return pack
+    private var templates: [BulkTemplate] {
+        BulkTemplateRegistry.templatesWithVocabulary
     }
 
     init(whisperPrompt: WhisperPrompt) {
@@ -100,54 +91,18 @@ struct VocabularyView: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
             HStack(spacing: 8) {
-                if let pack = activeVocabularyPack {
+                if !templates.isEmpty {
                     Button {
-                        showingBulkConfirmation = true
+                        showingTemplateSheet = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wand.and.sparkles")
-                            Text("Add \(pack.displayName) vocabulary")
+                            Text("Add from template…")
                         }
                         .font(.system(size: 12, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .help("Inserts the curated \(pack.displayName) vocabulary list. Helps the LLM and cloud providers (Deepgram keyterm) get the spelling right.")
-                    .confirmationDialog(
-                        "Add \(pack.displayName) vocabulary?",
-                        isPresented: $showingBulkConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Add \(pack.vocabularyTerms.count) terms") {
-                            applyPackTemplate(pack: pack)
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Inserts the curated \(pack.displayName) vocabulary list. Entries already present are skipped.")
-                    }
-                }
-
-                Button {
-                    showingTechnicalConfirmation = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "curlybraces")
-                        Text("Add technical vocabulary")
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.bordered)
-                .help("Inserts canonical EN technical terms (React, TypeScript, useState, Docker, PostgreSQL, GitHub, ...). Pairs well with the Whisper Domain: Technical setting.")
-                .confirmationDialog(
-                    "Add technical vocabulary?",
-                    isPresented: $showingTechnicalConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Add \(TechnicalVocabularyTemplate.count) terms") {
-                        applyTechnicalTemplate()
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Will insert technical terms like React, TypeScript, useState, Docker, Kubernetes, PostgreSQL, GitHub, npm, JWT, OAuth. Existing entries are skipped.")
+                    .help("Pick a language or region to seed curated vocabulary. Includes Brazilian Portuguese, English (Technical), and any other locale packs that ship curated content.")
                 }
 
                 Spacer()
@@ -216,6 +171,21 @@ struct VocabularyView: View {
         } message: {
             Text(alertMessage)
         }
+        .sheet(isPresented: $showingTemplateSheet) {
+            BulkAddTemplateSheet(
+                kind: .vocabulary,
+                templates: templates,
+                preview: { template in
+                    DictionaryService.previewBulkVocabulary(
+                        terms: template.vocabularyTerms,
+                        existing: Array(vocabularyWords)
+                    )
+                },
+                onConfirm: { template in
+                    applyTemplate(template)
+                }
+            )
+        }
     }
     
     private func addWords() {
@@ -242,17 +212,10 @@ struct VocabularyView: View {
         }
     }
 
-    private func applyPackTemplate(pack: LocalePack) {
-        let result = DictionaryService.addPackVocabulary(
-            pack: pack,
-            existing: Array(vocabularyWords),
-            context: modelContext
-        )
-        presentBulkResult(result)
-    }
-
-    private func applyTechnicalTemplate() {
-        let result = DictionaryService.addTechnicalVocabulary(
+    private func applyTemplate(_ template: BulkTemplate) {
+        let result = DictionaryService.addBulkVocabulary(
+            terms: template.vocabularyTerms,
+            label: "\(template.displayName) vocabulary",
             existing: Array(vocabularyWords),
             context: modelContext
         )

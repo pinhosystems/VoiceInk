@@ -100,7 +100,7 @@ enum DictionaryService {
         }
     }
 
-    // MARK: - Bulk locale-pack templates
+    // MARK: - Bulk templates
 
     struct BulkInsertResult {
         let added: Int
@@ -108,14 +108,33 @@ enum DictionaryService {
         let errors: [String]
     }
 
-    /// Inserts every entry from the given pack's `wordReplacements` that does
-    /// not already exist (by case-insensitive match on any trigger token
-    /// inside `originalText`). Idempotent — re-running over the same data
-    /// produces 0 added. Returns a summary so the UI can render "Added X,
-    /// skipped Y" without each row triggering an alert.
+    /// Idempotent vocabulary insert from any source list. Re-running over the
+    /// same data produces 0 added. `label` only appears in error messages —
+    /// callers should pass the user-visible template name (e.g.
+    /// "Brazilian Portuguese vocabulary").
     @discardableResult
-    static func addPackAbbreviations(
-        pack: LocalePack,
+    static func addBulkVocabulary(
+        terms: [String],
+        label: String,
+        existing: [VocabularyWord],
+        context: ModelContext
+    ) -> BulkInsertResult {
+        return addVocabularyBatch(
+            words: terms,
+            existing: existing,
+            context: context,
+            errorLabel: label
+        )
+    }
+
+    /// Idempotent abbreviation insert from any source list. Skip rule: if any
+    /// trigger token in `original` already appears in any existing entry, the
+    /// whole row is skipped — duplicate triggers would silently shadow each
+    /// other because `WordReplacementService` applies first match wins.
+    @discardableResult
+    static func addBulkAbbreviations(
+        pairs: [(original: String, replacement: String)],
+        label: String,
         existing: [WordReplacement],
         context: ModelContext
     ) -> BulkInsertResult {
@@ -131,14 +150,12 @@ enum DictionaryService {
         var errors: [String] = []
         var insertedEntries: [WordReplacement] = []
 
-        for (original, replacement) in pack.wordReplacements {
+        for (original, replacement) in pairs {
             let tokens = original
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
                 .filter { !$0.isEmpty }
 
-            // Skip if ANY token already exists; we don't want to duplicate triggers
-            // because WordReplacementService applies the first match wins.
             if tokens.contains(where: { existingTokens.contains($0) }) {
                 skipped += 1
                 continue
@@ -156,7 +173,7 @@ enum DictionaryService {
                 try context.save()
             } catch {
                 for entry in insertedEntries { context.delete(entry) }
-                errors.append("Failed to save \(pack.displayName) abbreviations: \(error.localizedDescription)")
+                errors.append("Failed to save \(label): \(error.localizedDescription)")
                 added = 0
             }
         }
@@ -164,38 +181,59 @@ enum DictionaryService {
         return BulkInsertResult(added: added, skipped: skipped, errors: errors)
     }
 
-    /// Inserts every entry from `TechnicalVocabularyTemplate.canonicalWords` that
-    /// does not already exist (case-insensitive). Idempotent. Returns a summary
-    /// for the UI. Any prompt with `.technical` in its `vocabularyDomains` then
-    /// surfaces these terms through `VocabularyResolver`.
-    @discardableResult
-    static func addTechnicalVocabulary(
-        existing: [VocabularyWord],
-        context: ModelContext
-    ) -> BulkInsertResult {
-        return addVocabularyBatch(
-            words: TechnicalVocabularyTemplate.canonicalWords,
-            existing: existing,
-            context: context,
-            errorLabel: "technical vocabulary"
-        )
+    /// Counts how many entries from the given source list would actually be
+    /// inserted vs. skipped against the user's current vocabulary. Used by the
+    /// bulk-add preview without writing to the database.
+    static func previewBulkVocabulary(
+        terms: [String],
+        existing: [VocabularyWord]
+    ) -> (newCount: Int, skippedCount: Int) {
+        var existingWords = Set(existing.map { $0.word.lowercased() })
+        var newCount = 0
+        var skipped = 0
+        for term in terms {
+            let lower = term.lowercased()
+            if existingWords.contains(lower) {
+                skipped += 1
+            } else {
+                existingWords.insert(lower)
+                newCount += 1
+            }
+        }
+        return (newCount, skipped)
     }
 
-    /// Inserts every entry from the given pack's `vocabularyTerms` that does
-    /// not already exist (case-insensitive). Idempotent. Returns a summary
-    /// for the UI.
-    @discardableResult
-    static func addPackVocabulary(
-        pack: LocalePack,
-        existing: [VocabularyWord],
-        context: ModelContext
-    ) -> BulkInsertResult {
-        return addVocabularyBatch(
-            words: pack.vocabularyTerms,
-            existing: existing,
-            context: context,
-            errorLabel: "\(pack.displayName) vocabulary"
-        )
+    /// Counts how many abbreviation pairs would be inserted vs. skipped against
+    /// the user's existing word-replacement rows. A row is counted as skipped
+    /// when any of its trigger tokens collides with a token already claimed by
+    /// an existing entry — matches the skip rule in `addBulkAbbreviations`.
+    static func previewBulkAbbreviations(
+        pairs: [(original: String, replacement: String)],
+        existing: [WordReplacement]
+    ) -> (newCount: Int, skippedCount: Int) {
+        var claimedTokens = Set<String>()
+        for entry in existing {
+            for token in entry.originalText.split(separator: ",") {
+                let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !trimmed.isEmpty { claimedTokens.insert(trimmed) }
+            }
+        }
+
+        var newCount = 0
+        var skipped = 0
+        for (original, _) in pairs {
+            let tokens = original
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+            if tokens.contains(where: { claimedTokens.contains($0) }) {
+                skipped += 1
+            } else {
+                for token in tokens { claimedTokens.insert(token) }
+                newCount += 1
+            }
+        }
+        return (newCount, skipped)
     }
 
     /// Shared batch-insert path for vocabulary templates. Dedupes against the
