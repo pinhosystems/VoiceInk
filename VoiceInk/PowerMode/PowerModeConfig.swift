@@ -55,10 +55,13 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     // Section-level customization flags. When false, the entire transcription
     // (resp. LLM) section is treated as "use system defaults" — the Power Mode
     // session leaves the corresponding UserDefaults / service state untouched
-    // when it activates. Defaults to true to preserve legacy behavior for any
-    // config saved before this field existed.
-    var customizeTranscription: Bool = true
-    var customizeLLM: Bool = true
+    // when it activates. Defaults to false so brand-new profiles start as
+    // "thin overlays" (only the prompt/app routing matters) and the user has
+    // to explicitly opt into overriding either pipeline section. The Codable
+    // decode fallback below stays at `true` so configs saved before this
+    // field existed keep their pre-feature behavior (everything customized).
+    var customizeTranscription: Bool = false
+    var customizeLLM: Bool = false
 
     enum CodingKeys: String, CodingKey {
         // `removePunctuation` is kept as a legacy key so older exports decode

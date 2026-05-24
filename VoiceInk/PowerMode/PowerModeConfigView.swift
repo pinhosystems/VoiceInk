@@ -51,8 +51,10 @@ struct ConfigurationView: View {
     // Section-level customization flags. When false, the corresponding Form
     // section dims and applyConfiguration in PowerModeSessionManager skips
     // every field in that section, leaving system defaults untouched.
-    @State private var customizeTranscription: Bool = true
-    @State private var customizeLLM: Bool = true
+    // Initial value matches PowerModeConfig's struct default; the real
+    // value is injected from the seed/latestConfig in init().
+    @State private var customizeTranscription: Bool = false
+    @State private var customizeLLM: Bool = false
 
     private static let llmOutputLanguageOptions: [(code: String, label: String)] = [
         (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription"),
