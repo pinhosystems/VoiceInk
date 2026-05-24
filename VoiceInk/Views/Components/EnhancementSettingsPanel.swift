@@ -12,6 +12,7 @@ struct EnhancementSettingsPanel: View {
     private var llmOutputLanguage = LocalePackRegistry.outputLanguageMatchSentinel
     @State private var isShortEnhancementExpanded = false
     @State private var isHandlingToggleChange = false
+    @State private var isNormalizationExamplesExpanded = false
 
     var onDismiss: () -> Void
 
@@ -40,6 +41,22 @@ struct EnhancementSettingsPanel: View {
     private var hasNormalizationContent: Bool {
         guard let pack = sttPack else { return false }
         return !pack.normalizerRules.isEmpty || pack.customNormalize != nil
+    }
+
+    private var selectedLanguageDisplayName: String {
+        let raw = selectedLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty || raw.lowercased() == "auto" { return "the auto-detected language" }
+        let locale = Locale(identifier: "en")
+        return locale.localizedString(forIdentifier: raw)
+            ?? locale.localizedString(forLanguageCode: raw)
+            ?? raw
+    }
+
+    private var normalizationCaption: String {
+        if let pack = sttPack, hasNormalizationContent {
+            return "Active for \(pack.displayName) (\(pack.bcp47 ?? pack.primarySubtag)). Other languages are pass-through."
+        }
+        return "No curated formatting rules ship for \(selectedLanguageDisplayName). Switch to a supported locale (e.g. Brazilian Portuguese) to see this toggle take effect."
     }
 
     var body: some View {
@@ -196,27 +213,46 @@ struct EnhancementSettingsPanel: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    let normLabel = sttPack.map { "\($0.displayName) normalization" } ?? "Locale text normalization"
                     Toggle(isOn: $localeNormalizationEnabled) {
                         HStack(spacing: 4) {
-                            Text(normLabel)
-                            InfoTip(hasNormalizationContent
-                                    ? "Post-transcription text formatting: numbers, dates, currency, and identifiers (CPF, CNPJ, CEP, R$, 14h30) are reshaped before the LLM sees the text. Does NOT change the transcription language — pick that under AI Models."
-                                    : "The selected transcription language has no curated input transforms. This toggle is inert until a pack ships them.")
+                            Text("Text normalization")
+                            InfoTip("Locale-aware post-transcription formatting: numbers, dates, currency, and identifiers are reshaped before the LLM sees the text. The set of transforms is chosen automatically from the current transcription language — no rules ship for languages without a curated pack. Does NOT change the transcription language itself.")
                         }
                     }
                     .toggleStyle(.switch)
                     .disabled(!hasNormalizationContent)
 
-                    Text(hasNormalizationContent
-                         ? "Post-transcription text formatting. Does not change the transcription language."
-                         : "No curated formatting rules ship for the current transcription language.")
+                    Text(normalizationCaption)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let pack = sttPack, hasNormalizationContent, !pack.normalizationExamples.isEmpty {
+                        DisclosureGroup("See examples", isExpanded: $isNormalizationExamplesExpanded) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(pack.normalizationExamples, id: \.before) { example in
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Text(example.before)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Image(systemName: "arrow.right")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                        Text(example.after)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+                        .font(.caption)
+                    }
                 } header: {
                     HStack(spacing: 4) {
-                        Text("Locale")
-                        InfoTip("LLM output language picks the response language. The normalization toggle applies locale-specific text shaping (e.g. CPF/R$/dd-mm-aaaa for pt-BR) BEFORE the LLM sees the transcript.")
+                        Text("Locale & Formatting")
+                        InfoTip("LLM output language picks the response language. Text normalization applies locale-specific text shaping (driven by the current transcription language) BEFORE the LLM sees the transcript.")
                     }
                 }
 

@@ -55,11 +55,17 @@ protocol LocalePack {
     /// `LocaleNormalizer.apply` AFTER `normalizerRules`. nil for packs that
     /// have no custom logic.
     var customNormalize: ((String) -> String)? { get }
+
+    /// User-visible examples of what `normalizerRules` + `customNormalize`
+    /// reshape, shown inside the normalization disclosure in settings. Empty
+    /// when the pack has no normalization, so the UI can hide the disclosure.
+    var normalizationExamples: [(before: String, after: String)] { get }
 }
 
 extension LocalePack {
     var bcp47: String? { nil }
     var customNormalize: ((String) -> String)? { nil }
+    var normalizationExamples: [(before: String, after: String)] { [] }
 }
 
 /// A single regex-based normalization step contributed by a `LocalePack`. The

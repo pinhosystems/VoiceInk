@@ -218,6 +218,15 @@ struct BrazilianPortuguesePack: LocalePack {
     var customNormalize: ((String) -> String)? {
         { BrazilianPortugueseNormalizer.normalize($0) }
     }
+
+    let normalizationExamples: [(before: String, after: String)] = [
+        ("Meu CPF é 12345678900.", "Meu CPF é 123.456.789-00."),
+        ("CNPJ 12345678000190 ativo.", "CNPJ 12.345.678/0001-90 ativo."),
+        ("Mando para o CEP 05435010.", "Mando para o CEP 05435-010."),
+        ("Reunião às duas horas e meia.", "Reunião às 2h30."),
+        ("Crescemos cinquenta por cento.", "Crescemos 50%."),
+        ("Orçamento de 1500 reais.", "Orçamento de R$ 1.500,00.")
+    ]
 }
 
 // MARK: - File-private normalization implementation

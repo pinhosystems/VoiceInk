@@ -2,14 +2,19 @@ import Foundation
 
 /// Resolves a BCP-47 language code to the most specific `LocalePack` available.
 ///
-/// Four-tier lookup, in order:
+/// Lookup order:
 ///   1. Curated pack whose `bcp47` matches the full input (case-insensitive).
 ///      Example: `"pt-BR"` → `BrazilianPortuguesePack`.
-///   2. Curated pack whose `primarySubtag` matches the input's primary
-///      subtag. Example: `"pt-PT"`, `"pt-AO"`, plain `"pt"` → `PortuguesePack`.
-///   3. `GenericLocalePack` synthesised from the input's primary subtag, for
+///   2. Region-tagged inputs with no exact pack fall back to a curated generic
+///      pack for the primary subtag (`bcp47 == nil`). Example: `"pt-PT"`,
+///      `"pt-AO"`, `"pt-MZ"` → `PortuguesePack`.
+///   3. Region-less inputs ("pt", "es", ...) fall back to the first curated
+///      pack matching the primary subtag. In this fork bare "pt" intentionally
+///      resolves to `BrazilianPortuguesePack` — `SelectedLanguage` defaults to
+///      "pt" and the dominant user expectation is Brazilian Portuguese.
+///   4. `GenericLocalePack` synthesised from the input's primary subtag, for
 ///      any non-English locale without curated content.
-///   4. `nil` for English (`en`, `en-*`), `"auto"`, empty, or nil inputs.
+///   5. `nil` for English (`en`, `en-*`), `"auto"`, empty, or nil inputs.
 ///
 /// Section 7.1 of `docs/MULTILINGUAL_PLAN.md` defines the "nil for auto/en"
 /// behavior: when the user asks the STT engine to detect language, the
@@ -74,9 +79,26 @@ enum LocalePackRegistry {
         let primary = normalized.split(separator: "-").first.map(String.init) ?? normalized
         if primary == "en" { return nil }
 
+        // 1. Exact BCP-47 match wins (e.g. "pt-BR" → BrazilianPortuguesePack).
         if let exact = curatedPacks.first(where: { ($0.bcp47?.lowercased()) == normalized }) {
             return exact
         }
+        // 2. Region-tagged input with no exact pack falls back to a generic
+        //    pack for the primary subtag (e.g. "pt-PT", "pt-AO" → PortuguesePack).
+        //    Region-less input ("pt") deliberately skips this branch — see step 3.
+        if normalized.contains("-"),
+           let generic = curatedPacks.first(where: {
+               $0.primarySubtag == primary && $0.bcp47 == nil
+           }) {
+            return generic
+        }
+        // 3. Region-less primary subtag picks the first curated pack matching
+        //    the subtag. In this fork bare "pt" resolves to BrazilianPortuguesePack
+        //    because `SelectedLanguage` defaults to "pt" for Portuguese-speaking
+        //    users and the dominant assumption is Brazilian Portuguese (see
+        //    `AppDefaults.defaultSelectedLanguage` and the fork README). A user
+        //    who specifically wants European Portuguese should pick "pt-PT" or a
+        //    future curated pt-PT pack.
         if let primaryMatch = curatedPacks.first(where: { $0.primarySubtag == primary }) {
             return primaryMatch
         }
