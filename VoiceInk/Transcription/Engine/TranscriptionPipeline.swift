@@ -81,14 +81,17 @@ class TranscriptionPipeline {
 
             text = WordReplacementService.shared.applyReplacements(to: text, using: modelContext)
 
-            // Brazilian Portuguese normalization (CPF, CNPJ, CEP, phones, hours,
-            // percent, decimals, currency in reais). Runs only when the user's
-            // selected language begins with "pt" and the opt-in default is on.
-            // Placed BEFORE the user-cleanup step so the LLM enhancement and final
-            // output both see well-formed identifiers and currency.
+            // Locale-aware normalization. The resolved `LocalePack` decides what
+            // runs: `BrazilianPortuguesePack.customNormalize` delegates to the
+            // existing Brazilian transforms (CPF, CNPJ, CEP, phones, hours,
+            // percent, decimals, currency in reais); other curated packs add
+            // their own rules; the generic Portuguese fallback ships none.
+            // Placed BEFORE the user-cleanup step so the LLM enhancement and
+            // final output both see well-formed identifiers and currency.
             let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
-            if BrazilianTextNormalizer.isEnabled(for: selectedLanguage) {
-                text = BrazilianTextNormalizer.normalize(text)
+            if let pack = LocalePackRegistry.pack(for: selectedLanguage),
+               LocalePackRegistry.normalizationEnabled {
+                text = LocaleNormalizer.apply(text, pack: pack)
             }
 
             let cleanedText = TranscriptionOutputFilter.applyUserCleanupPreferences(text)

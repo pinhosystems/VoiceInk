@@ -15,12 +15,33 @@ import Foundation
 /// behavior: when the user asks the STT engine to detect language, the
 /// pipeline should not pre-emptively apply locale-specific transforms.
 enum LocalePackRegistry {
+    /// UserDefaults key for the global locale-normalization toggle. Phase 6
+    /// owns the migration from the legacy `BrazilianNormalizationEnabled` key;
+    /// `normalizationEnabled` below reads either key transparently so Phase 4
+    /// can ship without UI changes.
+    static let normalizationEnabledKey = "LocaleNormalizationEnabled"
+    static let legacyNormalizationEnabledKey = "BrazilianNormalizationEnabled"
+
     /// Curated packs ship with the binary. Order does not matter — lookup
     /// matches by `bcp47` first, then `primarySubtag`.
     private static let curated: [LocalePack] = [
         BrazilianPortuguesePack(),
         PortuguesePack()
     ]
+
+    /// True when locale-specific input normalization should run. New key wins
+    /// if set; otherwise the legacy `BrazilianNormalizationEnabled` value is
+    /// honored; otherwise default `true`.
+    static var normalizationEnabled: Bool {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: normalizationEnabledKey) != nil {
+            return defaults.bool(forKey: normalizationEnabledKey)
+        }
+        if defaults.object(forKey: legacyNormalizationEnabledKey) != nil {
+            return defaults.bool(forKey: legacyNormalizationEnabledKey)
+        }
+        return true
+    }
 
     /// Returns the resolved pack, or nil for English / auto / empty inputs.
     static func pack(for languageCode: String?) -> LocalePack? {

@@ -150,15 +150,20 @@ class WhisperPrompt: ObservableObject {
             return customPrompt
         }
 
-        // Brazilian Portuguese: if the user selected a domain-specific seed via
-        // the WhisperPromptDomain setting, use it. Falls back to the general seed.
-        if language.lowercased().hasPrefix("pt") {
-            let domain = UserDefaults.standard
-                .string(forKey: WhisperPrompt.domainKey)
-                .flatMap(WhisperPromptDomain.init(rawValue:)) ?? .general
-            if domain != .general, let seed = WhisperPrompt.brazilianDomainSeeds[domain] {
-                return seed
-            }
+        // Pack-aware lookup: ask the locale pack for a domain-specific seed,
+        // falling back to the pack's "default" seed when the requested domain
+        // is unknown to the pack. Only after the pack has had a turn do we
+        // fall through to the legacy `languagePrompts` table.
+        let pack = LocalePackRegistry.pack(for: language)
+        let domain = UserDefaults.standard
+            .string(forKey: WhisperPrompt.domainKey)
+            .flatMap(WhisperPromptDomain.init(rawValue:)) ?? .general
+        let domainKey = domain == .general ? "default" : domain.rawValue
+        if let seed = pack?.whisperPromptSeeds[domainKey], !seed.isEmpty {
+            return seed
+        }
+        if domain != .general, let fallbackSeed = pack?.whisperPromptSeeds["default"], !fallbackSeed.isEmpty {
+            return fallbackSeed
         }
 
         // Otherwise return the default prompt, with safe fallback
