@@ -76,20 +76,28 @@ struct WordReplacementView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox {
-                Label {
-                    Text("Define word replacements to automatically replace specific words or phrases")
-                        .font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text("Rewrites the final transcript. Runs after the engine and after AI enhancement. Word-boundary aware and case-insensitive.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Button(action: { showInfoPopover.toggle() }) {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showInfoPopover) {
+                            WordReplacementInfoPopover()
+                        }
+                    }
+
+                    Text("Use it for: text expansion (\"my email\" → support@…), brand normalization (\"voicing, voice ink\" → VoiceInk), boilerplate phrases. Use Vocabulary instead when the engine simply doesn't know the word.")
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .padding(.leading, 22)
                         .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Button(action: { showInfoPopover.toggle() }) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showInfoPopover) {
-                        WordReplacementInfoPopover()
-                    }
                 }
             }
 

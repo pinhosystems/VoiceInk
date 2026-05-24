@@ -100,6 +100,11 @@ struct SettingsView: View {
                         .controlSize(.small)
                 }
 
+                LabeledContent("Quick Add to Dictionary") {
+                    KeyboardShortcuts.Recorder(for: .quickAddToDictionary)
+                        .controlSize(.small)
+                }
+
                 // Custom Cancel - hierarchical
                 ExpandableSettingsRow(
                     isExpanded: $isCustomCancelExpanded,

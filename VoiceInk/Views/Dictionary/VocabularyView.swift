@@ -60,14 +60,22 @@ struct VocabularyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox {
-                Label {
-                    Text("Add words to help VoiceInk recognize them properly. (Requires AI enhancement)")
-                        .font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text("Biases the speech recognizer toward these words. Cloud STT (Deepgram, Soniox, xAI, AssemblyAI, Speechmatics) consumes them as keyterm; local Whisper uses them as prompt seed. Works with or without AI enhancement.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                    }
+
+                    Text("Use it for: proper nouns, product names, jargon, people's names — anything the engine mishears (e.g. \"voicing\" → VoiceInk, \"react query\" stays as one term).")
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .padding(.leading, 22)
                         .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.blue)
                 }
             }
 
