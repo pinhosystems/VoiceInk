@@ -22,7 +22,7 @@ final class TranscriptionLogRetentionService {
     /// plenty for a multi-day retention window.
     private static let sweepInterval: TimeInterval = 60 * 60
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionLogRetentionService")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "TranscriptionLogRetentionService")
     private var timer: Timer?
     private var modelContext: ModelContext?
 

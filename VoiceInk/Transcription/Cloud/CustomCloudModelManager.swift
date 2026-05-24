@@ -14,7 +14,7 @@ import os
 class CustomCloudModelManager: ObservableObject {
     static let shared = CustomCloudModelManager()
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "CustomCloudModelManager")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "CustomCloudModelManager")
     @Published var customModels: [CustomCloudModel] = []
     private var cancellable: AnyCancellable?
 

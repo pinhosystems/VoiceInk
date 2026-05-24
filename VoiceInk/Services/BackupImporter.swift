@@ -4,7 +4,7 @@ import LaunchAtLogin
 import SwiftData
 import os
 
-private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "BackupImporter")
+private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "BackupImporter")
 
 enum BackupImportError: LocalizedError {
     case saveFailed(String, Error)

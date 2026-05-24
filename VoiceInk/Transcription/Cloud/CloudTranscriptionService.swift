@@ -53,7 +53,7 @@ class CloudTranscriptionService: TranscriptionService {
 
     private let modelContext: ModelContext
     private lazy var openAICompatibleService = OpenAICompatibleTranscriptionService()
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "CloudTranscriptionService")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "CloudTranscriptionService")
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext

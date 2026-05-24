@@ -4,7 +4,7 @@ import SwiftData
 
 enum DictionaryService {
 
-    private static let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "DictionaryService")
+    private static let logger = Logger(subsystem: "agabo.dev.voiceink", category: "DictionaryService")
 
 
     // MARK: - Vocabulary

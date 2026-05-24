@@ -12,7 +12,7 @@ class TranscriptionModelManager: ObservableObject {
     private weak var fluidAudioModelManager: FluidAudioModelManager?
     private var customModelsCancellable: AnyCancellable?
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionModelManager")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "TranscriptionModelManager")
 
     init(whisperModelManager: WhisperModelManager, fluidAudioModelManager: FluidAudioModelManager) {
         self.whisperModelManager = whisperModelManager

@@ -112,7 +112,7 @@ final class ProviderCatalog: ObservableObject {
             return false
         }
         let modelsDir = appSupport
-            .appendingPathComponent("com.prakashjoshipax.VoiceInk")
+            .appendingPathComponent("agabo.dev.voiceink")
             .appendingPathComponent("FluidAudio", isDirectory: true)
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: modelsDir.path, isDirectory: &isDir), isDir.boolValue else {
