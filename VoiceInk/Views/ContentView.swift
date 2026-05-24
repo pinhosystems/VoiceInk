@@ -55,7 +55,11 @@ struct SidebarSection: Identifiable {
         SidebarSection(
             id: "daily",
             title: "Daily",
-            items: [.metrics, .history, .transcribeAudio]
+            // File-upload transcription used to live here as `.transcribeAudio`,
+            // but it's a sporadic action — moved into the History toolbar as
+            // an "Upload File…" button. The route itself stays alive at the
+            // `.transcribeAudio` view so notifications still resolve.
+            items: [.metrics, .history]
         ),
         SidebarSection(
             id: "configure",

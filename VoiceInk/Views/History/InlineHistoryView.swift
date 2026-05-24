@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
+import AppKit
 
 struct InlineHistoryView: View {
     @Environment(\.modelContext) private var modelContext
@@ -166,9 +168,44 @@ struct InlineHistoryView: View {
                     .fill(Color.secondary.opacity(0.08))
             )
             .frame(maxWidth: .infinity)
+
+            Button(action: presentUploadPanel) {
+                Label("Upload File", systemImage: "arrow.up.doc")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.borderless)
+            .foregroundColor(.secondary)
+            .softTooltip("Upload an audio or video file to transcribe")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
+    }
+
+    /// Opens an NSOpenPanel for audio/video files and, on confirmation,
+    /// routes to the file-transcription view with the picked URL already
+    /// enqueued. The two-step notification (route first, then file)
+    /// mirrors the AppDelegate file-association flow so the receiving
+    /// view is mounted before the file payload arrives.
+    private func presentUploadPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.audio, .movie]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        NotificationCenter.default.post(
+            name: .navigateToDestination,
+            object: nil,
+            userInfo: ["destination": "File"]
+        )
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .openFileForTranscription,
+                object: nil,
+                userInfo: ["url": url]
+            )
+        }
     }
 
     private var selectionBar: some View {
