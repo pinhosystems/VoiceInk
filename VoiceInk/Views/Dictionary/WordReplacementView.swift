@@ -24,7 +24,7 @@ struct WordReplacementView: View {
     @State private var replacementWord = ""
     @State private var showInfoPopover = false
 
-    @State private var showingBulkConfirmation = false
+    @State private var showingTemplateSheet = false
     @State private var showingClearConfirmation = false
 
     init() {
@@ -34,12 +34,8 @@ struct WordReplacementView: View {
         }
     }
 
-    /// Visible only when the user's selected language is Portuguese. There is no
-    /// value in offering pt-BR templates to non-Portuguese speakers, and showing
-    /// the button would clutter the panel for them.
-    private var shouldShowBrazilianTemplate: Bool {
-        let lang = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "").lowercased()
-        return lang.hasPrefix("pt")
+    private var templates: [BulkTemplate] {
+        BulkTemplateRegistry.templatesWithAbbreviations
     }
 
     private var sortedReplacements: [WordReplacement] {
@@ -71,21 +67,31 @@ struct WordReplacementView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            DictionaryPipelineStripView(stage: .postPaste)
+
             GroupBox {
-                Label {
-                    Text("Define word replacements to automatically replace specific words or phrases")
-                        .font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text("Rewrites the FINAL transcript right before paste. Runs AFTER the engine and AFTER any AI enhancement. Word-boundary aware and case-insensitive. The trigger must be text the engine actually emits — if the engine never types your trigger, the rule never fires.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Button(action: { showInfoPopover.toggle() }) {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showInfoPopover) {
+                            WordReplacementInfoPopover()
+                        }
+                    }
+
+                    Text("Use it for: text expansion (\"my email\" → support@…), boilerplate phrases, chat-style abbreviations you actually dictate aloud. If the engine MISHEARS a word, fix it in Vocabulary instead (Vocabulary fires before transcription; Word Replacement fires after).")
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .padding(.leading, 22)
                         .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Button(action: { showInfoPopover.toggle() }) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showInfoPopover) {
-                        WordReplacementInfoPopover()
-                    }
                 }
             }
 
@@ -119,30 +125,18 @@ struct WordReplacementView: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
             HStack(spacing: 8) {
-                if shouldShowBrazilianTemplate {
+                if !templates.isEmpty {
                     Button {
-                        showingBulkConfirmation = true
+                        showingTemplateSheet = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wand.and.sparkles")
-                            Text("Add pt-BR abbreviations")
+                            Text("Add from template…")
                         }
                         .font(.system(size: 12, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .help("Inserts common Brazilian abbreviations (vc → você, tb → também, pq → porque, ...). Idempotent: existing entries are not duplicated.")
-                    .confirmationDialog(
-                        "Add pt-BR abbreviations?",
-                        isPresented: $showingBulkConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Add \(BrazilianWordReplacements.count) abbreviations") {
-                            applyBrazilianTemplate()
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Will insert abbreviations like 'vc → você', 'tb → também', 'pq → porque'. Existing entries are skipped.")
-                    }
+                    .help("Pick a language or region to seed curated abbreviations and chat shortcuts. Brazilian Portuguese ships a full list (\"vc\" → \"você\", \"tb\" → \"também\", ...); future locale packs surface here automatically.")
                 }
 
                 Spacer()
@@ -246,6 +240,21 @@ struct WordReplacementView: View {
         .sheet(item: $editingReplacement) { replacement in
             EditReplacementSheet(replacement: replacement, modelContext: modelContext)
         }
+        .sheet(isPresented: $showingTemplateSheet) {
+            BulkAddTemplateSheet(
+                kind: .abbreviations,
+                templates: templates,
+                preview: { template in
+                    DictionaryService.previewBulkAbbreviations(
+                        pairs: template.wordReplacements,
+                        existing: Array(wordReplacements)
+                    )
+                },
+                onConfirm: { template in
+                    applyTemplate(template)
+                }
+            )
+        }
         .alert("Word Replacement", isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -278,8 +287,10 @@ struct WordReplacementView: View {
         }
     }
 
-    private func applyBrazilianTemplate() {
-        let result = DictionaryService.addBrazilianAbbreviations(
+    private func applyTemplate(_ template: BulkTemplate) {
+        let result = DictionaryService.addBulkAbbreviations(
+            pairs: template.wordReplacements,
+            label: "\(template.displayName) abbreviations",
             existing: Array(wordReplacements),
             context: modelContext
         )

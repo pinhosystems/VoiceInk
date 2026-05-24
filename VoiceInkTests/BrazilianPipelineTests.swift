@@ -9,8 +9,8 @@
 //     while preserving legitimate parentheticals.
 //   - Language fallback maps "pt" → "pt-BR" for Apple Native and "pt-BR" → "pt"
 //     for Whisper/cloud, respecting Locale.current when relevant.
-//   - BrazilianTextNormalizer rewrites the common Brazilian formatting cases
-//     without corrupting unrelated text.
+//   - The pt-BR LocalePack (via LocaleNormalizer.apply) rewrites the common
+//     Brazilian formatting cases without corrupting unrelated text.
 //
 
 import Testing
@@ -115,81 +115,111 @@ struct BrazilianPipelineTests {
         #expect(resolved == "pt")
     }
 
-    // MARK: - BrazilianTextNormalizer
+    // MARK: - LocaleNormalizer with pt-BR pack
 
-    @Test("isEnabled is true by default when language is pt")
-    func normalizerEnabledByDefault() {
-        withDefault("BrazilianNormalizationEnabled", value: nil) {
-            #expect(BrazilianTextNormalizer.isEnabled(for: "pt"))
-            #expect(BrazilianTextNormalizer.isEnabled(for: "pt-BR"))
-            #expect(!BrazilianTextNormalizer.isEnabled(for: "en"))
+    /// Convenience: applies the pt-BR pack's normalization the same way the
+    /// transcription pipeline does at runtime.
+    private func normalizePtBR(_ text: String) -> String {
+        LocaleNormalizer.apply(text, pack: BrazilianPortuguesePack())
+    }
+
+    @Test("Registry routing for Portuguese variants")
+    func registryRoutesPortugueseVariants() {
+        // Exact pt-BR → BrazilianPortuguesePack (with normalization).
+        let ptBR = LocalePackRegistry.pack(for: "pt-BR")
+        #expect(ptBR != nil)
+        #expect(ptBR?.customNormalize != nil)
+
+        // Bare "pt" in this fork intentionally resolves to BrazilianPortuguesePack
+        // because SelectedLanguage defaults to "pt" for Portuguese users.
+        let ptBare = LocalePackRegistry.pack(for: "pt")
+        #expect(ptBare?.bcp47 == "pt-BR")
+
+        // Region-tagged pt-PT / pt-AO falls back to the generic PortuguesePack
+        // (output-only, no BR-specific transforms or fillers).
+        let ptPT = LocalePackRegistry.pack(for: "pt-PT")
+        #expect(ptPT != nil)
+        #expect(ptPT?.bcp47 == nil)
+        #expect(ptPT?.customNormalize == nil)
+        #expect(ptPT?.normalizerRules.isEmpty == true)
+
+        let ptAO = LocalePackRegistry.pack(for: "pt-AO")
+        #expect(ptAO?.bcp47 == nil)
+        #expect(ptAO?.primarySubtag == "pt")
+
+        // English is intentionally nil — see Section 7.1 of MULTILINGUAL_PLAN.md.
+        #expect(LocalePackRegistry.pack(for: "en") == nil)
+        #expect(LocalePackRegistry.pack(for: "auto") == nil)
+    }
+
+    @Test("normalizationEnabled is true by default")
+    func normalizationEnabledByDefault() {
+        withDefault(LocalePackRegistry.normalizationEnabledKey, value: nil) {
+            withDefault(LocalePackRegistry.legacyNormalizationEnabledKey, value: nil) {
+                #expect(LocalePackRegistry.normalizationEnabled)
+            }
         }
     }
 
-    @Test("normalizer formats CPF (11 digits)")
+    @Test("pt-BR pack formats CPF (11 digits)")
     func normalizesCPF() {
-        let input = "Meu CPF é 12345678900 e o RG é 123."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("Meu CPF é 12345678900 e o RG é 123.")
         #expect(output.contains("123.456.789-00"))
     }
 
-    @Test("normalizer formats CNPJ (14 digits)")
+    @Test("pt-BR pack formats CNPJ (14 digits)")
     func normalizesCNPJ() {
-        let input = "A empresa tem CNPJ 12345678000190 ativo."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("A empresa tem CNPJ 12345678000190 ativo.")
         #expect(output.contains("12.345.678/0001-90"))
     }
 
-    @Test("normalizer formats CEP (8 digits)")
+    @Test("pt-BR pack formats CEP (8 digits)")
     func normalizesCEP() {
-        let input = "Mando para o CEP 05435010 na Vila Madalena."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("Mando para o CEP 05435010 na Vila Madalena.")
         #expect(output.contains("05435-010"))
     }
 
-    @Test("normalizer rewrites 'duas horas e meia' as '2h30'")
+    @Test("pt-BR pack rewrites 'duas horas e meia' as '2h30'")
     func normalizesHoursAndHalf() {
-        let input = "A reunião é amanhã às duas horas e meia."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("A reunião é amanhã às duas horas e meia.")
         #expect(output.contains("2h30"))
     }
 
-    @Test("normalizer converts 'duas da tarde' to '14h'")
+    @Test("pt-BR pack converts 'duas da tarde' to '14h'")
     func normalizesAfternoonHours() {
-        let input = "Te vejo às duas da tarde."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("Te vejo às duas da tarde.")
         #expect(output.contains("14h"))
     }
 
-    @Test("normalizer converts 'cinquenta por cento' to '50%'")
+    @Test("pt-BR pack converts 'cinquenta por cento' to '50%'")
     func normalizesPercent() {
-        let input = "Crescemos cinquenta por cento no trimestre."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("Crescemos cinquenta por cento no trimestre.")
         #expect(output.contains("50%"))
     }
 
-    @Test("normalizer converts 'três ponto cinco' to '3,5'")
+    @Test("pt-BR pack converts 'três ponto cinco' to '3,5'")
     func normalizesDecimal() {
-        let input = "O índice está em três ponto cinco hoje."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("O índice está em três ponto cinco hoje.")
         #expect(output.contains("3,5"))
     }
 
-    @Test("normalizer formats reais with thousands separator")
+    @Test("pt-BR pack formats reais with thousands separator")
     func normalizesCurrency() {
-        let input = "O orçamento ficou em 1500 reais e 50 centavos."
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR("O orçamento ficou em 1500 reais e 50 centavos.")
         #expect(output.contains("R$ 1.500,50"))
     }
 
-    @Test("normalizer leaves non-pt-BR text untouched when isEnabled is false")
+    @Test("pt-BR pack leaves unrelated English text untouched")
     func normalizerNoOpForEnglish() {
-        // No CPF-like patterns; verifies the pipeline early-exits cleanly.
         let input = "Meeting at 2:30pm with the team."
-        #expect(!BrazilianTextNormalizer.isEnabled(for: "en"))
-        // Even if called directly, regex paths don't match this.
-        let output = BrazilianTextNormalizer.normalize(input)
+        let output = normalizePtBR(input)
         #expect(output == input)
+    }
+
+    @Test("pt-BR pack ships at least one normalization example for the UI")
+    func packShipsExamples() {
+        let pack = BrazilianPortuguesePack()
+        #expect(!pack.normalizationExamples.isEmpty)
     }
 }
 

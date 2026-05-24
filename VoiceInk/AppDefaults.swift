@@ -41,6 +41,13 @@ enum AppDefaults {
             "RemovePunctuation": false,
             "LowercaseTranscription": false,
             "SelectedLanguage": defaultSelectedLanguage,
+            // Global default app language. Drives the initial value of every
+            // per-context language picker (STT model language, LLM output
+            // language, Power Mode language, ...) on first launch and after
+            // the user explicitly picks one in Settings. Each picker still
+            // owns its own UserDefault — the default-app-language acts as the
+            // seed + propagation source, not a runtime override.
+            "DefaultAppLanguage": defaultSelectedLanguage,
             "AppendTrailingSpace": true,
             "showLiveTextPreview": false,
             "RecorderType": "mini",
@@ -67,17 +74,45 @@ enum AppDefaults {
             "EnhancementTimeoutSeconds": 7,
             "EnhancementRetryOnTimeout": true,
 
-            // Brazilian Portuguese post-processing. Default ON: the normalizer
-            // only runs when the user's SelectedLanguage begins with "pt", so it
-            // is inert for non-Brazilian users and there is no downside to keeping
-            // it on out of the box.
-            "BrazilianNormalizationEnabled": true,
+            // Locale-aware post-processing. Default ON: the normalizer only
+            // applies the active LocalePack's rules (currently BR-only via
+            // BrazilianPortuguesePack.customNormalize), so it is inert for
+            // every locale without curated input transforms — no downside to
+            // shipping enabled.
+            "LocaleNormalizationEnabled": true,
+
+            // LLM output language. `match` keeps the legacy behavior — the
+            // LLM enhancement responds in the same language the audio was
+            // transcribed in. Any BCP-47 value here decouples the output
+            // language from the STT language and turns enhancement into a
+            // translate-and-clean step (e.g. dictate in pt-BR, get an
+            // English email out).
+            "LLMOutputLanguage": "match",
 
             // Model
             "PrewarmModelOnWake": true,
 
         ])
 
+        migrateLegacyNormalizationKeyIfNeeded()
         PunctuationCleanupMode.migrateLegacyUserDefaultIfNeeded()
+    }
+
+    /// One-shot migration: if the legacy `BrazilianNormalizationEnabled` key
+    /// has an explicit user-set value (i.e. the user toggled it off in an
+    /// earlier build) and the new `LocaleNormalizationEnabled` key has not yet
+    /// been written, copy the legacy value across and remove the legacy entry.
+    /// Idempotent — subsequent launches find the new key already set and skip.
+    private static func migrateLegacyNormalizationKeyIfNeeded() {
+        let defaults = UserDefaults.standard
+        let newKey = LocalePackRegistry.normalizationEnabledKey
+        let legacyKey = LocalePackRegistry.legacyNormalizationEnabledKey
+
+        guard defaults.object(forKey: newKey) == nil else { return }
+        guard let legacyValue = defaults.object(forKey: legacyKey) else { return }
+        if let bool = legacyValue as? Bool {
+            defaults.set(bool, forKey: newKey)
+        }
+        defaults.removeObject(forKey: legacyKey)
     }
 }

@@ -219,6 +219,46 @@ struct PromptEditorView: View {
                 }
             }
 
+            if case .edit(let prompt) = mode {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(prompt.vocabularyDomains, id: \.self) { domain in
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.accentColor)
+                                    .font(.system(size: 11))
+                                Text(label(for: domain))
+                                    .font(.callout)
+                            }
+                        }
+
+                        Text("These domains feed the STT engine as keyterm and the LLM enhancement as context whenever this prompt is active. Add or remove entries from the Dictionary tab.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 4)
+
+                        Button {
+                            NotificationCenter.default.post(
+                                name: .navigateToDestination,
+                                object: nil,
+                                userInfo: ["destination": "Dictionary"]
+                            )
+                        } label: {
+                            Label("Open Dictionary", systemImage: "arrow.up.right.square")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                    }
+                } header: {
+                    HStack(spacing: 4) {
+                        Text("Vocabulary Domains")
+                        InfoTip("The active prompt's vocabulary domains drive which dictionary entries the STT and LLM see. Editing the list itself is not yet supported from this sheet — see the Dictionary tab to manage the underlying terms.")
+                    }
+                }
+            }
+
             if case .add = mode {
                 Section {
                     Menu {
@@ -241,6 +281,20 @@ struct PromptEditorView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+    }
+
+    private func label(for domain: VocabularyDomain) -> String {
+        switch domain {
+        case .userVocabulary:
+            return "User vocabulary"
+        case .technical:
+            return "Technical (English)"
+        case .locale(let code):
+            let resolved = LocalePackRegistry.pack(for: code)?.displayName
+                ?? Locale(identifier: "en").localizedString(forIdentifier: code)
+                ?? code
+            return "Locale: \(resolved) (\(code))"
+        }
     }
 
     private func save() {

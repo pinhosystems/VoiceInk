@@ -1,25 +1,249 @@
 import Foundation
 import os
 
-/// Brazilian-Portuguese-specific text normalization applied AFTER raw STT and word
-/// replacements, but BEFORE the AI enhancement step. Operates only when the user's
-/// selected language begins with "pt" (Whisper "pt", Apple "pt-BR"/"pt-PT") AND the
-/// opt-in `BrazilianNormalizationEnabled` UserDefault is set.
+/// Curated, region-specific pack for Brazilian Portuguese (pt-BR).
+///
+/// Holds all hand-tuned content that previously lived in the four
+/// `Brazilian*` files: text normalization (CPF, CNPJ, CEP, R$, dd/mm/aaaa,
+/// "duas horas e meia"), chat-abbreviation expansions (vc → você, ...), the
+/// high-frequency vocabulary list (BR civic identifiers, BR taxes, BR banks,
+/// BR companies, BR jurisprudence), spoken fillers ("né", "tipo", "sei lá"),
+/// Whisper prompt seeds (general + domain-specific), and the pt-BR
+/// `<LOCALE_RULES>` block.
+///
+/// Lookup: `LocalePackRegistry.pack(for: "pt-BR")` matches this pack by exact
+/// `bcp47`. Bare "pt" and other pt-* variants resolve to `PortuguesePack`
+/// (generic, output-only) via primary-subtag fallback.
+///
+/// Phase 2 placement: `customNormalize` delegates to the legacy
+/// `BrazilianTextNormalizer.normalize(_:)` to preserve every existing
+/// per-match transform (digit validation, number-word arithmetic,
+/// thousands-separator insertion) without rewriting. Phase 7 inlines the
+/// function body into this file and deletes the legacy source.
+struct BrazilianPortuguesePack: LocalePack {
+    let bcp47: String? = "pt-BR"
+    let primarySubtag: String = "pt"
+    let displayName: String = "Brazilian Portuguese"
+
+    let normalizerRules: [NormalizerRule] = []
+
+    let wordReplacements: [(original: String, replacement: String)] = [
+        ("vc, vcs", "você"),
+        ("tb, tbm, tmb", "também"),
+        ("pq, pq?", "porque"),
+        ("obg, obgd, obrg", "obrigado"),
+        ("blz", "beleza"),
+        ("vlw", "valeu"),
+        ("fds", "fim de semana"),
+        ("td, tds", "tudo"),
+        ("msg, msgs", "mensagem"),
+        ("msm", "mesmo"),
+        ("mt, mto, mta, mtos, mtas", "muito"),
+        ("mds", "meu Deus"),
+        ("hj", "hoje"),
+        ("amh, amh.", "amanhã"),
+        ("ontm", "ontem"),
+        ("eh", "é"),
+        ("c/", "com"),
+        ("s/", "sem"),
+        ("p/", "para"),
+        ("q", "que"),
+        ("qd, qdo, qnd, qndo", "quando"),
+        ("qm", "quem"),
+        ("qto, qts", "quanto"),
+        ("dps", "depois"),
+        ("agr", "agora"),
+        ("td bem", "tudo bem"),
+        ("tava, tavam", "estava"),
+        ("to, tô", "estou"),
+        ("ta, tá", "está"),
+        ("vamo, vamu", "vamos"),
+        ("brigado, brigadu, brigada", "obrigado"),
+        ("flw", "falou"),
+        ("hr, hrs", "hora"),
+        ("min", "minuto"),
+        ("seg", "segundo"),
+        ("sex", "sexta"),
+        ("sab", "sábado"),
+        ("dom", "domingo"),
+        ("seg.", "segunda"),
+        ("ter.", "terça"),
+        ("qua.", "quarta"),
+        ("qui.", "quinta"),
+        ("aki", "aqui"),
+        ("akele", "aquele"),
+        ("aqui, aki, aqi", "aqui")
+    ]
+
+    let vocabularyTerms: [String] = [
+        // Órgãos públicos federais
+        "Receita Federal", "Receita Federal do Brasil",
+        "Banco Central", "BACEN",
+        "INSS", "SUS",
+        "Anvisa", "Anatel", "ANP", "Aneel", "ANS", "Antaq", "Antt",
+        "IBGE", "INMETRO", "INPI", "INPE", "FUNAI",
+        "Polícia Federal", "Polícia Rodoviária Federal", "PRF",
+        "Tribunal Superior Eleitoral", "TSE",
+        "Supremo Tribunal Federal", "STF",
+        "Superior Tribunal de Justiça", "STJ",
+        "Tribunal de Contas da União", "TCU",
+        "Ministério Público Federal", "MPF",
+        "Defensoria Pública da União",
+        "Casa Civil",
+
+        // Estados, capitais, regiões
+        "São Paulo", "Rio de Janeiro", "Belo Horizonte", "Salvador",
+        "Brasília", "Fortaleza", "Curitiba", "Manaus", "Recife", "Porto Alegre",
+        "Goiânia", "Belém", "São Luís", "Maceió", "Campo Grande", "João Pessoa",
+        "Teresina", "Natal", "Aracaju", "Cuiabá", "Florianópolis", "Vitória",
+        "Boa Vista", "Macapá", "Palmas", "Rio Branco",
+
+        // Documentos e identificadores
+        "CPF", "CNPJ", "RG", "CNH", "CEP", "PIS", "PASEP",
+        "Título de Eleitor", "Carteira de Trabalho",
+        "CRM", "CREA", "CRECI", "CRO", "CRP", "CRC", "OAB",
+
+        // Tributação e trabalho
+        "ICMS", "ISS", "COFINS", "IRPF", "IRPJ", "IPI", "IOF",
+        "IPTU", "IPVA", "ITR", "ITBI", "ITCMD",
+        "FGTS", "CLT", "MEI", "Simples Nacional", "Lucro Presumido", "Lucro Real",
+        "Décimo Terceiro", "Salário-Família", "Vale-Refeição", "Vale-Alimentação",
+        "Vale-Transporte", "Auxílio-Doença", "Auxílio-Acidente",
+        "Seguro-Desemprego", "BPC", "LOAS", "Bolsa Família",
+
+        // Pagamentos e bancos
+        "PIX", "TED", "DOC", "Boleto", "DARF", "DAS", "GPS",
+        "Bradesco", "Itaú", "Itaú Unibanco", "Banco do Brasil", "Caixa",
+        "Caixa Econômica Federal", "Santander", "BTG Pactual",
+        "Nubank", "Inter", "C6 Bank", "PicPay", "Mercado Pago",
+        "Banco Original", "Sicoob", "Sicredi", "BRB", "Banrisul", "Banpará",
+
+        // Empresas brasileiras de tecnologia/comércio
+        "iFood", "Magazine Luiza", "Magalu", "Mercado Livre",
+        "Americanas", "Casas Bahia", "Submarino", "Shopee", "B2W",
+        "Globo", "Globoplay", "GloboNews", "SBT", "Record", "Band",
+        "Petrobras", "Petroleo Brasileiro", "Vale", "Embraer", "Eletrobras",
+        "Ambev", "JBS", "BRF", "Suzano", "WEG",
+        "Localiza", "Movida", "Unidas",
+        "Latam", "Gol", "Azul",
+        "Stone", "PagSeguro", "Cielo", "Rede",
+        "Locaweb", "VTEX", "Movile", "Méliuz",
+        "Loft", "QuintoAndar", "Kavak",
+        "Hospital Albert Einstein", "Hospital Sírio-Libanês",
+
+        // Educação
+        "USP", "Unicamp", "Unesp", "UFRJ", "UFMG", "UFRGS", "UFSC", "UFPE",
+        "UFBA", "UFC", "UnB", "FGV", "Insper", "PUC", "PUC-SP", "PUC-Rio",
+        "ENEM", "FUVEST", "SISU", "ProUni", "FIES",
+        "Capes", "CNPq", "Fapesp", "Faperj",
+        "MEC",
+
+        // Saúde e benefícios
+        "Hospital das Clínicas", "Fiocruz",
+        "Plano de Saúde", "Bradesco Saúde", "Amil", "SulAmérica", "Unimed",
+        "Notredame", "Hapvida", "Prevent Senior",
+
+        // Programas e leis
+        "Constituição Federal", "Lei de Diretrizes e Bases", "LDB",
+        "Estatuto da Criança e do Adolescente", "ECA",
+        "Estatuto do Idoso", "Código de Defesa do Consumidor", "CDC",
+        "Lei Geral de Proteção de Dados", "LGPD",
+        "Marco Civil da Internet", "Lei Maria da Penha",
+
+        // Cultura e mídia
+        "Telecine", "Canal Brasil",
+
+        // Finanças e mercado
+        "B3", "Bovespa", "Ibovespa", "CDI", "Selic", "IPCA", "IGP-M", "INPC",
+        "CDB", "LCI", "LCA", "Tesouro Direto", "Tesouro Selic", "Tesouro IPCA",
+
+        // Termos jurídicos comuns
+        "habeas corpus", "habeas data", "mandado de segurança",
+        "ação trabalhista", "reclamação trabalhista",
+        "rescisão indireta", "justa causa",
+        "Processo Judicial Eletrônico", "PJe", "eSocial", "EFD", "SPED"
+    ]
+
+    let fillerWords: [String] = [
+        "né", "tipo", "aham", "uhum", "ahã",
+        "tá", "tá bom", "tá certo",
+        "sei lá", "sabe", "tipo assim",
+        "putz", "eita", "nossa", "caramba"
+    ]
+
+    let whisperPromptSeeds: [String: String] = [
+        "default": """
+            Olá, tudo bem? Hoje é dia 15/05/2026 e a reunião está marcada para as 14h30. \
+            O valor combinado foi de R$ 1.500,00, podendo chegar a R$ 2.350,75 com os impostos. \
+            Já enviei o e-mail para a equipe; precisamos confirmar com a Ana, o João e a Letícia até amanhã. \
+            Não esquece de revisar a proposta — coloquei ênfase nos pontos principais: prazo, escopo e orçamento. \
+            Em São Paulo, o trânsito está tranquilo, mas o aplicativo do celular mostra congestionamento na Marginal. \
+            A ideia é simples: começar pelo essencial, depois evoluir para a próxima fase do projeto.
+            """,
+        "technical": """
+            Estamos discutindo arquitetura de software em pt-BR. Hoje é 15/05/2026 \
+            e vamos revisar a API REST do backend em Node.js, o frontend em React \
+            com TypeScript, deploy na AWS via Docker e Kubernetes, observabilidade \
+            no Grafana, banco PostgreSQL, cache Redis. Pull request, code review, \
+            CI/CD, async/await, callback, endpoint, payload JSON, JWT, OAuth, gRPC.
+            """,
+        "medical": """
+            Esta é uma consulta clínica em pt-BR. Paciente de 45 anos, queixa de \
+            dispneia há 3 dias, hipertensão arterial sistêmica controlada com \
+            losartana 50mg, diabetes mellitus tipo 2 em uso de metformina 850mg, \
+            colesterol LDL 145, glicemia de jejum 126. Solicitar hemograma, TGO, \
+            TGP, creatinina, ureia, ecocardiograma. CID-10 I10. SUS, ANS, CRM.
+            """,
+        "legal": """
+            Trata-se de petição inicial em pt-BR. Autor: João da Silva, CPF \
+            123.456.789-00, residente à Rua das Acácias, 250, Vila Madalena, \
+            São Paulo/SP, CEP 05435-010. Requerente pleiteia indenização por \
+            danos morais com base no art. 186 do Código Civil. Réu: empresa XYZ \
+            Ltda., CNPJ 12.345.678/0001-90. Processo PJe, TJSP, STJ, STF, habeas \
+            corpus, mandado de segurança, OAB/SP, MPF, JEC.
+            """,
+        "corporate": """
+            Reunião corporativa em pt-BR no dia 15/05/2026 às 14h30. Pauta: \
+            revisão do orçamento Q2, meta de R$ 1.500.000,00 em receita, OKRs \
+            do time de produto, contratação de 3 engenheiros sênior, alinhamento \
+            com stakeholders, follow-up das ações da última reunião, próximos \
+            passos para a sprint, deadline em 30/06/2026. Participantes: Ana, \
+            João, Letícia, Pedro. ROI, NPS, CAC, LTV, KPI, MVP.
+            """
+    ]
+
+    let aiPromptFormatRules: String =
+        "pt-BR: post-1990 orthography, Brazilian vocabulary, \"R$ 1.500,00\", dd/mm/aaaa, \"14h30\", decimal comma."
+
+    var customNormalize: ((String) -> String)? {
+        { BrazilianPortugueseNormalizer.normalize($0) }
+    }
+
+    let normalizationExamples: [(before: String, after: String)] = [
+        ("Meu CPF é 12345678900.", "Meu CPF é 123.456.789-00."),
+        ("CNPJ 12345678000190 ativo.", "CNPJ 12.345.678/0001-90 ativo."),
+        ("Mando para o CEP 05435010.", "Mando para o CEP 05435-010."),
+        ("Reunião às duas horas e meia.", "Reunião às 2h30."),
+        ("Crescemos cinquenta por cento.", "Crescemos 50%."),
+        ("Orçamento de 1500 reais.", "Orçamento de R$ 1.500,00.")
+    ]
+}
+
+// MARK: - File-private normalization implementation
+
+/// Brazilian-Portuguese-specific text normalization applied AFTER raw STT and
+/// word replacements, but BEFORE the AI enhancement step. Runs via
+/// `BrazilianPortuguesePack.customNormalize` when `LocalePackRegistry` resolves
+/// the pt-BR pack and `LocaleNormalizationEnabled` is on.
 ///
 /// Each rule is intentionally conservative: a regex that matches confidently or
 /// not at all. The goal is to handle the *high-frequency* cases (CPF, CNPJ, CEP,
 /// "duas horas e meia", "cinquenta por cento") without ever risking silent
 /// corruption of legitimate text. Anything ambiguous falls through unchanged.
-///
-/// Pipeline placement: inside `TranscriptionPipeline.run` between
-/// `WordReplacementService.applyReplacements` and `applyUserCleanupPreferences`,
-/// so the LLM enhancement sees already-normalized identifiers and numbers.
-enum BrazilianTextNormalizer {
-    static let enabledKey = "BrazilianNormalizationEnabled"
-
+private enum BrazilianPortugueseNormalizer {
     private static let logger = Logger(
         subsystem: "com.prakashjoshipax.voiceink",
-        category: "BrazilianTextNormalizer"
+        category: "BrazilianPortugueseNormalizer"
     )
 
     /// Maps a Portuguese number word (0..29) to its numeric form. Capped at 29
@@ -68,15 +292,6 @@ enum BrazilianTextNormalizer {
         "setecentos": 700, "oitocentos": 800, "novecentos": 900, "mil": 1000
     ]
 
-    /// True when normalization should run for the current settings. Cheap; called
-    /// once per transcription from the pipeline.
-    static func isEnabled(for language: String?) -> Bool {
-        guard let language, language.lowercased().hasPrefix("pt") else { return false }
-        // Default ON when pt — if the user explicitly disables it the key is set false.
-        if UserDefaults.standard.object(forKey: enabledKey) == nil { return true }
-        return UserDefaults.standard.bool(forKey: enabledKey)
-    }
-
     static func normalize(_ text: String) -> String {
         var result = text
         result = normalizeCNPJ(result)
@@ -120,11 +335,6 @@ enum BrazilianTextNormalizer {
         return rewriteMatching(text, pattern: pattern) { match in
             let digits = match.filter { $0.isNumber }
             guard digits.count == 8 else { return nil }
-            // Only format when the original had a "cep" keyword nearby, or when the
-            // user clearly spaced it as a postal code. Skipping the keyword check
-            // here is safer because the surrounding pattern bounds already exclude
-            // longer numbers; an 8-digit standalone block is overwhelmingly a CEP
-            // in Brazilian dictation contexts.
             let prefix = digits.prefix(5)
             let suffix = digits.suffix(3)
             return "\(prefix)-\(suffix)"
@@ -167,11 +377,8 @@ enum BrazilianTextNormalizer {
     // MARK: - Hours
 
     /// "duas horas e meia" → "2h30"; "três e quinze" → "3h15"; "dez horas" → "10h".
-    /// Conservative: only matches when "hora(s)" or "e" with a number-word minute is
-    /// present, so plain "duas" / "três" stay as words.
     private static func normalizeHoursAndHalf(_ text: String) -> String {
         let numberAlternation = orderedAlternation(basicNumberWords.keys)
-        // "X (horas)? e meia/quinze/trinta/45"
         let pattern = #"\b(\#(numberAlternation))(?:\s+horas?)?\s+e\s+(meia|quinze|trinta|quarenta\s+e\s+cinco|\d{1,2})\b"#
         return rewriteRegex(text, pattern: pattern) { groups in
             guard let hourWord = groups[1]?.lowercased(),
@@ -200,8 +407,8 @@ enum BrazilianTextNormalizer {
             case "tarde":
                 hour = raw < 12 ? raw + 12 : raw
             case "noite":
-                if raw == 12 { hour = 0 } // midnight ("doze da noite")
-                else if raw <= 5 { hour = raw } // already past midnight
+                if raw == 12 { hour = 0 }
+                else if raw <= 5 { hour = raw }
                 else if raw < 12 { hour = raw + 12 }
                 else { hour = raw }
             default:
@@ -236,7 +443,6 @@ enum BrazilianTextNormalizer {
             else { return nil }
             return "\(value)%"
         }
-        // Numeric form: "50 por cento" → "50%"
         let digitPattern = #"\b(\d{1,3})\s+por\s+cento\b"#
         result = rewriteRegex(result, pattern: digitPattern) { groups in
             guard let digits = groups[1] else { return nil }
@@ -247,17 +453,13 @@ enum BrazilianTextNormalizer {
 
     // MARK: - Decimal "X ponto Y" → "X,Y"
 
-    /// "três ponto cinco" → "3,5"; "10 ponto 5" → "10,5". Operates only when both
-    /// sides are clearly numeric (digits or basic number words 0..29). Skips when
-    /// "ponto" follows punctuation that suggests address/version usage.
+    /// "três ponto cinco" → "3,5"; "10 ponto 5" → "10,5".
     private static func normalizeDecimal(_ text: String) -> String {
-        // Numeric on both sides
         let numericPattern = #"\b(\d{1,4})\s+ponto\s+(\d{1,4})\b"#
         var result = rewriteRegex(text, pattern: numericPattern) { groups in
             guard let left = groups[1], let right = groups[2] else { return nil }
             return "\(left),\(right)"
         }
-        // Word on left, word or digit on right
         let alternation = orderedAlternation(basicNumberWords.keys)
         let wordPattern = #"\b(\#(alternation))\s+ponto\s+(\#(alternation)|\d{1,4})\b"#
         result = rewriteRegex(result, pattern: wordPattern) { groups in
@@ -278,7 +480,6 @@ enum BrazilianTextNormalizer {
     /// "R$ 100" + trailing "e cinquenta centavos"|"e cinquenta" → "R$ 100,50".
     /// "100 reais" → "R$ 100"; "cem reais" → "R$ 100".
     private static func normalizeCurrency(_ text: String) -> String {
-        // "100 reais [e cinquenta centavos]" or just "100 reais"
         let centavoPattern = #"\b(\d{1,9})\s+reais(?:\s+e\s+(\d{1,2})\s+centavos)?\b"#
         var result = rewriteRegex(text, pattern: centavoPattern) { groups in
             guard let inteiros = groups[1] else { return nil }
@@ -288,7 +489,6 @@ enum BrazilianTextNormalizer {
             }
             return "R$ \(withDots)"
         }
-        // Word forms: "cem reais", "mil reais", "cinquenta reais"
         let combined = basicNumberWords.merging(largerNumberWords) { a, _ in a }
         let alternation = orderedAlternation(combined.keys)
         let wordPattern = #"\b(\#(alternation))\s+reais\b"#
@@ -315,20 +515,18 @@ enum BrazilianTextNormalizer {
 
     // MARK: - Regex helpers
 
-    /// Returns an alternation pattern with longest entries first, so that
-    /// "vinte e três" matches before "vinte". Without this, the alternation greedily
-    /// picks the first viable branch and leaves trailing words orphaned.
+    /// Alternation pattern with longest entries first, so that "vinte e três"
+    /// matches before "vinte". Without this, the alternation greedily picks the
+    /// first viable branch and leaves trailing words orphaned.
     private static func orderedAlternation<S: Sequence>(_ words: S) -> String where S.Element == String {
-        let escaped = words
+        words
             .sorted { $0.count > $1.count }
             .map { NSRegularExpression.escapedPattern(for: $0) }
             .joined(separator: "|")
-        return escaped
     }
 
-    /// Applies a regex with a `transform(match) -> replacement?` closure: when the
-    /// closure returns nil, the original match is preserved. Used by patterns whose
-    /// matches may or may not actually parse (e.g., 11-digit block could be CPF).
+    /// Applies a regex with a `transform(match) -> replacement?` closure: when
+    /// the closure returns nil, the original match is preserved.
     private static func rewriteMatching(
         _ text: String,
         pattern: String,

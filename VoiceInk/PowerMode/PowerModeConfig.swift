@@ -41,7 +41,25 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     var isEnabled: Bool = true
     var isDefault: Bool = false
     var hotkeyShortcut: String? = nil
-        
+
+    // Optional overrides — when nil, the Power Mode does not touch the
+    // corresponding system default; when set, the value is applied while
+    // the session is active and reverted on session end. Lets a profile
+    // declare "default" for any field by simply leaving the override unset.
+    var llmOutputLanguageOverride: String? = nil
+    var localeNormalizationEnabledOverride: Bool? = nil
+    var whisperPromptDomainOverride: String? = nil
+    var removeFillerWordsOverride: Bool? = nil
+    var appendTrailingSpaceOverride: Bool? = nil
+
+    // Section-level customization flags. When false, the entire transcription
+    // (resp. LLM) section is treated as "use system defaults" — the Power Mode
+    // session leaves the corresponding UserDefaults / service state untouched
+    // when it activates. Defaults to true to preserve legacy behavior for any
+    // config saved before this field existed.
+    var customizeTranscription: Bool = true
+    var customizeLLM: Bool = true
+
     enum CodingKeys: String, CodingKey {
         // `removePunctuation` is kept as a legacy key so older exports decode
         // cleanly — the init(from:) below tries `punctuationCleanupMode` first
@@ -51,6 +69,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         case id, name, emoji, appConfigs, urlConfigs, isAIEnhancementEnabled, selectedPrompt, selectedLanguage, isTextFormattingEnabled, punctuationCleanupMode, removePunctuation, lowercaseTranscription, useScreenCapture, selectedAIProvider, selectedAIModel, isAutoSendEnabled, autoSendKey, isEnabled, isDefault, hotkeyShortcut
         case selectedWhisperModel
         case selectedTranscriptionModelName
+        case llmOutputLanguageOverride, localeNormalizationEnabledOverride, whisperPromptDomainOverride, removeFillerWordsOverride, appendTrailingSpaceOverride
+        case customizeTranscription, customizeLLM
     }
 
     init(id: UUID = UUID(), name: String, emoji: String, appConfigs: [AppConfig]? = nil,
@@ -112,6 +132,13 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         hotkeyShortcut = try container.decodeIfPresent(String.self, forKey: .hotkeyShortcut)
+        llmOutputLanguageOverride = try container.decodeIfPresent(String.self, forKey: .llmOutputLanguageOverride)
+        localeNormalizationEnabledOverride = try container.decodeIfPresent(Bool.self, forKey: .localeNormalizationEnabledOverride)
+        whisperPromptDomainOverride = try container.decodeIfPresent(String.self, forKey: .whisperPromptDomainOverride)
+        removeFillerWordsOverride = try container.decodeIfPresent(Bool.self, forKey: .removeFillerWordsOverride)
+        appendTrailingSpaceOverride = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpaceOverride)
+        customizeTranscription = try container.decodeIfPresent(Bool.self, forKey: .customizeTranscription) ?? true
+        customizeLLM = try container.decodeIfPresent(Bool.self, forKey: .customizeLLM) ?? true
 
         if let newModelName = try container.decodeIfPresent(String.self, forKey: .selectedTranscriptionModelName) {
             selectedTranscriptionModelName = newModelName
@@ -144,6 +171,13 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(isDefault, forKey: .isDefault)
         try container.encodeIfPresent(hotkeyShortcut, forKey: .hotkeyShortcut)
+        try container.encodeIfPresent(llmOutputLanguageOverride, forKey: .llmOutputLanguageOverride)
+        try container.encodeIfPresent(localeNormalizationEnabledOverride, forKey: .localeNormalizationEnabledOverride)
+        try container.encodeIfPresent(whisperPromptDomainOverride, forKey: .whisperPromptDomainOverride)
+        try container.encodeIfPresent(removeFillerWordsOverride, forKey: .removeFillerWordsOverride)
+        try container.encodeIfPresent(appendTrailingSpaceOverride, forKey: .appendTrailingSpaceOverride)
+        try container.encode(customizeTranscription, forKey: .customizeTranscription)
+        try container.encode(customizeLLM, forKey: .customizeLLM)
     }
     
     
@@ -243,6 +277,43 @@ class PowerModeManager: ObservableObject {
     func moveConfigurations(fromOffsets: IndexSet, toOffset: Int) {
         configurations.move(fromOffsets: fromOffsets, toOffset: toOffset)
         saveConfigurations()
+    }
+
+    /// Clones `source` into a new configuration inserted immediately after it
+    /// in the priority list, so the duplicate inherits the next-lower
+    /// priority slot. The copy never inherits `isDefault` (only one default
+    /// allowed) or `hotkeyShortcut` (per-config shortcuts must stay unique)
+    /// and is created disabled to avoid silently shadowing the source on
+    /// the next app match.
+    @discardableResult
+    func duplicateConfiguration(_ source: PowerModeConfig) -> PowerModeConfig? {
+        guard let sourceIndex = configurations.firstIndex(where: { $0.id == source.id }) else {
+            return nil
+        }
+        var copy = source
+        copy.id = UUID()
+        copy.name = uniqueName(basedOn: source.name)
+        copy.isDefault = false
+        copy.hotkeyShortcut = nil
+        copy.isEnabled = false
+
+        configurations.insert(copy, at: sourceIndex + 1)
+        saveConfigurations()
+        return copy
+    }
+
+    /// Produces a duplicate-safe name. First tries "<name> (Copy)"; if that
+    /// already exists, appends " 2", " 3", … until it finds a free slot.
+    private func uniqueName(basedOn original: String) -> String {
+        let base = "\(original) (Copy)"
+        if !configurations.contains(where: { $0.name == base }) {
+            return base
+        }
+        var index = 2
+        while configurations.contains(where: { $0.name == "\(base) \(index)" }) {
+            index += 1
+        }
+        return "\(base) \(index)"
     }
 
     func getConfigurationForURL(_ url: String) -> PowerModeConfig? {

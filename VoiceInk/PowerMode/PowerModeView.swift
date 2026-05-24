@@ -392,22 +392,28 @@ struct ReorderPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack(spacing: 12) {
-                Text("Reorder Power Modes")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(6)
-                        .background(Color.secondary.opacity(0.1))
-                        .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 12) {
+                    Text("Reorder Power Modes")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(6)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close")
                 }
-                .buttonStyle(.plain)
-                .help("Close")
+                Text("Higher in the list = higher priority. When multiple Power Modes match the same app, the first enabled one from the top wins.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)

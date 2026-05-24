@@ -14,13 +14,11 @@ struct VocabularyView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var sortMode: VocabularySortMode = .wordAsc
-    @State private var showingBulkConfirmation = false
-    @State private var showingTechnicalConfirmation = false
+    @State private var showingTemplateSheet = false
     @State private var showingClearConfirmation = false
 
-    private var shouldShowBrazilianTemplate: Bool {
-        let lang = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "").lowercased()
-        return lang.hasPrefix("pt")
+    private var templates: [BulkTemplate] {
+        BulkTemplateRegistry.templatesWithVocabulary
     }
 
     init(whisperPrompt: WhisperPrompt) {
@@ -52,15 +50,25 @@ struct VocabularyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            DictionaryPipelineStripView(stage: .preTranscription)
+
             GroupBox {
-                Label {
-                    Text("Add words to help VoiceInk recognize them properly. (Requires AI enhancement)")
-                        .font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Label {
+                        Text("Biases the speech recognizer toward these words BEFORE the transcript exists. Cloud STT (Deepgram, Soniox, xAI, AssemblyAI, Speechmatics) consumes them as keyterm; local Whisper uses them as prompt seed. Also injected into the LLM enhancement prompt so the model never sees a wrong spelling.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                    }
+
+                    Text("Use it for: proper nouns, product names, jargon, people's names — anything the engine MISHEARS. If the engine hears the word correctly but you want it rewritten (e.g. \"my email\" → support@…), use Word Replacements instead.")
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .padding(.leading, 22)
                         .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.blue)
                 }
             }
 
@@ -85,54 +93,18 @@ struct VocabularyView: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
             HStack(spacing: 8) {
-                if shouldShowBrazilianTemplate {
+                if !templates.isEmpty {
                     Button {
-                        showingBulkConfirmation = true
+                        showingTemplateSheet = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wand.and.sparkles")
-                            Text("Add pt-BR vocabulary")
+                            Text("Add from template…")
                         }
                         .font(.system(size: 12, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .help("Inserts common Brazilian terms (Receita Federal, PIX, CPF, CNPJ, USP, Bradesco, ...). Helps the LLM and cloud providers (Deepgram keyterm) get the spelling right.")
-                    .confirmationDialog(
-                        "Add pt-BR vocabulary?",
-                        isPresented: $showingBulkConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Add \(BrazilianVocabularyTemplate.count) terms") {
-                            applyBrazilianTemplate()
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Will insert common Brazilian terms like Receita Federal, PIX, CPF, CNPJ, Bradesco, USP, ICMS, FGTS. Existing entries are skipped.")
-                    }
-                }
-
-                Button {
-                    showingTechnicalConfirmation = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "curlybraces")
-                        Text("Add technical vocabulary")
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.bordered)
-                .help("Inserts canonical EN technical terms (React, TypeScript, useState, Docker, PostgreSQL, GitHub, ...). Pairs well with the Whisper Domain: Technical setting.")
-                .confirmationDialog(
-                    "Add technical vocabulary?",
-                    isPresented: $showingTechnicalConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Add \(TechnicalVocabularyTemplate.count) terms") {
-                        applyTechnicalTemplate()
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Will insert technical terms like React, TypeScript, useState, Docker, Kubernetes, PostgreSQL, GitHub, npm, JWT, OAuth. Existing entries are skipped.")
+                    .help("Pick a language or region to seed curated vocabulary. Includes Brazilian Portuguese, English (Technical), and any other locale packs that ship curated content.")
                 }
 
                 Spacer()
@@ -201,6 +173,21 @@ struct VocabularyView: View {
         } message: {
             Text(alertMessage)
         }
+        .sheet(isPresented: $showingTemplateSheet) {
+            BulkAddTemplateSheet(
+                kind: .vocabulary,
+                templates: templates,
+                preview: { template in
+                    DictionaryService.previewBulkVocabulary(
+                        terms: template.vocabularyTerms,
+                        existing: Array(vocabularyWords)
+                    )
+                },
+                onConfirm: { template in
+                    applyTemplate(template)
+                }
+            )
+        }
     }
     
     private func addWords() {
@@ -227,16 +214,10 @@ struct VocabularyView: View {
         }
     }
 
-    private func applyBrazilianTemplate() {
-        let result = DictionaryService.addBrazilianVocabulary(
-            existing: Array(vocabularyWords),
-            context: modelContext
-        )
-        presentBulkResult(result)
-    }
-
-    private func applyTechnicalTemplate() {
-        let result = DictionaryService.addTechnicalVocabulary(
+    private func applyTemplate(_ template: BulkTemplate) {
+        let result = DictionaryService.addBulkVocabulary(
+            terms: template.vocabularyTerms,
+            label: "\(template.displayName) vocabulary",
             existing: Array(vocabularyWords),
             context: modelContext
         )

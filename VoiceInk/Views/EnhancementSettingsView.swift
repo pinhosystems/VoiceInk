@@ -53,81 +53,11 @@ struct EnhancementSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: $enhancementService.isEnhancementEnabled) {
-                    HStack(spacing: 4) {
-                        Text("Enable Enhancement")
-                        InfoTip(
-                            "When ON, the transcript is post-processed by an LLM using the active Transcription Profile's writing rules. When OFF, the LLM step is skipped but the profile still controls vocabulary bias sent to the STT engine.",
-                            learnMoreURL: "https://tryvoiceink.com/docs/enhancements-configuring-models"
-                        )
-                    }
-                }
-                .toggleStyle(.switch)
-            } header: {
-                HStack {
-                    Text("General")
-                    Spacer()
-                    Button {
-                        withAnimation(.smooth(duration: 0.3)) {
-                            isEditingPrompt = false
-                            selectedPromptForEdit = nil
-                            isShowingSettings.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "gear")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(isShowingSettings ? .accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Enhancement settings")
-                }
-            }
-
-            llmProviderSection
-                .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.8)
-
-            Section {
-                ReorderablePromptGrid(
-                    selectedPromptId: enhancementService.selectedPromptId,
-                    onPromptSelected: { prompt in
-                        enhancementService.setActivePrompt(prompt)
-                    },
-                    onEditPrompt: { prompt in
-                        openPromptPanel()
-                        withAnimation(.smooth(duration: 0.3)) {
-                            selectedPromptForEdit = prompt
-                        }
-                    },
-                    onDeletePrompt: { prompt in
-                        enhancementService.deletePrompt(prompt)
-                    }
-                )
-                .padding(.vertical, 8)
-            } header: {
-                HStack {
-                    Text("Transcription Profiles")
-                    InfoTip("The active profile always controls vocabulary bias sent to the STT engine. Its writing rules only apply when Enhancement is enabled.")
-                    Spacer()
-                    Button {
-                        openPromptPanel()
-                        withAnimation(.smooth(duration: 0.3)) {
-                            isEditingPrompt = true
-                        }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 18))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Add new profile")
-                }
-            }
+        VStack(spacing: 0) {
+            EnhancementPowerModeBanner()
+            formBody
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .frame(minWidth: 500, minHeight: 400)
         .background(Color(NSColor.controlBackgroundColor))
         .onAppear { resetSelectedProviderIfDisconnected() }
         .onReceive(NotificationCenter.default.publisher(for: .aiProviderKeyChanged)) { _ in
@@ -161,7 +91,95 @@ struct EnhancementSettingsView: View {
                 }
             }
         }
-        .frame(minWidth: 500, minHeight: 400)
+    }
+
+    private var formBody: some View {
+        Form {
+            Section {
+                Toggle(isOn: $enhancementService.isEnhancementEnabled) {
+                    HStack(spacing: 4) {
+                        Text("Enable Enhancement")
+                        InfoTip(
+                            "When ON, the transcript is post-processed by an LLM using the active Prompt's writing rules. When OFF, the LLM step is skipped but the prompt still controls vocabulary bias sent to the STT engine.",
+                            learnMoreURL: "https://tryvoiceink.com/docs/enhancements-configuring-models"
+                        )
+                    }
+                }
+                .toggleStyle(.switch)
+
+                Text("Off = STT still runs and the active prompt still biases STT vocabulary. On = LLM rewrites the transcript using the prompt's writing rules + the model below.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                HStack {
+                    Text("General")
+                    Spacer()
+                    Button {
+                        withAnimation(.smooth(duration: 0.3)) {
+                            isEditingPrompt = false
+                            selectedPromptForEdit = nil
+                            isShowingSettings.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "gear")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(isShowingSettings ? .accentColor : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Extra settings: short-skip, timeout, shortcut")
+                }
+            }
+
+            llmProviderSection
+                .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.8)
+
+            EnhancementContextSection()
+
+            EnhancementLocaleSection()
+
+            EnhancementTestSection()
+
+            Section {
+                ReorderablePromptGrid(
+                    selectedPromptId: enhancementService.selectedPromptId,
+                    onPromptSelected: { prompt in
+                        enhancementService.setActivePrompt(prompt)
+                    },
+                    onEditPrompt: { prompt in
+                        openPromptPanel()
+                        withAnimation(.smooth(duration: 0.3)) {
+                            selectedPromptForEdit = prompt
+                        }
+                    },
+                    onDeletePrompt: { prompt in
+                        enhancementService.deletePrompt(prompt)
+                    }
+                )
+                .padding(.vertical, 8)
+            } header: {
+                HStack {
+                    Text("Prompts")
+                    InfoTip("The active prompt always controls vocabulary bias sent to the STT engine. Its writing rules only apply when Enhancement is enabled.")
+                    Spacer()
+                    Button {
+                        openPromptPanel()
+                        withAnimation(.smooth(duration: 0.3)) {
+                            isEditingPrompt = true
+                        }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 18))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add new prompt")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder

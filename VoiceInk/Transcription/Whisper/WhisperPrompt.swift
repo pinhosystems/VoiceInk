@@ -60,21 +60,11 @@ class WhisperPrompt: ObservableObject {
         "fr": "Bonjour, comment allez-vous? Ravi de vous rencontrer.",
         "de": "Hallo, wie geht es dir? Schön dich kennenzulernen.",
         "it": "Ciao, come stai? Piacere di conoscerti.",
-        // Português brasileiro: seed denso para orientar Whisper a usar acentuação completa
-        // (ã, õ, ç, á, é, í, ó, ú, â, ê, ô), pontuação típica do pt-BR, formato monetário
-        // R$ com vírgula decimal e ponto de milhar, datas dd/mm/aaaa, ortografia pós-reforma
-        // ("ideia" sem trema, "voo" sem acento, "para" sem acento), e vocabulário brasileiro
-        // (não europeu): "celular", "ônibus", "trem", "cadê", "você". Whisper costuma errar
-        // acentos quando o initial_prompt é curto; este texto deliberadamente cobre todos
-        // os diacríticos comuns para enviesar a decodificação corretamente.
-        "pt": """
-            Olá, tudo bem? Hoje é dia 15/05/2026 e a reunião está marcada para as 14h30. \
-            O valor combinado foi de R$ 1.500,00, podendo chegar a R$ 2.350,75 com os impostos. \
-            Já enviei o e-mail para a equipe; precisamos confirmar com a Ana, o João e a Letícia até amanhã. \
-            Não esquece de revisar a proposta — coloquei ênfase nos pontos principais: prazo, escopo e orçamento. \
-            Em São Paulo, o trânsito está tranquilo, mas o aplicativo do celular mostra congestionamento na Marginal. \
-            A ideia é simples: começar pelo essencial, depois evoluir para a próxima fase do projeto.
-            """,
+        // Portuguese: seeds now come from `BrazilianPortuguesePack` (pt-BR
+        // domain-specific text, including diacritics, R$ currency, dd/mm/aaaa
+        // dates, and pan-Brazilian lexicon) and `PortuguesePack` (short
+        // pan-Lusophone fallback). The pack lookup in `getLanguagePrompt`
+        // runs first, so no "pt" entry is needed here.
         "ru": "Здравствуйте, как ваши дела? Приятно познакомиться.",
         "pl": "Cześć, jak się masz? Miło cię poznać.",
         "nl": "Hallo, hoe gaat het? Aangenaam kennis te maken.",
@@ -150,59 +140,26 @@ class WhisperPrompt: ObservableObject {
             return customPrompt
         }
 
-        // Brazilian Portuguese: if the user selected a domain-specific seed via
-        // the WhisperPromptDomain setting, use it. Falls back to the general seed.
-        if language.lowercased().hasPrefix("pt") {
-            let domain = UserDefaults.standard
-                .string(forKey: WhisperPrompt.domainKey)
-                .flatMap(WhisperPromptDomain.init(rawValue:)) ?? .general
-            if domain != .general, let seed = WhisperPrompt.brazilianDomainSeeds[domain] {
-                return seed
-            }
+        // Pack-aware lookup: ask the locale pack for a domain-specific seed,
+        // falling back to the pack's "default" seed when the requested domain
+        // is unknown to the pack. Only after the pack has had a turn do we
+        // fall through to the legacy `languagePrompts` table.
+        let pack = LocalePackRegistry.pack(for: language)
+        let domain = UserDefaults.standard
+            .string(forKey: WhisperPrompt.domainKey)
+            .flatMap(WhisperPromptDomain.init(rawValue:)) ?? .general
+        let domainKey = domain == .general ? "default" : domain.rawValue
+        if let seed = pack?.whisperPromptSeeds[domainKey], !seed.isEmpty {
+            return seed
+        }
+        if domain != .general, let fallbackSeed = pack?.whisperPromptSeeds["default"], !fallbackSeed.isEmpty {
+            return fallbackSeed
         }
 
         // Otherwise return the default prompt, with safe fallback
         return languagePrompts[language] ?? languagePrompts["default"] ?? ""
     }
 
-    /// Domain-specific Brazilian Portuguese seeds. Each one packs vocabulary the
-    /// user is likely to dictate in that context, so Whisper anchors its decoder
-    /// on the canonical spelling. Limited to ~250 characters per seed because
-    /// Whisper's `initial_prompt` token budget is finite (~224 tokens); going
-    /// longer crowds out the audio context.
-    static let brazilianDomainSeeds: [WhisperPromptDomain: String] = [
-        .technical: """
-            Estamos discutindo arquitetura de software em pt-BR. Hoje é 15/05/2026 \
-            e vamos revisar a API REST do backend em Node.js, o frontend em React \
-            com TypeScript, deploy na AWS via Docker e Kubernetes, observabilidade \
-            no Grafana, banco PostgreSQL, cache Redis. Pull request, code review, \
-            CI/CD, async/await, callback, endpoint, payload JSON, JWT, OAuth, gRPC.
-            """,
-        .medical: """
-            Esta é uma consulta clínica em pt-BR. Paciente de 45 anos, queixa de \
-            dispneia há 3 dias, hipertensão arterial sistêmica controlada com \
-            losartana 50mg, diabetes mellitus tipo 2 em uso de metformina 850mg, \
-            colesterol LDL 145, glicemia de jejum 126. Solicitar hemograma, TGO, \
-            TGP, creatinina, ureia, ecocardiograma. CID-10 I10. SUS, ANS, CRM.
-            """,
-        .legal: """
-            Trata-se de petição inicial em pt-BR. Autor: João da Silva, CPF \
-            123.456.789-00, residente à Rua das Acácias, 250, Vila Madalena, \
-            São Paulo/SP, CEP 05435-010. Requerente pleiteia indenização por \
-            danos morais com base no art. 186 do Código Civil. Réu: empresa XYZ \
-            Ltda., CNPJ 12.345.678/0001-90. Processo PJe, TJSP, STJ, STF, habeas \
-            corpus, mandado de segurança, OAB/SP, MPF, JEC.
-            """,
-        .corporate: """
-            Reunião corporativa em pt-BR no dia 15/05/2026 às 14h30. Pauta: \
-            revisão do orçamento Q2, meta de R$ 1.500.000,00 em receita, OKRs \
-            do time de produto, contratação de 3 engenheiros sênior, alinhamento \
-            com stakeholders, follow-up das ações da última reunião, próximos \
-            passos para a sprint, deadline em 30/06/2026. Participantes: Ana, \
-            João, Letícia, Pedro. ROI, NPS, CAC, LTV, KPI, MVP.
-            """
-    ]
-    
     func setCustomPrompt(_ prompt: String, for language: String) {
         customPrompts[language] = prompt
         saveCustomPrompts()

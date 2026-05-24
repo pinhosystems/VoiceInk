@@ -13,6 +13,11 @@ struct ApplicationState: Codable {
     var punctuationCleanupMode: PunctuationCleanupMode?
     var removePunctuation: Bool?
     var lowercaseTranscription: Bool?
+    var llmOutputLanguage: String?
+    var localeNormalizationEnabled: Bool?
+    var whisperPromptDomain: String?
+    var removeFillerWords: Bool?
+    var appendTrailingSpace: Bool?
 }
 
 struct PowerModeSession: Codable {
@@ -60,7 +65,12 @@ class PowerModeSessionManager {
                 isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
                 punctuationCleanupMode: punctuationCleanupMode,
                 removePunctuation: punctuationCleanupMode == .removeAll,
-                lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription")
+                lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription"),
+                llmOutputLanguage: UserDefaults.standard.string(forKey: LocalePackRegistry.outputLanguageKey),
+                localeNormalizationEnabled: UserDefaults.standard.object(forKey: LocalePackRegistry.normalizationEnabledKey) as? Bool,
+                whisperPromptDomain: UserDefaults.standard.string(forKey: WhisperPrompt.domainKey),
+                removeFillerWords: UserDefaults.standard.object(forKey: "RemoveFillerWords") as? Bool,
+                appendTrailingSpace: UserDefaults.standard.object(forKey: "AppendTrailingSpace") as? Bool
             )
 
             let newSession = PowerModeSession(
@@ -114,7 +124,12 @@ class PowerModeSessionManager {
             isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
             punctuationCleanupMode: punctuationCleanupMode,
             removePunctuation: punctuationCleanupMode == .removeAll,
-            lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription")
+            lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription"),
+            llmOutputLanguage: UserDefaults.standard.string(forKey: LocalePackRegistry.outputLanguageKey),
+            localeNormalizationEnabled: UserDefaults.standard.object(forKey: LocalePackRegistry.normalizationEnabledKey) as? Bool,
+            whisperPromptDomain: UserDefaults.standard.string(forKey: WhisperPrompt.domainKey),
+            removeFillerWords: UserDefaults.standard.object(forKey: "RemoveFillerWords") as? Bool,
+            appendTrailingSpace: UserDefaults.standard.object(forKey: "AppendTrailingSpace") as? Bool
         )
 
         session.originalState = updatedState
@@ -126,51 +141,82 @@ class PowerModeSessionManager {
               let stateProvider = stateProvider else { return }
 
         await MainActor.run {
-            enhancementService.isEnhancementEnabled = config.isAIEnhancementEnabled
-            enhancementService.useScreenCaptureContext = config.useScreenCapture
+            // LLM section: gated by `customizeLLM`. When false, every
+            // LLM-related field (enhancement toggle, prompt, provider, model)
+            // is left at whatever the global state was when the session
+            // started, so the Power Mode acts as a transcription-only profile.
+            if config.customizeLLM {
+                enhancementService.isEnhancementEnabled = config.isAIEnhancementEnabled
 
-            if config.isAIEnhancementEnabled {
-                if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
-                    // Guard against orphan references: Power Mode
-                    // configs persisted before recent dedup /
-                    // template-promotion migrations may point at a
-                    // CustomPrompt that no longer exists. Setting the
-                    // invalid UUID would make activePrompt resolve to
-                    // nil — silently — and the history row's prompt
-                    // pill would render blank. Validate the lookup
-                    // and fall back to nil (Default) when the prompt
-                    // is gone, so getSystemMessage and enhance() both
-                    // route through the predefined Default.
-                    if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
-                        enhancementService.selectedPromptId = uuid
-                    } else {
-                        enhancementService.selectedPromptId = nil
+                if config.isAIEnhancementEnabled {
+                    if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
+                        // Guard against orphan references: Power Mode
+                        // configs persisted before recent dedup /
+                        // template-promotion migrations may point at a
+                        // CustomPrompt that no longer exists. Setting the
+                        // invalid UUID would make activePrompt resolve to
+                        // nil — silently — and the history row's prompt
+                        // pill would render blank. Validate the lookup
+                        // and fall back to nil (Default) when the prompt
+                        // is gone, so getSystemMessage and enhance() both
+                        // route through the predefined Default.
+                        if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
+                            enhancementService.selectedPromptId = uuid
+                        } else {
+                            enhancementService.selectedPromptId = nil
+                        }
                     }
-                }
 
-                if let aiService = enhancementService.getAIService() {
-                    if let providerName = config.selectedAIProvider, let provider = AIProvider(rawValue: providerName) {
-                        aiService.selectedProvider = provider
-                    }
-                    if let model = config.selectedAIModel {
-                        aiService.selectModel(model)
+                    if let aiService = enhancementService.getAIService() {
+                        if let providerName = config.selectedAIProvider, let provider = AIProvider(rawValue: providerName) {
+                            aiService.selectedProvider = provider
+                        }
+                        if let model = config.selectedAIModel {
+                            aiService.selectModel(model)
+                        }
                     }
                 }
             }
 
+            enhancementService.useScreenCaptureContext = config.useScreenCapture
+
             UserDefaults.standard.set(config.isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
             PunctuationCleanupMode.setCurrent(config.punctuationCleanupMode)
             UserDefaults.standard.set(config.lowercaseTranscription, forKey: "LowercaseTranscription")
+
+            // Optional per-Power-Mode overrides. When the override is nil the
+            // profile leaves the system default untouched — this is the
+            // "Default" sentinel state surfaced in the editor UI.
+            if let value = config.llmOutputLanguageOverride {
+                UserDefaults.standard.set(value, forKey: LocalePackRegistry.outputLanguageKey)
+            }
+            if let value = config.localeNormalizationEnabledOverride {
+                UserDefaults.standard.set(value, forKey: LocalePackRegistry.normalizationEnabledKey)
+            }
+            if let value = config.whisperPromptDomainOverride {
+                UserDefaults.standard.set(value, forKey: WhisperPrompt.domainKey)
+            }
+            if let value = config.removeFillerWordsOverride {
+                UserDefaults.standard.set(value, forKey: "RemoveFillerWords")
+            }
+            if let value = config.appendTrailingSpaceOverride {
+                UserDefaults.standard.set(value, forKey: "AppendTrailingSpace")
+            }
         }
 
-        if let modelName = config.selectedTranscriptionModelName,
-           let selectedModel = await stateProvider.allAvailableModels.first(where: { $0.name == modelName }),
-           stateProvider.currentTranscriptionModel?.name != modelName {
-            await handleModelChange(to: selectedModel)
-        }
+        // Transcription section: gated by `customizeTranscription`. When
+        // false, the model + language stay on whatever the user had set
+        // globally, so the Power Mode acts as an LLM-only profile.
+        if config.customizeTranscription {
+            if let modelName = config.selectedTranscriptionModelName,
+               let selectedModel = await stateProvider.allAvailableModels.first(where: { $0.name == modelName }),
+               stateProvider.currentTranscriptionModel?.name != modelName {
+                await handleModelChange(to: selectedModel)
+            }
 
-        if let language = config.selectedLanguage {
-            applyCompatibleLanguage(language, preferredModelName: config.selectedTranscriptionModelName)
+            if let language = config.selectedLanguage {
+                applyCompatibleLanguage(language, preferredModelName: config.selectedTranscriptionModelName)
+            }
         }
 
         await MainActor.run {
@@ -207,6 +253,16 @@ class PowerModeSessionManager {
             if let lowercaseTranscription = state.lowercaseTranscription {
                 UserDefaults.standard.set(lowercaseTranscription, forKey: "LowercaseTranscription")
             }
+
+            // Restore optional per-Power-Mode override keys back to whatever
+            // the user had before the session started. nil here means the
+            // key was absent — we mirror that by removing the key so the
+            // registered default re-applies.
+            applyOptionalString(state.llmOutputLanguage, forKey: LocalePackRegistry.outputLanguageKey)
+            applyOptionalBool(state.localeNormalizationEnabled, forKey: LocalePackRegistry.normalizationEnabledKey)
+            applyOptionalString(state.whisperPromptDomain, forKey: WhisperPrompt.domainKey)
+            applyOptionalBool(state.removeFillerWords, forKey: "RemoveFillerWords")
+            applyOptionalBool(state.appendTrailingSpace, forKey: "AppendTrailingSpace")
         }
 
         if let modelName = state.transcriptionModelName,
@@ -217,6 +273,24 @@ class PowerModeSessionManager {
 
         if let language = state.selectedLanguage {
             applyCompatibleLanguage(language, preferredModelName: state.transcriptionModelName)
+        }
+    }
+
+    /// Writes `value` to `forKey` if non-nil, otherwise removes the key so
+    /// the registered default from `AppDefaults` becomes the effective value.
+    private func applyOptionalBool(_ value: Bool?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func applyOptionalString(_ value: String?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 

@@ -34,19 +34,22 @@ class FillerWordManager: ObservableObject {
         UserDefaults.standard.bool(forKey: removeFillerWordsKey)
     }
 
-    /// Lista efetiva de filler words a aplicar no momento da remoção.
-    /// Quando o idioma selecionado é português, unifica a lista persistida com os
-    /// fillers brasileiros sem mutar UserDefaults — isso preserva o que o usuário
-    /// configurou na UI e ainda assim cobre vícios de linguagem em pt-BR.
+    /// Effective filler list applied at removal time. The persisted user list
+    /// is union-merged with the active `LocalePack`'s `fillerWords` (if any).
+    /// Resolution goes through `LocalePackRegistry`, so pt-BR pulls the BR
+    /// list, pt-PT/pt-AO/etc. pull the (empty) generic Portuguese list, and
+    /// other locales contribute whatever their pack ships. UserDefaults stays
+    /// untouched — the union is computed on demand.
     var effectiveFillerWords: [String] {
-        let selectedLanguage = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "")
-            .lowercased()
-        guard selectedLanguage.hasPrefix("pt") else {
+        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        guard let packFillers = LocalePackRegistry.pack(for: selectedLanguage)?.fillerWords,
+              !packFillers.isEmpty
+        else {
             return fillerWords
         }
         var seen = Set<String>(fillerWords.map { $0.lowercased() })
         var combined = fillerWords
-        for word in Self.brazilianPortugueseFillerWords {
+        for word in packFillers {
             let key = word.lowercased()
             if !seen.contains(key) {
                 seen.insert(key)

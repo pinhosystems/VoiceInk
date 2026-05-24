@@ -144,9 +144,9 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
     /// listed in `flags`. Pass `.none` to keep the prompt body but drop all
     /// context-tag references (e.g. when the user disabled every context
     /// source).
-    func finalPromptText(flags: AIPrompts.ContextFlags = .all) -> String {
+    func finalPromptText(flags: AIPrompts.ContextFlags = .all, pack: LocalePack? = nil) -> String {
         if useSystemInstructions {
-            return AIPrompts.customPromptTemplate(flags: flags)
+            return AIPrompts.customPromptTemplate(flags: flags, pack: pack)
                 .replacingOccurrences(of: "{{USER_RULES}}", with: self.promptText)
         } else {
             return self.promptText

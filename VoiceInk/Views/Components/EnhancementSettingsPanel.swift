@@ -1,7 +1,11 @@
 import SwiftUI
 
+/// Sliding panel reached via the gear icon in the Enhancement screen. After
+/// the Phase A redesign this panel holds only the less-touched configuration:
+/// short-transcription skipping, request timeout, and the keyboard shortcut.
+/// Context, locale, and output language now live as full sections inside the
+/// main EnhancementSettingsView so they are visible without opening the gear.
 struct EnhancementSettingsPanel: View {
-    @EnvironmentObject private var enhancementService: AIEnhancementService
     @AppStorage("SkipShortEnhancement") private var isSkipShortEnhancementEnabled = true
     @AppStorage("ShortEnhancementWordThreshold") private var shortEnhancementWordThreshold = 3
     @AppStorage("EnhancementTimeoutSeconds") private var enhancementTimeoutSeconds = 7
@@ -42,31 +46,6 @@ struct EnhancementSettingsPanel: View {
 
             // Content
             Form {
-                Section {
-                    contextRow(
-                        title: "Selected Text Context",
-                        info: "Attach the text currently selected in the focused app. Disable this in terminals or editors where selection is unreliable and tends to leak unrelated content into the prompt.",
-                        isOn: $enhancementService.useSelectedTextContext,
-                        maxChars: $enhancementService.selectedTextContextMaxChars
-                    )
-
-                    contextRow(
-                        title: "Clipboard Context",
-                        info: "Attach the current clipboard contents to give the model recent context.",
-                        isOn: $enhancementService.useClipboardContext,
-                        maxChars: $enhancementService.clipboardContextMaxChars
-                    )
-
-                    contextRow(
-                        title: "Screen Context",
-                        info: "Attach OCR-extracted text from the focused window to give the model situational context.",
-                        isOn: $enhancementService.useScreenCaptureContext,
-                        maxChars: $enhancementService.screenCaptureContextMaxChars
-                    )
-                } header: {
-                    Text("Context")
-                }
-
                 Section {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack {
@@ -157,46 +136,5 @@ struct EnhancementSettingsPanel: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
         }
-    }
-
-    /// A toggle plus an inline character-limit stepper that appears only when
-    /// the toggle is on. Keeps the three context sources visually consistent
-    /// and surfaces the cap directly next to the switch that turns it on, so
-    /// the user always knows exactly how much of each source can flow into the
-    /// model prompt.
-    @ViewBuilder
-    private func contextRow(
-        title: String,
-        info: String,
-        isOn: Binding<Bool>,
-        maxChars: Binding<Int>
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: isOn) {
-                HStack(spacing: 4) {
-                    Text(title)
-                    InfoTip(info)
-                }
-            }
-            .toggleStyle(.switch)
-
-            if isOn.wrappedValue {
-                HStack(spacing: 8) {
-                    Text("Max characters")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(maxChars.wrappedValue)")
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .frame(minWidth: 56, alignment: .trailing)
-                    Stepper("Max characters", value: maxChars, in: 500...32000, step: 500)
-                        .labelsHidden()
-                }
-                .padding(.leading, 4)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .animation(.easeInOut(duration: 0.15), value: isOn.wrappedValue)
     }
 }

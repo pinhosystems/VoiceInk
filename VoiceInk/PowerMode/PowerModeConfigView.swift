@@ -37,6 +37,37 @@ struct ConfigurationView: View {
     @State private var powerModeConfigId: UUID = UUID()
     @State private var isTranscriptFormattingExpanded = false
 
+    // Optional override state. Each picker exposes a "Default" entry that
+    // maps the override back to nil — meaning the Power Mode session won't
+    // touch the corresponding system default when it activates. Setting a
+    // concrete value writes through to UserDefaults at session start and
+    // gets reverted when the session ends.
+    @State private var llmOutputLanguageOverride: String?
+    @State private var localeNormalizationEnabledOverride: Bool?
+    @State private var whisperPromptDomainOverride: String?
+    @State private var removeFillerWordsOverride: Bool?
+    @State private var appendTrailingSpaceOverride: Bool?
+
+    // Section-level customization flags. When false, the corresponding Form
+    // section dims and applyConfiguration in PowerModeSessionManager skips
+    // every field in that section, leaving system defaults untouched.
+    @State private var customizeTranscription: Bool = true
+    @State private var customizeLLM: Bool = true
+
+    private static let llmOutputLanguageOptions: [(code: String, label: String)] = [
+        (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription"),
+        ("en", "English"),
+        ("pt-BR", "Portuguese (Brazil)"),
+        ("pt-PT", "Portuguese (Portugal)"),
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("zh", "Chinese")
+    ]
+
     private var effectiveModelName: String? {
         selectedTranscriptionModelName ?? transcriptionModelManager.currentTranscriptionModel?.name
     }
@@ -115,6 +146,13 @@ struct ConfigurationView: View {
             _selectedAIProvider = State(initialValue: latestConfig.selectedAIProvider)
             _selectedAIModel = State(initialValue: latestConfig.selectedAIModel)
             _isTranscriptFormattingExpanded = State(initialValue: latestConfig.isTextFormattingEnabled || latestConfig.punctuationCleanupMode != .keep || latestConfig.lowercaseTranscription)
+            _llmOutputLanguageOverride = State(initialValue: latestConfig.llmOutputLanguageOverride)
+            _localeNormalizationEnabledOverride = State(initialValue: latestConfig.localeNormalizationEnabledOverride)
+            _whisperPromptDomainOverride = State(initialValue: latestConfig.whisperPromptDomainOverride)
+            _removeFillerWordsOverride = State(initialValue: latestConfig.removeFillerWordsOverride)
+            _appendTrailingSpaceOverride = State(initialValue: latestConfig.appendTrailingSpaceOverride)
+            _customizeTranscription = State(initialValue: latestConfig.customizeTranscription)
+            _customizeLLM = State(initialValue: latestConfig.customizeLLM)
         case .addFromPreset(let seed):
             // Pre-populated by a Power Mode preset. The caller already
             // cloned the prompt template and filtered apps to ones
@@ -137,6 +175,13 @@ struct ConfigurationView: View {
             _selectedAIProvider = State(initialValue: seed.selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider"))
             _selectedAIModel = State(initialValue: seed.selectedAIModel)
             _isTranscriptFormattingExpanded = State(initialValue: seed.isTextFormattingEnabled || seed.punctuationCleanupMode != .keep || seed.lowercaseTranscription)
+            _llmOutputLanguageOverride = State(initialValue: seed.llmOutputLanguageOverride)
+            _localeNormalizationEnabledOverride = State(initialValue: seed.localeNormalizationEnabledOverride)
+            _whisperPromptDomainOverride = State(initialValue: seed.whisperPromptDomainOverride)
+            _removeFillerWordsOverride = State(initialValue: seed.removeFillerWordsOverride)
+            _appendTrailingSpaceOverride = State(initialValue: seed.appendTrailingSpaceOverride)
+            _customizeTranscription = State(initialValue: seed.customizeTranscription)
+            _customizeLLM = State(initialValue: seed.customizeLLM)
         }
     }
 
@@ -208,7 +253,8 @@ struct ConfigurationView: View {
                                 AppPickerPopover(
                                     installedApps: filteredApps,
                                     selectedAppConfigs: $selectedAppConfigs,
-                                    searchText: $searchText
+                                    searchText: $searchText,
+                                    currentConfigId: powerModeConfigId
                                 )
                             }
                         }
@@ -304,68 +350,76 @@ struct ConfigurationView: View {
                     .padding(.vertical, 2)
                 }
 
-                Section("Transcription") {
-                    if transcriptionModelManager.usableModels.isEmpty {
-                        Text("No transcription models available. Please connect to a cloud service or download a local model in the AI Models tab.")
-                            .foregroundColor(.secondary)
-                    } else {
-                        let modelBinding = Binding<String?>(
-                            get: { selectedTranscriptionModelName ?? transcriptionModelManager.currentTranscriptionModel?.name },
-                            set: { selectedTranscriptionModelName = $0 }
-                        )
-
-                        Picker("Model", selection: modelBinding) {
-                            ForEach(transcriptionModelManager.usableModels, id: \.name) { model in
-                                Text(model.displayName).tag(model.name as String?)
-                            }
-                        }
-                        .onChange(of: selectedTranscriptionModelName) { _, newModelName in
-                            if let modelName = newModelName ?? transcriptionModelManager.currentTranscriptionModel?.name,
-                               let model = transcriptionModelManager.allAvailableModels.first(where: { $0.name == modelName }) {
-                                if model.provider == .gemini {
-                                    selectedLanguage = "auto"
-                                } else {
-                                    useCompatibleLanguage(for: model)
-                                }
-                            }
-                        }
-                    }
-
-                    if languageSelectionDisabled() {
-                        LabeledContent("Language") {
-                            Text("Autodetected")
+                Section {
+                    if customizeTranscription {
+                        if transcriptionModelManager.usableModels.isEmpty {
+                            Text("No transcription models available. Please connect to a cloud service or download a local model in the AI Models tab.")
                                 .foregroundColor(.secondary)
-                        }
-                        .onAppear {
-                            selectedLanguage = "auto"
-                        }
-                    } else if let selectedModel = effectiveModelName,
-                              let modelInfo = transcriptionModelManager.allAvailableModels.first(where: { $0.name == selectedModel }),
-                              modelInfo.isMultilingualModel {
-                        let languageBinding = Binding<String?>(
-                            get: { selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto" },
-                            set: { selectedLanguage = $0 }
-                        )
+                        } else {
+                            let modelBinding = Binding<String?>(
+                                get: { selectedTranscriptionModelName ?? transcriptionModelManager.currentTranscriptionModel?.name },
+                                set: { selectedTranscriptionModelName = $0 }
+                            )
 
-                        Picker("Language", selection: languageBinding) {
-                            ForEach(availableLanguages(for: modelInfo).sorted(by: {
-                                if $0.key == "auto" { return true }
-                                if $1.key == "auto" { return false }
-                                return $0.value < $1.value
-                            }), id: \.key) { key, value in
-                                Text(value).tag(key as String?)
-                            }
-                        }
-                    } else if let selectedModel = effectiveModelName,
-                              let modelInfo = transcriptionModelManager.allAvailableModels.first(where: { $0.name == selectedModel }),
-                              !modelInfo.isMultilingualModel {
-                        EmptyView()
-                            .onAppear {
-                                if selectedLanguage == nil {
-                                    selectedLanguage = "en"
+                            Picker("Model", selection: modelBinding) {
+                                ForEach(transcriptionModelManager.usableModels, id: \.name) { model in
+                                    Text(model.displayName).tag(model.name as String?)
                                 }
                             }
+                            .onChange(of: selectedTranscriptionModelName) { _, newModelName in
+                                if let modelName = newModelName ?? transcriptionModelManager.currentTranscriptionModel?.name,
+                                   let model = transcriptionModelManager.allAvailableModels.first(where: { $0.name == modelName }) {
+                                    if model.provider == .gemini {
+                                        selectedLanguage = "auto"
+                                    } else {
+                                        useCompatibleLanguage(for: model)
+                                    }
+                                }
+                            }
+                        }
+
+                        if languageSelectionDisabled() {
+                            LabeledContent("Language") {
+                                Text("Autodetected")
+                                    .foregroundColor(.secondary)
+                            }
+                            .onAppear {
+                                selectedLanguage = "auto"
+                            }
+                        } else if let selectedModel = effectiveModelName,
+                                  let modelInfo = transcriptionModelManager.allAvailableModels.first(where: { $0.name == selectedModel }),
+                                  modelInfo.isMultilingualModel {
+                            let languageBinding = Binding<String?>(
+                                get: { selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto" },
+                                set: { selectedLanguage = $0 }
+                            )
+
+                            Picker("Language", selection: languageBinding) {
+                                ForEach(availableLanguages(for: modelInfo).sorted(by: {
+                                    if $0.key == "auto" { return true }
+                                    if $1.key == "auto" { return false }
+                                    return $0.value < $1.value
+                                }), id: \.key) { key, value in
+                                    Text(value).tag(key as String?)
+                                }
+                            }
+                        } else if let selectedModel = effectiveModelName,
+                                  let modelInfo = transcriptionModelManager.allAvailableModels.first(where: { $0.name == selectedModel }),
+                                  !modelInfo.isMultilingualModel {
+                            EmptyView()
+                                .onAppear {
+                                    if selectedLanguage == nil {
+                                        selectedLanguage = "en"
+                                    }
+                                }
+                        }
+                    } else {
+                        Text("Power Mode will keep the system defaults for the transcription model and language while this profile is active.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+
                     Button {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             isTranscriptFormattingExpanded.toggle()
@@ -413,11 +467,19 @@ struct ConfigurationView: View {
                         }
                         .padding(.top, 4)
                     }
+                } header: {
+                    sectionHeader(
+                        title: "Transcription",
+                        toggleLabel: "Customize",
+                        binding: $customizeTranscription,
+                        info: "When off, this Power Mode does not change the transcription model or language — both keep the global defaults while the profile is active. Transcript formatting below is always applied."
+                    )
                 }
 
-                Section("AI Enhancement") {
-                    Toggle("AI Enhancement", isOn: $isAIEnhancementEnabled)
-                        .onChange(of: isAIEnhancementEnabled) { _, newValue in
+                Section {
+                    if customizeLLM {
+                        Toggle("AI Enhancement", isOn: $isAIEnhancementEnabled)
+                            .onChange(of: isAIEnhancementEnabled) { _, newValue in
                             if newValue {
                                 if selectedAIProvider == nil {
                                     selectedAIProvider = aiService.selectedProvider.rawValue
@@ -516,13 +578,75 @@ struct ConfigurationView: View {
 
                         Toggle("Context Awareness", isOn: $useScreenCapture)
                     }
+                    } else {
+                        Text("Power Mode will keep the system defaults for AI Enhancement, prompt, provider, and model while this profile is active.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } header: {
+                    sectionHeader(
+                        title: "AI Enhancement",
+                        toggleLabel: "Customize",
+                        binding: $customizeLLM,
+                        info: "When off, this Power Mode does not change the AI Enhancement state, prompt, provider, or model — they keep the global defaults while the profile is active."
+                    )
+                }
+
+                Section {
+                    Picker(selection: $llmOutputLanguageOverride) {
+                        Text("Default (use system setting)").tag(String?.none)
+                        ForEach(Self.llmOutputLanguageOptions, id: \.code) { option in
+                            Text(option.label).tag(option.code as String?)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("LLM output language")
+                            InfoTip("Per-Power-Mode override for the LLM enhancement output language. \"Default\" leaves the system setting (Enhancement → Locale) untouched while this Power Mode is active.")
+                        }
+                    }
+
+                    Picker(selection: $whisperPromptDomainOverride) {
+                        Text("Default (use system setting)").tag(String?.none)
+                        ForEach(WhisperPromptDomain.allCases) { domain in
+                            Text(domain.displayName).tag(domain.rawValue as String?)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Whisper prompt domain")
+                            InfoTip("Per-Power-Mode override for the Whisper prompt domain seed used to bias local STT decoding.")
+                        }
+                    }
+
+                    tristateRow(
+                        title: "Locale normalization",
+                        binding: $localeNormalizationEnabledOverride,
+                        info: "Per-Power-Mode override for locale-specific post-STT text formatting (CPF/CNPJ/R$ for pt-BR, etc.)."
+                    )
+
+                    tristateRow(
+                        title: "Remove filler words",
+                        binding: $removeFillerWordsOverride,
+                        info: "Per-Power-Mode override for filler-word removal (uh, um, né, tipo, ...)."
+                    )
+
+                    tristateRow(
+                        title: "Append trailing space",
+                        binding: $appendTrailingSpaceOverride,
+                        info: "Per-Power-Mode override for whether a single trailing space is appended after paste."
+                    )
+                } header: {
+                    HStack(spacing: 4) {
+                        Text("Overrides")
+                        InfoTip("Each picker defaults to leaving the corresponding system setting untouched. Choose a concrete value to apply it whenever this Power Mode activates; it reverts when the Power Mode ends.")
+                    }
                 }
 
                 Section("Advanced") {
                     Toggle(isOn: $isDefault) {
                         HStack(spacing: 6) {
-                            Text("Set as default")
-                            InfoTip("Default power mode is used when no specific app or website matches are found.")
+                            Text("Use as fallback profile")
+                            InfoTip("Activates this Power Mode when no app or website trigger matches. Reordering the list above does not change this behavior — the fallback only fires after every matching pass has missed.")
                         }
                     }
 
@@ -599,12 +723,12 @@ struct ConfigurationView: View {
             // Footer
             VStack(spacing: 0) {
                 HStack {
-                    // The default Power Mode profile is the fallback used
+                    // The fallback Power Mode profile is the one applied
                     // when no other config matches the active app/URL —
                     // deleting it would leave the matcher with nothing to
                     // fall back to. Hide the destructive button on the
-                    // default; users have to clear the "Set as default"
-                    // toggle first before they can delete the entry.
+                    // fallback; users have to clear "Use as fallback
+                    // profile" first before they can delete the entry.
                     if case .edit = mode, !isDefault {
                         Button("Delete", role: .destructive) {
                             isShowingDeleteConfirmation = true
@@ -645,13 +769,52 @@ struct ConfigurationView: View {
         newWebsiteURL = ""
     }
 
+    /// Form section header that pairs the section title with a small inline
+    /// "Customize" toggle. When the toggle is off, the section body renders a
+    /// short placeholder explaining that the corresponding global settings are
+    /// kept untouched while the Power Mode is active, and applyConfiguration
+    /// in PowerModeSessionManager skips the section's fields.
+    @ViewBuilder
+    private func sectionHeader(
+        title: String,
+        toggleLabel: String,
+        binding: Binding<Bool>,
+        info: String
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+            InfoTip(info)
+            Spacer()
+            Toggle(toggleLabel, isOn: binding)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+        }
+    }
+
+    /// Three-state picker for an `Optional<Bool>` override: Default / On / Off.
+    /// "Default" maps to nil so the Power Mode session does not touch the
+    /// corresponding UserDefault when it activates.
+    @ViewBuilder
+    private func tristateRow(title: String, binding: Binding<Bool?>, info: String) -> some View {
+        Picker(selection: binding) {
+            Text("Default (use system setting)").tag(Bool?.none)
+            Text("On").tag(Bool?.some(true))
+            Text("Off").tag(Bool?.some(false))
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                InfoTip(info)
+            }
+        }
+    }
+
     private func getConfigForForm() -> PowerModeConfig {
         let shortcut = KeyboardShortcuts.getShortcut(for: .powerMode(id: powerModeConfigId))
         let hotkeyString = shortcut != nil ? "configured" : nil
 
         switch mode {
         case .add, .addFromPreset:
-            return PowerModeConfig(
+            var config = PowerModeConfig(
                 id: powerModeConfigId,
                 name: configName,
                 emoji: selectedEmoji,
@@ -671,6 +834,14 @@ struct ConfigurationView: View {
                 isDefault: isDefault,
                 hotkeyShortcut: hotkeyString
             )
+            config.llmOutputLanguageOverride = llmOutputLanguageOverride
+            config.localeNormalizationEnabledOverride = localeNormalizationEnabledOverride
+            config.whisperPromptDomainOverride = whisperPromptDomainOverride
+            config.removeFillerWordsOverride = removeFillerWordsOverride
+            config.appendTrailingSpaceOverride = appendTrailingSpaceOverride
+            config.customizeTranscription = customizeTranscription
+            config.customizeLLM = customizeLLM
+            return config
         case .edit(let config):
             var updatedConfig = config
             updatedConfig.name = configName
@@ -690,6 +861,13 @@ struct ConfigurationView: View {
             updatedConfig.selectedAIModel = selectedAIModel
             updatedConfig.isDefault = isDefault
             updatedConfig.hotkeyShortcut = hotkeyString
+            updatedConfig.llmOutputLanguageOverride = llmOutputLanguageOverride
+            updatedConfig.localeNormalizationEnabledOverride = localeNormalizationEnabledOverride
+            updatedConfig.whisperPromptDomainOverride = whisperPromptDomainOverride
+            updatedConfig.removeFillerWordsOverride = removeFillerWordsOverride
+            updatedConfig.appendTrailingSpaceOverride = appendTrailingSpaceOverride
+            updatedConfig.customizeTranscription = customizeTranscription
+            updatedConfig.customizeLLM = customizeLLM
             return updatedConfig
         }
     }

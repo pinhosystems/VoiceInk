@@ -13,9 +13,10 @@ import SwiftData
 ///   the STT see exactly the same vocabulary).
 ///
 /// Priority order when truncating to 100:
-///   1. `userVocabulary` — the user's manual entries always win
-///   2. `technical`     — canonical EN tech terms
-///   3. `brazilian`     — Brazilian institutions/orgs/cities
+///   1. `userVocabulary`     — the user's manual entries always win
+///   2. `technical`          — canonical EN tech terms
+///   3. `locale(<bcp47>)`    — pack-resolved locale list, in the order the
+///                              prompt's `vocabularyDomains` declares them
 ///
 /// Within each domain entries keep their source order (alphabetical for user
 /// vocab via the fetch descriptor, declared order for the built-in lists).
@@ -63,9 +64,14 @@ enum VocabularyResolver {
         var seen = Set<String>()
         var ordered: [String] = []
 
-        // Stable priority: user > technical > brazilian.
-        let priority: [VocabularyDomain] = [.userVocabulary, .technical, .brazilian]
-        let active = priority.filter { domains.contains($0) }
+        // Stable priority: static cases first (user > technical), then every
+        // locale-bound domain in the order the prompt declared them.
+        let staticActive = VocabularyDomain.staticCases.filter { domains.contains($0) }
+        let localeActive = domains.filter { domain in
+            if case .locale = domain { return true }
+            return false
+        }
+        let active = staticActive + localeActive
 
         for domain in active {
             let words = words(for: domain, context: context)
@@ -90,8 +96,8 @@ enum VocabularyResolver {
             return (try? context.fetch(descriptor).map(\.word)) ?? []
         case .technical:
             return TechnicalVocabularyTemplate.canonicalWords
-        case .brazilian:
-            return BrazilianVocabularyTemplate.canonicalWords
+        case .locale(let code):
+            return LocalePackRegistry.pack(for: code)?.vocabularyTerms ?? []
         }
     }
 }
