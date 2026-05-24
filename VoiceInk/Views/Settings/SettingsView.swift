@@ -636,12 +636,12 @@ struct PowerModeSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill")
                         .foregroundColor(.accentColor)
-                    Text("Power Mode is always on")
+                    Text("Power Mode is the default mode")
                         .font(.system(size: 13, weight: .semibold))
-                    InfoTip("Power Mode applies a profile (transcription model, language, prompt, LLM provider, ...) automatically when you activate an app or visit a URL that matches one of your configurations. No global enable/disable toggle — the feature is always active. Manage profiles from the Power Mode tab in the sidebar.")
+                    InfoTip("Power Mode is the runtime for every dictation session. With zero profiles configured it uses the user defaults you set in Settings → Enhancement and AI Models. When you add profiles, Power Mode picks the first one that matches the active app or URL; if nothing matches, it falls back to your user defaults. Manage profiles from the Power Mode tab in the sidebar.")
                     Spacer()
                 }
-                Text("Without configurations, Power Mode falls back to your user defaults. Add profiles in the Power Mode tab for app- or URL-specific overrides.")
+                Text("Fallback chain: matching profile → user defaults (the Settings you configured in General / Enhancement / AI Models). No profiles? The user defaults stay in effect automatically.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

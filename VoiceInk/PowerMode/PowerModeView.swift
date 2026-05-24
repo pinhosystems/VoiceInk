@@ -323,9 +323,9 @@ struct PowerModeView: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("No Power Modes configured yet")
+                Text("Power Mode is your default — no profiles yet")
                     .font(.system(size: 14, weight: .semibold))
-                Text("Power Mode is enabled in Settings but nothing will trigger automatically until you save at least one profile. Until then, dictation uses whatever is selected in the Enhancement tab.")
+                Text("Power Mode runs every dictation session. Without profiles, it uses your global Settings (language, transcription model, prompt, LLM provider). Add a profile to override those globally-defined defaults whenever you activate a specific app or visit a specific URL — the fallback chain is profile → user defaults.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .lineSpacing(2)
