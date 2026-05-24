@@ -114,12 +114,41 @@ struct ContentView: View {
 
     /// Returns sections with hidden items pruned out. Sections that end
     /// up empty are dropped so we don't render orphan headers.
+    ///
+    /// Conditional priority: while the user has NOT activated the paid
+    /// plan we lift Providers to the top of the Configure section so the
+    /// app's most-pressing onboarding step (connecting an STT or LLM
+    /// provider) is the first sidebar entry under the section. Once the
+    /// user is on the paid plan we drop the boost and restore the natural
+    /// Profiles-first order; at that point Providers no longer drives the
+    /// conversion funnel, so it sinks back down to its usual slot.
     private var visibleSections: [SidebarSection] {
-        SidebarSection.allSections.compactMap { section in
-            let filtered = section.items
-            guard !filtered.isEmpty else { return nil }
-            return SidebarSection(id: section.id, title: section.title, items: filtered)
+        let isPaidUser: Bool = {
+            if case .licensed = licenseViewModel.licenseState { return true }
+            return false
+        }()
+
+        return SidebarSection.allSections.compactMap { section in
+            let items: [ViewType]
+            if section.id == "configure" && !isPaidUser {
+                items = prioritizeProviders(in: section.items)
+            } else {
+                items = section.items
+            }
+            guard !items.isEmpty else { return nil }
+            return SidebarSection(id: section.id, title: section.title, items: items)
         }
+    }
+
+    /// Moves `.providers` to the front of the list, preserving the relative
+    /// order of every other entry. Safe to call even if Providers is not in
+    /// the list — returns the original list unchanged in that case.
+    private func prioritizeProviders(in items: [ViewType]) -> [ViewType] {
+        guard let providersIndex = items.firstIndex(of: .providers) else { return items }
+        var reordered = items
+        let providers = reordered.remove(at: providersIndex)
+        reordered.insert(providers, at: 0)
+        return reordered
     }
 
     /// Every sidebar destination is routable. Power Mode used to gate on
