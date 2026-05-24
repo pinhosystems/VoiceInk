@@ -59,12 +59,17 @@ struct EnhancementSettingsView: View {
                     HStack(spacing: 4) {
                         Text("Enable Enhancement")
                         InfoTip(
-                            "When ON, the transcript is post-processed by an LLM using the active Transcription Profile's writing rules. When OFF, the LLM step is skipped but the profile still controls vocabulary bias sent to the STT engine.",
+                            "When ON, the transcript is post-processed by an LLM using the active Prompt's writing rules. When OFF, the LLM step is skipped but the prompt still controls vocabulary bias sent to the STT engine.",
                             learnMoreURL: "https://tryvoiceink.com/docs/enhancements-configuring-models"
                         )
                     }
                 }
                 .toggleStyle(.switch)
+
+                Text("Off = STT still runs and the active prompt still biases STT vocabulary. On = LLM rewrites the transcript using the prompt's writing rules + the model below.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } header: {
                 HStack {
                     Text("General")
@@ -81,12 +86,16 @@ struct EnhancementSettingsView: View {
                             .foregroundColor(isShowingSettings ? .accentColor : .secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Enhancement settings")
+                    .help("Extra settings: short-skip, timeout, shortcut")
                 }
             }
 
             llmProviderSection
                 .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.8)
+
+            EnhancementContextSection()
+
+            EnhancementLocaleSection()
 
             Section {
                 ReorderablePromptGrid(
@@ -107,8 +116,8 @@ struct EnhancementSettingsView: View {
                 .padding(.vertical, 8)
             } header: {
                 HStack {
-                    Text("Transcription Profiles")
-                    InfoTip("The active profile always controls vocabulary bias sent to the STT engine. Its writing rules only apply when Enhancement is enabled.")
+                    Text("Prompts")
+                    InfoTip("The active prompt always controls vocabulary bias sent to the STT engine. Its writing rules only apply when Enhancement is enabled.")
                     Spacer()
                     Button {
                         openPromptPanel()
@@ -122,7 +131,7 @@ struct EnhancementSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Add new profile")
+                    .help("Add new prompt")
                 }
             }
         }
