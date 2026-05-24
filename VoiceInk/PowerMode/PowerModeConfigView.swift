@@ -94,8 +94,14 @@ struct ConfigurationView: View {
     }
 
     private func useCompatibleLanguage(for model: any TranscriptionModel) {
+        // Preserve the nil sentinel ("Default — inherit from global"). Only
+        // resolve a concrete language code when the user already picked
+        // one explicitly. Without this guard, changing the model on a
+        // profile that meant to inherit the global default would silently
+        // bake the current global value into the profile.
+        guard let explicit = selectedLanguage else { return }
         selectedLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(
-            selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage"),
+            explicit,
             for: model
         )
     }
@@ -389,18 +395,27 @@ struct ConfigurationView: View {
                         } else if let selectedModel = effectiveModelName,
                                   let modelInfo = transcriptionModelManager.allAvailableModels.first(where: { $0.name == selectedModel }),
                                   modelInfo.isMultilingualModel {
-                            let languageBinding = Binding<String?>(
-                                get: { selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto" },
-                                set: { selectedLanguage = $0 }
-                            )
-
-                            Picker("Language", selection: languageBinding) {
+                            // Bind directly to the optional so the nil tag
+                            // (Default — inherit global selection) survives
+                            // the round-trip. The previous binding auto-
+                            // filled from SelectedLanguage on read, which
+                            // forced every Power Mode to ship with an
+                            // explicit language even when the user wanted
+                            // the profile to defer to the global default.
+                            Picker(selection: $selectedLanguage) {
+                                Text("Default (use global selection)")
+                                    .tag(String?.none)
                                 ForEach(availableLanguages(for: modelInfo).sorted(by: {
                                     if $0.key == "auto" { return true }
                                     if $1.key == "auto" { return false }
                                     return $0.value < $1.value
                                 }), id: \.key) { key, value in
                                     Text(value).tag(key as String?)
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("Language")
+                                    InfoTip("\"Default\" leaves the Power Mode silent about language — when this profile activates the global Default App Language (Settings → Language) stays in effect. Pick a concrete language to override the global for this profile only.")
                                 }
                             }
                         } else if let selectedModel = effectiveModelName,

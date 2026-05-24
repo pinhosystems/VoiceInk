@@ -90,7 +90,13 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         self.selectedAIProvider = selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider")
         self.selectedAIModel = selectedAIModel
         self.selectedTranscriptionModelName = selectedTranscriptionModelName ?? UserDefaults.standard.string(forKey: "CurrentTranscriptionModel")
-        self.selectedLanguage = selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "en"
+        // Preserve the nil sentinel — it represents "inherit from global
+        // Default App Language" and PowerModeSessionManager.applyConfiguration
+        // skips the language write when this is nil. Auto-filling from
+        // UserDefaults here would silently bake the *current* global value
+        // into the saved profile, breaking the inherit semantics on every
+        // subsequent global-language change.
+        self.selectedLanguage = selectedLanguage
         self.isTextFormattingEnabled = isTextFormattingEnabled
         self.punctuationCleanupMode = punctuationCleanupMode
         self.lowercaseTranscription = lowercaseTranscription
