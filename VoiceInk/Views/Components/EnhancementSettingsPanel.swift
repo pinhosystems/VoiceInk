@@ -38,6 +38,17 @@ struct EnhancementSettingsPanel: View {
         LocalePackRegistry.pack(for: selectedLanguage)
     }
 
+    /// Pack that drives the on-screen example list. Follows the LLM output
+    /// language: when the user keeps the default "Match transcription"
+    /// sentinel the examples come from the STT language's pack (same as the
+    /// active normalization); when the user picks a specific output language
+    /// the examples come from THAT pack so the preview matches what the
+    /// LLM will eventually emit.
+    private var examplesPack: LocalePack? {
+        let effective = LocalePackRegistry.outputLanguageCode(sttCode: selectedLanguage)
+        return LocalePackRegistry.pack(for: effective)
+    }
+
     private var hasNormalizationContent: Bool {
         guard let pack = sttPack else { return false }
         return !pack.normalizerRules.isEmpty || pack.customNormalize != nil
@@ -57,6 +68,20 @@ struct EnhancementSettingsPanel: View {
             return "Active for \(pack.displayName) (\(pack.bcp47 ?? pack.primarySubtag)). Other languages are pass-through."
         }
         return "No curated formatting rules ship for \(selectedLanguageDisplayName). Switch to a supported locale (e.g. Brazilian Portuguese) to see this toggle take effect."
+    }
+
+    private var examplesDisclosureLabel: String {
+        if let pack = examplesPack {
+            return "See examples for \(pack.displayName)"
+        }
+        return "See examples"
+    }
+
+    private var noExamplesMessage: String {
+        if let pack = examplesPack {
+            return "No formatting examples shipped for \(pack.displayName) yet. The LLM will still apply the locale conventions described above; this disclosure shows samples once they land."
+        }
+        return "No formatting examples shipped for the selected language yet."
     }
 
     var body: some View {
@@ -227,8 +252,8 @@ struct EnhancementSettingsPanel: View {
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if let pack = sttPack, hasNormalizationContent, !pack.normalizationExamples.isEmpty {
-                        DisclosureGroup("See examples", isExpanded: $isNormalizationExamplesExpanded) {
+                    DisclosureGroup(examplesDisclosureLabel, isExpanded: $isNormalizationExamplesExpanded) {
+                        if let pack = examplesPack, !pack.normalizationExamples.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 ForEach(pack.normalizationExamples, id: \.before) { example in
                                     HStack(alignment: .top, spacing: 6) {
@@ -246,9 +271,15 @@ struct EnhancementSettingsPanel: View {
                                 }
                             }
                             .padding(.top, 4)
+                        } else {
+                            Text(noExamplesMessage)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 4)
                         }
-                        .font(.caption)
                     }
+                    .font(.caption)
                 } header: {
                     HStack(spacing: 4) {
                         Text("Locale & Formatting")
