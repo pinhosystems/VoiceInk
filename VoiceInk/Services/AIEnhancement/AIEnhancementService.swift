@@ -275,6 +275,7 @@ class AIEnhancementService: ObservableObject {
         // Portuguese.
         let selectedLanguageCode = UserDefaults.standard.string(forKey: "SelectedLanguage")
         let languageBlock = AIPrompts.audioLanguageBlock(code: selectedLanguageCode)
+        let activePack = LocalePackRegistry.pack(for: selectedLanguageCode)
 
         // Per-locale tech-term salvage table. Non-English speakers
         // routinely mix English dev jargon into their dictation
@@ -293,9 +294,9 @@ class AIEnhancementService: ObservableObject {
         let promptBody: String
         if let activePrompt = activePrompt {
             if activePrompt.id == PredefinedPrompts.assistantPromptId {
-                promptBody = AIPrompts.assistantMode(flags: flags)
+                promptBody = AIPrompts.assistantMode(flags: flags, pack: activePack)
             } else {
-                promptBody = activePrompt.finalPromptText(flags: flags)
+                promptBody = activePrompt.finalPromptText(flags: flags, pack: activePack)
             }
         } else {
             // Fallback chain, in order of preference:
@@ -310,7 +311,7 @@ class AIEnhancementService: ObservableObject {
             guard let defaultPrompt = fallback else {
                 return languageBlock + salvageBlock + finalContextSection
             }
-            promptBody = defaultPrompt.finalPromptText(flags: flags)
+            promptBody = defaultPrompt.finalPromptText(flags: flags, pack: activePack)
         }
         return languageBlock + salvageBlock + promptBody + finalContextSection
     }
