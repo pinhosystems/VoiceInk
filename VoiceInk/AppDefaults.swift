@@ -41,6 +41,13 @@ enum AppDefaults {
             "RemovePunctuation": false,
             "LowercaseTranscription": false,
             "SelectedLanguage": defaultSelectedLanguage,
+            // Global default app language. Drives the initial value of every
+            // per-context language picker (STT model language, LLM output
+            // language, Power Mode language, ...) on first launch and after
+            // the user explicitly picks one in Settings. Each picker still
+            // owns its own UserDefault — the default-app-language acts as the
+            // seed + propagation source, not a runtime override.
+            "DefaultAppLanguage": defaultSelectedLanguage,
             "AppendTrailingSpace": true,
             "showLiveTextPreview": false,
             "RecorderType": "mini",

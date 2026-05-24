@@ -35,8 +35,78 @@ struct SettingsView: View {
     @State private var isMuteSystemExpanded = false
     @State private var isRestoreClipboardExpanded = false
 
+    @AppStorage("DefaultAppLanguage") private var defaultAppLanguage: String = "en"
+    @AppStorage("SelectedLanguage") private var selectedLanguage: String = "en"
+    @AppStorage(LocalePackRegistry.outputLanguageKey)
+    private var llmOutputLanguage: String = LocalePackRegistry.outputLanguageMatchSentinel
+
+    /// Curated list of language profiles the user can pick as their default.
+    /// Variants are explicitly listed so the picker can preserve "Brazilian
+    /// Portuguese" vs. "Portuguese" rather than collapsing them at the source.
+    /// Per-context pickers (STT model language, LLM output language, etc.) use
+    /// `LanguageFallbackResolver.resolve` to map this choice against the
+    /// codes they actually support, falling back to the generic primary
+    /// subtag when the regional variant is missing.
+    private static let defaultLanguageOptions: [(code: String, label: String)] = [
+        ("auto", "Auto-detect (per provider)"),
+        ("en", "English (generic)"),
+        ("en-US", "English (United States)"),
+        ("en-GB", "English (United Kingdom)"),
+        ("en-AU", "English (Australia)"),
+        ("pt", "Portuguese (generic)"),
+        ("pt-BR", "Portuguese (Brazil)"),
+        ("pt-PT", "Portuguese (Portugal)"),
+        ("es", "Spanish (generic)"),
+        ("es-ES", "Spanish (Spain)"),
+        ("es-MX", "Spanish (Mexico)"),
+        ("fr", "French (generic)"),
+        ("fr-FR", "French (France)"),
+        ("fr-CA", "French (Canada)"),
+        ("de", "German (generic)"),
+        ("de-DE", "German (Germany)"),
+        ("de-AT", "German (Austria)"),
+        ("de-CH", "German (Switzerland)"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("zh", "Chinese (Simplified)"),
+        ("zh-TW", "Chinese (Traditional)")
+    ]
+
+    /// Mirrors EnhancementLocaleSection.outputLanguageOptions; used to resolve
+    /// the picker selection against the LLM output-language picker's hard-
+    /// coded list when the default app language propagates.
+    private static let llmOutputLanguageCodes: [String] = [
+        "en", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ja", "ko", "zh"
+    ]
+
     var body: some View {
         Form {
+            // MARK: - Language (mandatory)
+            Section {
+                Picker(selection: $defaultAppLanguage) {
+                    ForEach(Self.defaultLanguageOptions, id: \.code) { option in
+                        Text(option.label).tag(option.code)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Default language")
+                        InfoTip("Your primary language for dictation and LLM enhancement. Every per-context language picker (STT model language, LLM output language, Power Mode profiles) pre-selects this value, falling back to the closest supported variant when a context does not expose the exact code. Regional variants resolve to their generic primary subtag automatically: en-US → en, pt-BR → pt, es-MX → es, etc.")
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: defaultAppLanguage) { _, newValue in
+                    propagateDefaultLanguage(newValue)
+                }
+
+                Text("Changing this updates the active transcription language and the LLM output language using the closest available match for each. Per-context overrides you set afterwards stay until you re-pick the default.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Language")
+            }
+
             // MARK: - Shortcuts
             Section {
                 LabeledContent("Shortcut 1") {
@@ -332,6 +402,55 @@ struct SettingsView: View {
         }
         .labelsHidden()
         .fixedSize()
+    }
+
+    /// Pushes the new default-language choice into every per-context language
+    /// picker, resolving via `LanguageFallbackResolver` so a regional variant
+    /// the context does not expose collapses to the closest available match
+    /// (typically the generic primary subtag).
+    ///
+    /// Touch points:
+    ///   - `SelectedLanguage` (STT): resolved against the active
+    ///     transcription model's supported language list, with
+    ///     `TranscriptionLanguageSupport.validLanguageOrFallback` as a final
+    ///     safety net (handles provider quirks like Apple Native ↔ BCP-47).
+    ///   - `LLMOutputLanguage`: resolved against the picker's hard-coded
+    ///     entries. When the chosen default has no representative there, the
+    ///     sentinel `match` is restored so the LLM mirrors the STT language
+    ///     instead of silently translating into an unrelated locale.
+    private func propagateDefaultLanguage(_ newDefault: String) {
+        let trimmed = newDefault.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let sttAvailable: [String]
+        if let model = transcriptionModelManager.currentTranscriptionModel {
+            sttAvailable = Array(TranscriptionLanguageSupport.languages(for: model).keys)
+        } else {
+            sttAvailable = []
+        }
+
+        let resolvedSTT = LanguageFallbackResolver.resolve(
+            target: trimmed,
+            available: sttAvailable,
+            fallback: trimmed
+        )
+        // Run through validLanguageOrFallback so provider-specific quirks
+        // (Apple Native's BCP-47, Whisper's region-strip, FluidAudio's
+        // subset) get the final word; without it a literal "pt-BR" would
+        // reach Whisper as-is and be rejected.
+        if let model = transcriptionModelManager.currentTranscriptionModel {
+            selectedLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(resolvedSTT, for: model)
+        } else {
+            selectedLanguage = resolvedSTT
+        }
+
+        if let llmMatch = LanguageFallbackResolver.resolve(target: trimmed, available: Self.llmOutputLanguageCodes) {
+            llmOutputLanguage = llmMatch
+        } else {
+            llmOutputLanguage = LocalePackRegistry.outputLanguageMatchSentinel
+        }
+
+        NotificationCenter.default.post(name: .languageDidChange, object: nil)
     }
 }
 
