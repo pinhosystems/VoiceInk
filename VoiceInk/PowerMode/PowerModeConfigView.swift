@@ -645,8 +645,8 @@ struct ConfigurationView: View {
                 Section("Advanced") {
                     Toggle(isOn: $isDefault) {
                         HStack(spacing: 6) {
-                            Text("Set as default")
-                            InfoTip("Default power mode is used when no specific app or website matches are found.")
+                            Text("Use as fallback profile")
+                            InfoTip("Activates this Power Mode when no app or website trigger matches. Reordering the list above does not change this behavior — the fallback only fires after every matching pass has missed.")
                         }
                     }
 
@@ -723,12 +723,12 @@ struct ConfigurationView: View {
             // Footer
             VStack(spacing: 0) {
                 HStack {
-                    // The default Power Mode profile is the fallback used
+                    // The fallback Power Mode profile is the one applied
                     // when no other config matches the active app/URL —
                     // deleting it would leave the matcher with nothing to
                     // fall back to. Hide the destructive button on the
-                    // default; users have to clear the "Set as default"
-                    // toggle first before they can delete the entry.
+                    // fallback; users have to clear "Use as fallback
+                    // profile" first before they can delete the entry.
                     if case .edit = mode, !isDefault {
                         Button("Delete", role: .destructive) {
                             isShowingDeleteConfirmation = true
