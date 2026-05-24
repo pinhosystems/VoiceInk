@@ -32,8 +32,8 @@ enum ConfigurationMode: Hashable {
 
     var title: String {
         switch self {
-        case .add, .addFromPreset: return "Add Power Mode"
-        case .edit: return "Edit Power Mode"
+        case .add, .addFromPreset: return "Add Profile"
+        case .edit: return "Edit Profile"
         }
     }
 
@@ -88,7 +88,7 @@ struct PowerModeView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
-                                Text("Power Modes")
+                                Text("Profiles")
                                     .font(.system(size: 28, weight: .bold, design: .default))
                                     .foregroundColor(.primary)
                                 
@@ -187,7 +187,7 @@ struct PowerModeView: View {
                                                 Text("Start from a preset")
                                                     .font(.system(size: 16, weight: .semibold))
                                                     .foregroundColor(.primary)
-                                                Text("Each card creates a new Power Mode prefilled with apps, prompt, and behavior for a common context. Apps you don't have installed are filtered out. Click a card to open the editor and save it.")
+                                                Text("Each card creates a new profile prefilled with apps, prompt, and behavior for a common context. Apps you don't have installed are filtered out. Click a card to open the editor and save it.")
                                                     .font(.system(size: 12))
                                                     .foregroundColor(.secondary)
                                                     .lineSpacing(2)
@@ -251,9 +251,9 @@ struct PowerModeView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Power Mode Presets")
+                                Text("Profile Presets")
                                     .font(.system(size: 18, weight: .semibold))
-                                Text("Each card creates a new Power Mode prefilled for a common context.")
+                                Text("Each card creates a new profile prefilled for a common context.")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
@@ -323,9 +323,9 @@ struct PowerModeView: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Power Mode is your default — no profiles yet")
+                Text("Profiles are always on — no profiles yet")
                     .font(.system(size: 14, weight: .semibold))
-                Text("Power Mode runs every dictation session. Without profiles, it uses your global Settings (language, transcription model, prompt, LLM provider). Add a profile to override those globally-defined defaults whenever you activate a specific app or visit a specific URL — the fallback chain is profile → user defaults.")
+                Text("Profiles run every dictation session. Without profiles, your global Settings (language, transcription model, prompt, LLM provider) apply. Add a profile to override those globally-defined defaults whenever you activate a specific app or visit a specific URL — the fallback chain is profile → user defaults.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .lineSpacing(2)
@@ -394,7 +394,7 @@ struct ReorderPanelView: View {
             // Header
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 12) {
-                    Text("Reorder Power Modes")
+                    Text("Reorder Profiles")
                         .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
@@ -410,7 +410,7 @@ struct ReorderPanelView: View {
                     .buttonStyle(.plain)
                     .help("Close")
                 }
-                Text("Higher in the list = higher priority. When multiple Power Modes match the same app, the first enabled one from the top wins.")
+                Text("Higher in the list = higher priority. When multiple profiles match the same app, the first one from the top wins.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -450,17 +450,9 @@ struct ReorderPanelView: View {
                                     .background(Capsule().fill(Color.accentColor))
                                     .foregroundColor(.white)
                             }
-                            if !config.isEnabled {
-                                Text("Disabled")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Capsule().fill(Color(NSColor.controlBackgroundColor)))
-                                    .overlay(
-                                        Capsule().stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                                    )
-                                    .foregroundColor(.secondary)
-                            }
+                            // Profiles cannot be disabled — the badge that
+                            // used to render for a disabled config was
+                            // removed alongside the disable flow.
                         }
                     }
                     .padding(.vertical, 8)

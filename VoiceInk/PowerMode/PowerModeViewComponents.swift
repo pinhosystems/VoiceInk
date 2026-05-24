@@ -349,12 +349,10 @@ struct ConfigurationRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Toggle("", isOn: $config.isEnabled)
-                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                    .labelsHidden()
-                    .onChange(of: config.isEnabled) { _, _ in
-                        powerModeManager.updateConfiguration(config)
-                    }
+                // Profiles cannot be disabled. Once saved they stay active —
+                // the only way to take a profile out of rotation is to
+                // delete it from the context menu. The toggle that used to
+                // live here was removed when the disable-flow was retired.
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
@@ -405,7 +403,6 @@ struct ConfigurationRow: View {
         x: 0,
         y: isHovering ? 2 : 1
     )
-    .opacity(config.isEnabled ? 1.0 : 0.55)
     .scaleEffect(isHovering ? 1.005 : 1.0)
     .animation(.easeOut(duration: 0.15), value: isHovering)
 

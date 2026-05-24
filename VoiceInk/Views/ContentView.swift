@@ -12,7 +12,7 @@ enum ViewType: String, CaseIterable, Identifiable {
     case providers = "Providers"
     case models = "AI Models"
     case enhancement = "Enhancement"
-    case powerMode = "Power Mode"
+    case powerMode = "Profiles"
     case permissions = "Permissions"
     case audioInput = "Audio Input"
     case dictionary = "Dictionary"
@@ -172,7 +172,7 @@ struct ContentView: View {
                                 .buttonStyle(.plain)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                                 .listRowSeparator(.hidden)
-                                .help("Power Mode is disabled. Open Settings → Power Mode to enable.")
+                                .help("Open the Profiles tab to manage your context-based configurations.")
                             }
                         }
                     }
@@ -223,7 +223,7 @@ struct ContentView: View {
                 // the rename still route correctly.
                 case "Transcribe File", "Transcribe Audio":
                     selectedView = .transcribeAudio
-                case "Power Mode":
+                case "Profiles", "Power Mode":
                     selectedView = .powerMode
                 default:
                     break

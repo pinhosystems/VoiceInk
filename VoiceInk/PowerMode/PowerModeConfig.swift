@@ -100,7 +100,12 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         self.isTextFormattingEnabled = isTextFormattingEnabled
         self.punctuationCleanupMode = punctuationCleanupMode
         self.lowercaseTranscription = lowercaseTranscription
-        self.isEnabled = isEnabled
+        // Profiles cannot be disabled. The init parameter is accepted for
+        // call-site compatibility but always coerced to true so legacy
+        // factories that passed `isEnabled: false` (e.g. duplicate-as-
+        // disabled) silently produce an enabled profile.
+        _ = isEnabled
+        self.isEnabled = true
         self.isDefault = isDefault
         self.hotkeyShortcut = hotkeyShortcut
     }
@@ -135,7 +140,10 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         } else {
             autoSendKey = .none
         }
-        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        // Always coerce to true on decode — older builds could persist
+        // `isEnabled = false`; profiles are now always-on.
+        _ = try container.decodeIfPresent(Bool.self, forKey: .isEnabled)
+        isEnabled = true
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         hotkeyShortcut = try container.decodeIfPresent(String.self, forKey: .hotkeyShortcut)
         llmOutputLanguageOverride = try container.decodeIfPresent(String.self, forKey: .llmOutputLanguageOverride)
@@ -301,7 +309,11 @@ class PowerModeManager: ObservableObject {
         copy.name = uniqueName(basedOn: source.name)
         copy.isDefault = false
         copy.hotkeyShortcut = nil
-        copy.isEnabled = false
+        // Profiles cannot be disabled. The duplicate used to land
+        // disabled so it would not shadow the source on the next app
+        // match; now that disabling is gone, the user must rename / edit
+        // the duplicate before it conflicts.
+        copy.isEnabled = true
 
         configurations.insert(copy, at: sourceIndex + 1)
         saveConfigurations()

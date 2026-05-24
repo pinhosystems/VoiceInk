@@ -90,7 +90,7 @@ struct SettingsView: View {
             case .general: return "General"
             case .shortcuts: return "Shortcuts"
             case .recording: return "Recording"
-            case .powerMode: return "Power Mode"
+            case .powerMode: return "Profiles"
             case .data: return "Data"
             case .advanced: return "Advanced"
             }
@@ -636,12 +636,12 @@ struct PowerModeSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill")
                         .foregroundColor(.accentColor)
-                    Text("Power Mode is the default mode")
+                    Text("Profiles run every dictation session")
                         .font(.system(size: 13, weight: .semibold))
-                    InfoTip("Power Mode is the runtime for every dictation session. With zero profiles configured it uses the user defaults you set in Settings → Enhancement and AI Models. When you add profiles, Power Mode picks the first one that matches the active app or URL; if nothing matches, it falls back to your user defaults. Manage profiles from the Power Mode tab in the sidebar.")
+                    InfoTip("Profiles drive every dictation session. With zero profiles configured the user defaults you set in Settings → Enhancement and AI Models apply. When you add profiles, the runtime picks the first one whose trigger matches the active app or URL; if nothing matches, it falls back to your user defaults. Manage profiles from the Profiles tab in the sidebar.")
                     Spacer()
                 }
-                Text("Fallback chain: matching profile → user defaults (the Settings you configured in General / Enhancement / AI Models). No profiles? The user defaults stay in effect automatically.")
+                Text("Fallback chain: matching profile (Perfis) → user defaults (the Settings you configured in General / Enhancement / AI Models). No profiles? The user defaults stay in effect automatically.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -651,11 +651,11 @@ struct PowerModeSection: View {
             Toggle(isOn: $powerModePersistSettings) {
                 HStack(spacing: 4) {
                     Text("Persist Configured Preferences")
-                    InfoTip("When enabled, Power Mode preferences stay active after you stop recording instead of reverting to your original preferences. They will only change when a different Power Mode activates.")
+                    InfoTip("When enabled, profile preferences stay active after you stop recording instead of reverting to your original preferences. They only change when a different profile activates.")
                 }
             }
         } header: {
-            Text("Power Mode")
+            Text("Profiles")
         }
     }
 }
