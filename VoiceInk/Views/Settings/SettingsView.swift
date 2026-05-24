@@ -49,20 +49,20 @@ struct SettingsView: View {
     /// subtag when the regional variant is missing.
     private static let defaultLanguageOptions: [(code: String, label: String)] = [
         ("auto", "Auto-detect (per provider)"),
-        ("en", "English (generic)"),
+        ("en", "English"),
         ("en-US", "English (United States)"),
         ("en-GB", "English (United Kingdom)"),
         ("en-AU", "English (Australia)"),
-        ("pt", "Portuguese (generic)"),
+        ("pt", "Portuguese"),
         ("pt-BR", "Portuguese (Brazil)"),
         ("pt-PT", "Portuguese (Portugal)"),
-        ("es", "Spanish (generic)"),
+        ("es", "Spanish"),
         ("es-ES", "Spanish (Spain)"),
         ("es-MX", "Spanish (Mexico)"),
-        ("fr", "French (generic)"),
+        ("fr", "French"),
         ("fr-FR", "French (France)"),
         ("fr-CA", "French (Canada)"),
-        ("de", "German (generic)"),
+        ("de", "German"),
         ("de-DE", "German (Germany)"),
         ("de-AT", "German (Austria)"),
         ("de-CH", "German (Switzerland)"),
@@ -419,38 +419,21 @@ struct SettingsView: View {
     ///     sentinel `match` is restored so the LLM mirrors the STT language
     ///     instead of silently translating into an unrelated locale.
     private func propagateDefaultLanguage(_ newDefault: String) {
-        let trimmed = newDefault.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let sttAvailable: [String]
+        let sttAvailable: [String]?
+        let validator: ((String) -> String)?
         if let model = transcriptionModelManager.currentTranscriptionModel {
             sttAvailable = Array(TranscriptionLanguageSupport.languages(for: model).keys)
+            validator = { TranscriptionLanguageSupport.validLanguageOrFallback($0, for: model) }
         } else {
-            sttAvailable = []
+            sttAvailable = nil
+            validator = nil
         }
 
-        let resolvedSTT = LanguageFallbackResolver.resolve(
-            target: trimmed,
-            available: sttAvailable,
-            fallback: trimmed
+        LanguageDefaultPropagator.apply(
+            newDefault,
+            sttModelLanguages: sttAvailable,
+            sttValidator: validator
         )
-        // Run through validLanguageOrFallback so provider-specific quirks
-        // (Apple Native's BCP-47, Whisper's region-strip, FluidAudio's
-        // subset) get the final word; without it a literal "pt-BR" would
-        // reach Whisper as-is and be rejected.
-        if let model = transcriptionModelManager.currentTranscriptionModel {
-            selectedLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(resolvedSTT, for: model)
-        } else {
-            selectedLanguage = resolvedSTT
-        }
-
-        if let llmMatch = LanguageFallbackResolver.resolve(target: trimmed, available: Self.llmOutputLanguageCodes) {
-            llmOutputLanguage = llmMatch
-        } else {
-            llmOutputLanguage = LocalePackRegistry.outputLanguageMatchSentinel
-        }
-
-        NotificationCenter.default.post(name: .languageDidChange, object: nil)
     }
 }
 

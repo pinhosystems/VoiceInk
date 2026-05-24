@@ -48,6 +48,13 @@ enum AppDefaults {
             // owns its own UserDefault — the default-app-language acts as the
             // seed + propagation source, not a runtime override.
             "DefaultAppLanguage": defaultSelectedLanguage,
+            // True once the user has confirmed the default language through
+            // the onboarding step (or by explicitly re-picking it in
+            // Settings). A fresh install starts at false so the onboarding
+            // gate fires before the welcome greeting. Set explicitly to true
+            // by upgrade paths in `runInitialFlagsIfNeeded` to avoid
+            // re-prompting existing users.
+            "DefaultAppLanguageConfirmed": false,
             "AppendTrailingSpace": true,
             "showLiveTextPreview": false,
             "RecorderType": "mini",
@@ -96,6 +103,26 @@ enum AppDefaults {
 
         migrateLegacyNormalizationKeyIfNeeded()
         PunctuationCleanupMode.migrateLegacyUserDefaultIfNeeded()
+        markDefaultAppLanguageConfirmedForExistingInstalls()
+    }
+
+    /// Users who completed onboarding before the language-confirm gate
+    /// existed already chose a language implicitly (we registered
+    /// SelectedLanguage from locale). Flag DefaultAppLanguageConfirmed true
+    /// on first launch of the new build so the gate does not re-prompt
+    /// them. Idempotent: only runs when the flag is at its registered
+    /// default state (false) AND onboarding was already completed.
+    private static func markDefaultAppLanguageConfirmedForExistingInstalls() {
+        let defaults = UserDefaults.standard
+        let confirmedKey = "DefaultAppLanguageConfirmed"
+        // Only fires when the user truly never explicitly set the flag —
+        // checking `object(forKey:)` would be false-positive after a fresh
+        // install with the registered default applied. The registered
+        // default is `false`, so distinguishing "never set" from
+        // "registered default" requires the onboarding side-flag.
+        guard defaults.bool(forKey: "hasCompletedOnboarding"),
+              !defaults.bool(forKey: confirmedKey) else { return }
+        defaults.set(true, forKey: confirmedKey)
     }
 
     /// One-shot migration: if the legacy `BrazilianNormalizationEnabled` key
