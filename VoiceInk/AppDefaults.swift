@@ -67,17 +67,37 @@ enum AppDefaults {
             "EnhancementTimeoutSeconds": 7,
             "EnhancementRetryOnTimeout": true,
 
-            // Brazilian Portuguese post-processing. Default ON: the normalizer
-            // only runs when the user's SelectedLanguage begins with "pt", so it
-            // is inert for non-Brazilian users and there is no downside to keeping
-            // it on out of the box.
-            "BrazilianNormalizationEnabled": true,
+            // Locale-aware post-processing. Default ON: the normalizer only
+            // applies the active LocalePack's rules (currently BR-only via
+            // BrazilianPortuguesePack.customNormalize), so it is inert for
+            // every locale without curated input transforms — no downside to
+            // shipping enabled.
+            "LocaleNormalizationEnabled": true,
 
             // Model
             "PrewarmModelOnWake": true,
 
         ])
 
+        migrateLegacyNormalizationKeyIfNeeded()
         PunctuationCleanupMode.migrateLegacyUserDefaultIfNeeded()
+    }
+
+    /// One-shot migration: if the legacy `BrazilianNormalizationEnabled` key
+    /// has an explicit user-set value (i.e. the user toggled it off in an
+    /// earlier build) and the new `LocaleNormalizationEnabled` key has not yet
+    /// been written, copy the legacy value across and remove the legacy entry.
+    /// Idempotent — subsequent launches find the new key already set and skip.
+    private static func migrateLegacyNormalizationKeyIfNeeded() {
+        let defaults = UserDefaults.standard
+        let newKey = LocalePackRegistry.normalizationEnabledKey
+        let legacyKey = LocalePackRegistry.legacyNormalizationEnabledKey
+
+        guard defaults.object(forKey: newKey) == nil else { return }
+        guard let legacyValue = defaults.object(forKey: legacyKey) else { return }
+        if let bool = legacyValue as? Bool {
+            defaults.set(bool, forKey: newKey)
+        }
+        defaults.removeObject(forKey: legacyKey)
     }
 }

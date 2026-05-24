@@ -18,9 +18,16 @@ struct VocabularyView: View {
     @State private var showingTechnicalConfirmation = false
     @State private var showingClearConfirmation = false
 
-    private var shouldShowBrazilianTemplate: Bool {
-        let lang = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "").lowercased()
-        return lang.hasPrefix("pt")
+    /// Resolves the active locale pack's curated vocabulary list. nil when no
+    /// pack is active or when the pack's `vocabularyTerms` is empty — the
+    /// bulk-add button is hidden in both cases to keep inert actions off the
+    /// panel.
+    private var activeVocabularyPack: LocalePack? {
+        let lang = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        guard let pack = LocalePackRegistry.pack(for: lang),
+              !pack.vocabularyTerms.isEmpty
+        else { return nil }
+        return pack
     }
 
     init(whisperPrompt: WhisperPrompt) {
@@ -85,29 +92,29 @@ struct VocabularyView: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
             HStack(spacing: 8) {
-                if shouldShowBrazilianTemplate {
+                if let pack = activeVocabularyPack {
                     Button {
                         showingBulkConfirmation = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wand.and.sparkles")
-                            Text("Add pt-BR vocabulary")
+                            Text("Add \(pack.displayName) vocabulary")
                         }
                         .font(.system(size: 12, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .help("Inserts common Brazilian terms (Receita Federal, PIX, CPF, CNPJ, USP, Bradesco, ...). Helps the LLM and cloud providers (Deepgram keyterm) get the spelling right.")
+                    .help("Inserts the curated \(pack.displayName) vocabulary list. Helps the LLM and cloud providers (Deepgram keyterm) get the spelling right.")
                     .confirmationDialog(
-                        "Add pt-BR vocabulary?",
+                        "Add \(pack.displayName) vocabulary?",
                         isPresented: $showingBulkConfirmation,
                         titleVisibility: .visible
                     ) {
-                        Button("Add \(BrazilianVocabularyTemplate.count) terms") {
-                            applyBrazilianTemplate()
+                        Button("Add \(pack.vocabularyTerms.count) terms") {
+                            applyPackTemplate(pack: pack)
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Will insert common Brazilian terms like Receita Federal, PIX, CPF, CNPJ, Bradesco, USP, ICMS, FGTS. Existing entries are skipped.")
+                        Text("Inserts the curated \(pack.displayName) vocabulary list. Entries already present are skipped.")
                     }
                 }
 
@@ -227,8 +234,9 @@ struct VocabularyView: View {
         }
     }
 
-    private func applyBrazilianTemplate() {
-        let result = DictionaryService.addBrazilianVocabulary(
+    private func applyPackTemplate(pack: LocalePack) {
+        let result = DictionaryService.addPackVocabulary(
+            pack: pack,
             existing: Array(vocabularyWords),
             context: modelContext
         )

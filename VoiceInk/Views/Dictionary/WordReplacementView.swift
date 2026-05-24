@@ -34,12 +34,16 @@ struct WordReplacementView: View {
         }
     }
 
-    /// Visible only when the user's selected language is Portuguese. There is no
-    /// value in offering pt-BR templates to non-Portuguese speakers, and showing
-    /// the button would clutter the panel for them.
-    private var shouldShowBrazilianTemplate: Bool {
-        let lang = (UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "").lowercased()
-        return lang.hasPrefix("pt")
+    /// Resolves the active locale pack's curated abbreviation list. Returns
+    /// nil when no pack is active or when the pack ships no
+    /// `wordReplacements` — the bulk-add button hides in both cases so we
+    /// don't clutter the panel with an inert action.
+    private var activeAbbreviationPack: LocalePack? {
+        let lang = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        guard let pack = LocalePackRegistry.pack(for: lang),
+              !pack.wordReplacements.isEmpty
+        else { return nil }
+        return pack
     }
 
     private var sortedReplacements: [WordReplacement] {
@@ -119,29 +123,29 @@ struct WordReplacementView: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowAddButton)
 
             HStack(spacing: 8) {
-                if shouldShowBrazilianTemplate {
+                if let pack = activeAbbreviationPack {
                     Button {
                         showingBulkConfirmation = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "wand.and.sparkles")
-                            Text("Add pt-BR abbreviations")
+                            Text("Add \(pack.displayName) abbreviations")
                         }
                         .font(.system(size: 12, weight: .medium))
                     }
                     .buttonStyle(.bordered)
-                    .help("Inserts common Brazilian abbreviations (vc → você, tb → também, pq → porque, ...). Idempotent: existing entries are not duplicated.")
+                    .help("Inserts curated abbreviations for \(pack.displayName). Idempotent: existing entries are not duplicated.")
                     .confirmationDialog(
-                        "Add pt-BR abbreviations?",
+                        "Add \(pack.displayName) abbreviations?",
                         isPresented: $showingBulkConfirmation,
                         titleVisibility: .visible
                     ) {
-                        Button("Add \(BrazilianWordReplacements.count) abbreviations") {
-                            applyBrazilianTemplate()
+                        Button("Add \(pack.wordReplacements.count) abbreviations") {
+                            applyPackTemplate(pack: pack)
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Will insert abbreviations like 'vc → você', 'tb → também', 'pq → porque'. Existing entries are skipped.")
+                        Text("Inserts the curated \(pack.displayName) abbreviations list. Entries already present are skipped.")
                     }
                 }
 
@@ -278,8 +282,9 @@ struct WordReplacementView: View {
         }
     }
 
-    private func applyBrazilianTemplate() {
-        let result = DictionaryService.addBrazilianAbbreviations(
+    private func applyPackTemplate(pack: LocalePack) {
+        let result = DictionaryService.addPackAbbreviations(
+            pack: pack,
             existing: Array(wordReplacements),
             context: modelContext
         )

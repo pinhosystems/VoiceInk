@@ -194,6 +194,9 @@ struct SettingsView: View {
 
             }
 
+            // MARK: - Transcription
+            LocaleNormalizationSection()
+
             // MARK: - Power Mode
             PowerModeSection()
 
@@ -481,6 +484,42 @@ struct ExperimentalSection: View {
             }
         } header: {
             Text("Experimental")
+        }
+    }
+}
+
+// MARK: - Locale Normalization Section
+
+/// Surfaces the `LocaleNormalizationEnabled` UserDefault as a Settings toggle.
+/// The label re-renders whenever `SelectedLanguage` changes (via @AppStorage)
+/// and the toggle is disabled when the active locale pack ships no curated
+/// input transforms — so the user immediately sees that the action is inert
+/// for their current language.
+private struct LocaleNormalizationSection: View {
+    @AppStorage("SelectedLanguage") private var selectedLanguage = "en"
+    @AppStorage(LocalePackRegistry.normalizationEnabledKey) private var enabled = true
+
+    private var pack: LocalePack? {
+        LocalePackRegistry.pack(for: selectedLanguage)
+    }
+
+    private var hasNormalizationContent: Bool {
+        guard let pack else { return false }
+        return !pack.normalizerRules.isEmpty || pack.customNormalize != nil
+    }
+
+    var body: some View {
+        Section("Transcription") {
+            let label = pack.map { "\($0.displayName) normalization" } ?? "Locale normalization"
+            Toggle(isOn: $enabled) {
+                HStack(spacing: 4) {
+                    Text(label)
+                    InfoTip(hasNormalizationContent
+                            ? "Applies the active locale pack's input transforms (numbers, dates, currency, identifiers) before LLM enhancement."
+                            : "The selected language has no curated input transforms. This toggle is inert until a pack ships them.")
+                }
+            }
+            .disabled(!hasNormalizationContent)
         }
     }
 }

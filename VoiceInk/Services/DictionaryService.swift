@@ -100,7 +100,7 @@ enum DictionaryService {
         }
     }
 
-    // MARK: - Bulk Brazilian templates
+    // MARK: - Bulk locale-pack templates
 
     struct BulkInsertResult {
         let added: Int
@@ -108,13 +108,14 @@ enum DictionaryService {
         let errors: [String]
     }
 
-    /// Inserts every entry from `BrazilianWordReplacements.canonicalReplacements`
-    /// that does not already exist (by case-insensitive match on any trigger token
-    /// inside `originalText`). Idempotent: calling twice produces 0 added on the
-    /// second call. Returns a summary so the UI can show "Adicionadas 23, ignoradas
-    /// 3" without each row triggering an alert.
+    /// Inserts every entry from the given pack's `wordReplacements` that does
+    /// not already exist (by case-insensitive match on any trigger token
+    /// inside `originalText`). Idempotent — re-running over the same data
+    /// produces 0 added. Returns a summary so the UI can render "Added X,
+    /// skipped Y" without each row triggering an alert.
     @discardableResult
-    static func addBrazilianAbbreviations(
+    static func addPackAbbreviations(
+        pack: LocalePack,
         existing: [WordReplacement],
         context: ModelContext
     ) -> BulkInsertResult {
@@ -130,7 +131,7 @@ enum DictionaryService {
         var errors: [String] = []
         var insertedEntries: [WordReplacement] = []
 
-        for (original, replacement) in BrazilianWordReplacements.canonicalReplacements {
+        for (original, replacement) in pack.wordReplacements {
             let tokens = original
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -155,7 +156,7 @@ enum DictionaryService {
                 try context.save()
             } catch {
                 for entry in insertedEntries { context.delete(entry) }
-                errors.append("Failed to save Brazilian abbreviations: \(error.localizedDescription)")
+                errors.append("Failed to save \(pack.displayName) abbreviations: \(error.localizedDescription)")
                 added = 0
             }
         }
@@ -180,19 +181,20 @@ enum DictionaryService {
         )
     }
 
-    /// Inserts every entry from `BrazilianVocabularyTemplate.canonicalWords` that
-    /// does not already exist (case-insensitive). Idempotent. Returns a summary
+    /// Inserts every entry from the given pack's `vocabularyTerms` that does
+    /// not already exist (case-insensitive). Idempotent. Returns a summary
     /// for the UI.
     @discardableResult
-    static func addBrazilianVocabulary(
+    static func addPackVocabulary(
+        pack: LocalePack,
         existing: [VocabularyWord],
         context: ModelContext
     ) -> BulkInsertResult {
         return addVocabularyBatch(
-            words: BrazilianVocabularyTemplate.canonicalWords,
+            words: pack.vocabularyTerms,
             existing: existing,
             context: context,
-            errorLabel: "Brazilian vocabulary"
+            errorLabel: "\(pack.displayName) vocabulary"
         )
     }
 
