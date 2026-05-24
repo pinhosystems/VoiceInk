@@ -60,7 +60,10 @@ struct SidebarSection: Identifiable {
         SidebarSection(
             id: "pipeline",
             title: "Voice Pipeline",
-            items: [.audioInput, .providers, .models, .enhancement, .powerMode, .dictionary]
+            // Dictionary moved into Settings → Advanced (it's a secondary
+            // power-user feature, not part of the daily voice pipeline).
+            // Sidebar list keeps the high-traffic entries only.
+            items: [.audioInput, .providers, .models, .enhancement, .powerMode]
         ),
         SidebarSection(
             id: "system",

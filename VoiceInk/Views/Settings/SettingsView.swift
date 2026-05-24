@@ -485,6 +485,24 @@ struct SettingsView: View {
         Form {
             ExperimentalSection()
 
+            // MARK: - Dictionary (secondary)
+            Section {
+                LabeledContent("Vocabulary & Word Replacements") {
+                    Button("Open Dictionary…") {
+                        NotificationCenter.default.post(
+                            name: .navigateToDestination,
+                            object: nil,
+                            userInfo: ["destination": "Dictionary"]
+                        )
+                    }
+                }
+            } header: {
+                HStack(spacing: 4) {
+                    Text("Dictionary")
+                    InfoTip("Two-tab editor: Vocabulary biases the STT engine toward proper nouns and jargon; Word Replacements rewrites the final transcript. Most users never touch this — leave it alone unless the engine consistently mishears a specific term.")
+                }
+            }
+
             // MARK: - Diagnostics
             Section("Diagnostics") {
                 DiagnosticsSettingsView()
