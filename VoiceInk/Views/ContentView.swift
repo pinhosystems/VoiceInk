@@ -65,7 +65,7 @@ struct SidebarSection: Identifiable {
             // routing layer that composes everything above per-app).
             // Profiles is intentionally last because it depends on every
             // step before it.
-            items: [.audioInput, .providers, .models, .enhancement, .powerMode]
+            items: [.providers, .models, .enhancement, .powerMode]
         ),
         SidebarSection(
             id: "setup",
@@ -290,6 +290,8 @@ struct ContentView: View {
                     selectedView = .transcribeAudio
                 case "Profiles", "Power Mode":
                     selectedView = .powerMode
+                case "Audio Input":
+                    selectedView = .audioInput
                 default:
                     break
                 }

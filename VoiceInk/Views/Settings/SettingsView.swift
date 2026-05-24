@@ -338,6 +338,23 @@ struct SettingsView: View {
 
     private var recordingTab: some View {
         Form {
+            // MARK: - Input Device (rarely-changed; deep screen behind a button)
+            Section {
+                LabeledContent("Microphone & Input Mode") {
+                    Button("Open Audio Input…") {
+                        NotificationCenter.default.post(
+                            name: .navigateToDestination,
+                            object: nil,
+                            userInfo: ["destination": "Audio Input"]
+                        )
+                    }
+                }
+            } header: {
+                Text("Input Device")
+            } footer: {
+                Text("Choose between the system default, a specific microphone, or a prioritized fallback list. Most users set this once and never revisit it.")
+            }
+
             // MARK: - Recording Feedback
             Section("Recording Feedback") {
                 // Sound Feedback
