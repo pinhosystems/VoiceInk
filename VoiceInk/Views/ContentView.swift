@@ -7,7 +7,7 @@ import OSLog
 // the visible order and grouping live in `SidebarSection.allSections`.
 enum ViewType: String, CaseIterable, Identifiable {
     case metrics = "Dashboard"
-    case transcribeAudio = "Transcribe File"
+    case transcribeAudio = "file"
     case history = "History"
     case providers = "Providers"
     case models = "AI Models"
@@ -230,10 +230,11 @@ struct ContentView: View {
                     selectedView = .permissions
                 case "Enhancement":
                     selectedView = .enhancement
-                // Accept both the current label and the legacy
-                // "Transcribe Audio" key so notifications stored before
-                // the rename still route correctly.
-                case "Transcribe File", "Transcribe Audio":
+                // Accept the current label plus every legacy key — the
+                // sidebar has been through "Transcribe Audio" →
+                // "Transcribe File" → "file" and notifications stored
+                // before each rename should still route correctly.
+                case "file", "Transcribe File", "Transcribe Audio":
                     selectedView = .transcribeAudio
                 case "Profiles", "Power Mode":
                     selectedView = .powerMode
