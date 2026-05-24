@@ -197,7 +197,10 @@ class AIEnhancementService: ObservableObject {
         lastRequestTime = Date()
     }
 
-    private func getSystemMessage(for mode: EnhancementPrompt) async -> String {
+    private func getSystemMessage(
+        for mode: EnhancementPrompt,
+        overridePrompt: CustomPrompt? = nil
+    ) async -> String {
         let selectedTextContext: String
         if useSelectedTextContext, AXIsProcessTrusted(),
            let selectedText = await SelectedTextService.fetchSelectedText(),
@@ -301,11 +304,12 @@ class AIEnhancementService: ObservableObject {
         let salvageBlock = TechTermSalvage.block(forLanguageCode: selectedLanguageCode) ?? ""
 
         let promptBody: String
-        if let activePrompt = activePrompt {
-            if activePrompt.id == PredefinedPrompts.assistantPromptId {
+        let resolvedPrompt = overridePrompt ?? activePrompt
+        if let resolvedPrompt {
+            if resolvedPrompt.id == PredefinedPrompts.assistantPromptId {
                 promptBody = AIPrompts.assistantMode(flags: flags, pack: activePack)
             } else {
-                promptBody = activePrompt.finalPromptText(flags: flags, pack: activePack)
+                promptBody = resolvedPrompt.finalPromptText(flags: flags, pack: activePack)
             }
         } else {
             // Fallback chain, in order of preference:
@@ -325,7 +329,11 @@ class AIEnhancementService: ObservableObject {
         return languageBlock + salvageBlock + promptBody + finalContextSection
     }
 
-    private func makeRequest(text: String, mode: EnhancementPrompt) async throws -> String {
+    private func makeRequest(
+        text: String,
+        mode: EnhancementPrompt,
+        overridePrompt: CustomPrompt? = nil
+    ) async throws -> String {
         guard isConfigured else {
             throw EnhancementError.notConfigured
         }
@@ -335,7 +343,7 @@ class AIEnhancementService: ObservableObject {
         }
 
         let formattedText = "\n<TRANSCRIPT>\n\(text)\n</TRANSCRIPT>"
-        let systemMessage = await getSystemMessage(for: mode)
+        let systemMessage = await getSystemMessage(for: mode, overridePrompt: overridePrompt)
 
         await MainActor.run {
             self.lastSystemMessageSent = systemMessage
@@ -508,13 +516,13 @@ class AIEnhancementService: ObservableObject {
         UserDefaults.standard.bool(forKey: "EnhancementRetryOnTimeout")
     }
 
-    private func makeRequestWithRetry(text: String, mode: EnhancementPrompt, maxRetries: Int = 3, initialDelay: TimeInterval = 1.0) async throws -> String {
+    private func makeRequestWithRetry(text: String, mode: EnhancementPrompt, overridePrompt: CustomPrompt? = nil, maxRetries: Int = 3, initialDelay: TimeInterval = 1.0) async throws -> String {
         var retries = 0
         var currentDelay = initialDelay
 
         while retries < maxRetries {
             do {
-                return try await makeRequest(text: text, mode: mode)
+                return try await makeRequest(text: text, mode: mode, overridePrompt: overridePrompt)
             } catch let error as EnhancementError {
                 switch error {
                 case .networkError, .serverError, .rateLimitExceeded:
@@ -564,7 +572,7 @@ class AIEnhancementService: ObservableObject {
         throw EnhancementError.enhancementFailed
     }
 
-    func enhance(_ text: String) async throws -> (String, TimeInterval, String?) {
+    func enhance(_ text: String, overridePrompt: CustomPrompt? = nil) async throws -> (String, TimeInterval, String?) {
         let startTime = Date()
         let enhancementPrompt: EnhancementPrompt = .transcriptionEnhancement
         // Report the prompt that *actually* drove the LLM call so the
@@ -574,13 +582,14 @@ class AIEnhancementService: ObservableObject {
         // migrations resolve to nil here, but getSystemMessage falls
         // back to Default. The history should show "Default", not
         // empty.
-        let effectivePrompt: CustomPrompt? = activePrompt
+        let effectivePrompt: CustomPrompt? = overridePrompt
+            ?? activePrompt
             ?? allPrompts.first(where: { $0.id == PredefinedPrompts.defaultPromptId })
             ?? allPrompts.first
         let promptName = effectivePrompt?.title
 
         do {
-            let result = try await makeRequestWithRetry(text: text, mode: enhancementPrompt)
+            let result = try await makeRequestWithRetry(text: text, mode: enhancementPrompt, overridePrompt: overridePrompt)
             let endTime = Date()
             let duration = endTime.timeIntervalSince(startTime)
             return (result, duration, promptName)
