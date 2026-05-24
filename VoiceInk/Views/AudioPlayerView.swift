@@ -380,9 +380,19 @@ struct AudioPlayerView: View {
     @State private var bannerState: BannerState?
     @State private var showPromptPopover = false
     @State private var showPowerModePopover = false
+    @State private var showTranscriptionModelPopover = false
     @EnvironmentObject private var engine: VoiceInkEngine
     @EnvironmentObject private var enhancementService: AIEnhancementService
+    @ObservedObject private var powerModeManager = PowerModeManager.shared
     @Environment(\.modelContext) private var modelContext
+
+    /// True when a Power Mode is currently driving the active session. In
+    /// that state the individual LLM prompt and transcription model
+    /// selectors below are disabled — the Power Mode owns those choices
+    /// until the user clears it from the Power Mode popover.
+    private var hasActivePowerMode: Bool {
+        powerModeManager.activeConfiguration != nil
+    }
 
     private var isOperationInProgress: Bool {
         isRetranscribing || isReEnhancing
@@ -432,18 +442,42 @@ struct AudioPlayerView: View {
                         icon: enhancementService.activePrompt?.icon ?? "sparkles",
                         action: { showPromptPopover.toggle() }
                     )
-                    .opacity(enhancementService.isEnhancementEnabled ? 1.0 : 0.4)
-                    .softTooltip("Select enhancement prompt (applied to next Re-analyze / Retranscribe)")
+                    .opacity((enhancementService.isEnhancementEnabled && !hasActivePowerMode) ? 1.0 : 0.4)
+                    .disabled(hasActivePowerMode)
+                    .softTooltip(
+                        hasActivePowerMode
+                            ? "Disabled while a Power Mode is active. Clear it from the Power Mode picker to choose a prompt directly."
+                            : "Select enhancement prompt (applied to next Re-analyze / Retranscribe)"
+                    )
                     .popover(isPresented: $showPromptPopover, arrowEdge: .bottom) {
                         EnhancementPromptPopover()
                             .environmentObject(enhancementService)
                     }
 
                     CircleIconButton(
-                        icon: "bolt.fill",
+                        icon: "waveform",
+                        action: { showTranscriptionModelPopover.toggle() }
+                    )
+                    .opacity(hasActivePowerMode ? 0.4 : 1.0)
+                    .disabled(hasActivePowerMode)
+                    .softTooltip(
+                        hasActivePowerMode
+                            ? "Disabled while a Power Mode is active. Clear it from the Power Mode picker to choose a transcription model directly."
+                            : "Select transcription model (applied to next Re-analyze / Retranscribe)"
+                    )
+                    .popover(isPresented: $showTranscriptionModelPopover, arrowEdge: .bottom) {
+                        TranscriptionModelPopover(transcriptionModelManager: engine.transcriptionModelManager)
+                    }
+
+                    CircleIconButton(
+                        icon: hasActivePowerMode ? "bolt.fill" : "bolt",
                         action: { showPowerModePopover.toggle() }
                     )
-                    .softTooltip("Select Power Mode profile (applied to next Re-analyze / Retranscribe)")
+                    .softTooltip(
+                        hasActivePowerMode
+                            ? "Active Power Mode: \(powerModeManager.activeConfiguration?.name ?? ""). Pick None to re-enable the individual LLM + transcription model pickers."
+                            : "Select Power Mode profile (applied to next Re-analyze / Retranscribe). When active, the LLM + transcription model pickers are locked to the Power Mode's values."
+                    )
                     .popover(isPresented: $showPowerModePopover, arrowEdge: .bottom) {
                         PowerModePopover()
                     }

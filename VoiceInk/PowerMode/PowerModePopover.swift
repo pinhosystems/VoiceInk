@@ -18,6 +18,21 @@ struct PowerModePopover: View {
             ScrollView {
                 let enabledConfigs = powerModeManager.configurations.filter { $0.isEnabled }
                 VStack(alignment: .leading, spacing: 4) {
+                    // Explicit "None" entry that lets the user clear an
+                    // active Power Mode session. With Power Mode cleared
+                    // the individual LLM + transcription model pickers in
+                    // the AudioPlayer footer become available again.
+                    PowerModeNoneRow(
+                        isSelected: selectedConfig == nil,
+                        action: {
+                            powerModeManager.setActiveConfiguration(nil)
+                            selectedConfig = nil
+                            Task {
+                                await PowerModeSessionManager.shared.endSession()
+                            }
+                        }
+                    )
+
                     if enabledConfigs.isEmpty {
                         VStack(alignment: .center, spacing: 8) {
                             Image(systemName: "sparkles")
@@ -67,6 +82,42 @@ struct PowerModePopover: View {
                 await PowerModeSessionManager.shared.beginSession(with: config)
             }
         }
+    }
+}
+
+private struct PowerModeNoneRow: View {
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "circle.slash")
+                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 12))
+
+                Text("None — clear Power Mode")
+                    .foregroundColor(.white.opacity(0.9))
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+
+                if isSelected {
+                    Spacer()
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.green)
+                        .font(.system(size: 10))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.white.opacity(0.10) : Color.clear)
+        )
     }
 }
 
