@@ -60,7 +60,13 @@ class NativeAppleTranscriptionService: TranscriptionService {
         let audioDuration = Double(audioFile.length) / audioFile.processingFormat.sampleRate
         
         // Apple Speech stores and consumes actual BCP-47 locale identifiers directly.
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "en-US"
+        // Fallback chain: explicit SelectedLanguage → DefaultAppLanguage (the
+        // user-set global preference) → "en-US". The DefaultAppLanguage step
+        // preserves intent when the per-context key is somehow blank, instead
+        // of silently coercing every Apple Native session to English.
+        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
+            ?? UserDefaults.standard.string(forKey: "DefaultAppLanguage")
+            ?? "en-US"
         let locale = Locale(identifier: selectedLanguage)
 
         let supportedLocales = await SpeechTranscriber.supportedLocales

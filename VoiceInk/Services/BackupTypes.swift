@@ -103,6 +103,12 @@ struct GeneralBackup: Codable {
     let restoreClipboardAfterPaste: Bool?
     let clipboardRestoreDelay: Double?
     let useAppleScriptPaste: Bool?
+    // Language preferences. Added after the global Default App Language
+    // landed — older backups (without these keys) decode with nil and the
+    // importer treats nil as "do not touch the user's current value".
+    let defaultAppLanguage: String?
+    let selectedLanguage: String?
+    let llmOutputLanguage: String?
 }
 
 struct WordBackup: Codable {
