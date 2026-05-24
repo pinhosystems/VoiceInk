@@ -7,7 +7,7 @@ import OSLog
 // the visible order and grouping live in `SidebarSection.allSections`.
 enum ViewType: String, CaseIterable, Identifiable {
     case metrics = "Dashboard"
-    case transcribeAudio = "file"
+    case transcribeAudio = "File"
     case history = "History"
     case providers = "Providers"
     case models = "AI Models"
@@ -130,35 +130,26 @@ struct ContentView: View {
         return true
     }
 
-    /// Bottom-anchored About entry. Sits inside `safeAreaInset(edge:.bottom)`
-    /// so it floats below the List instead of competing with the section
-    /// rows. Renders as a small, secondary-color label with the SF symbol
-    /// shrunk down — explicitly subordinate to the Setup section above.
+    /// Bottom-anchored About entry. Lives outside the List via
+    /// `safeAreaInset(edge:.bottom)` so it occupies the sidebar floor as a
+    /// dedicated footer band — a macOS-native pattern (Finder sidebar, Mail
+    /// account footer) where ancillary information sits in its own strip
+    /// with a thin separator above. The row stays interactive: hover
+    /// surfaces a soft accent background, selection paints the accent
+    /// fully, and a single tap routes to the About screen.
     @ViewBuilder
     private var aboutFooter: some View {
-        let target = SidebarSection.footerItem
-        Button {
-            selectedView = target
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: target.icon)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                Text(target.rawValue)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text(appVersion)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary.opacity(0.65))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+        AboutFooterRow(
+            target: SidebarSection.footerItem,
+            appVersion: appVersion,
+            isSelected: selectedView == SidebarSection.footerItem,
+            isPro: {
+                if case .licensed = licenseViewModel.licenseState { return true }
+                return false
+            }()
+        ) {
+            selectedView = SidebarSection.footerItem
         }
-        .buttonStyle(.plain)
-        .overlay(Divider().opacity(0.5), alignment: .top)
-        .background(Color.clear)
     }
 
     /// Renders a single sidebar row. Extracted so the Setup section's
@@ -265,7 +256,7 @@ struct ContentView: View {
                 // sidebar has been through "Transcribe Audio" →
                 // "Transcribe File" → "file" and notifications stored
                 // before each rename should still route correctly.
-                case "file", "Transcribe File", "Transcribe Audio":
+                case "File", "file", "Transcribe File", "Transcribe Audio":
                     selectedView = .transcribeAudio
                 case "Profiles", "Power Mode":
                     selectedView = .powerMode
@@ -304,6 +295,91 @@ struct ContentView: View {
         case .permissions:
             PermissionsView()
         }
+    }
+}
+
+/// Sidebar footer that hosts the About destination. Designed as a
+/// dedicated band at the floor of the sidebar (own background,
+/// separator above, hover affordance, selection state) instead of a
+/// loose `Button` inside `safeAreaInset` so it looks like a finished
+/// macOS pattern rather than an after-thought strip.
+private struct AboutFooterRow: View {
+    let target: ViewType
+    let appVersion: String
+    let isSelected: Bool
+    let isPro: Bool
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: target.icon)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(iconForeground)
+                    .frame(width: 20, alignment: .center)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(target.rawValue)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(primaryForeground)
+
+                        if isPro {
+                            Text("PRO")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.85))
+                                .cornerRadius(3)
+                        }
+                    }
+
+                    Text("Version \(appVersion)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(secondaryForeground)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(chevronForeground)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .background(rowBackground)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .overlay(Divider().opacity(0.65), alignment: .top)
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.18) }
+        if isHovering { return Color.primary.opacity(0.05) }
+        return Color.clear
+    }
+
+    private var primaryForeground: Color {
+        isSelected ? .primary : .primary
+    }
+
+    private var secondaryForeground: Color {
+        .secondary
+    }
+
+    private var iconForeground: Color {
+        isSelected ? .accentColor : .secondary
+    }
+
+    private var chevronForeground: Color {
+        isHovering || isSelected ? .secondary : .secondary.opacity(0.35)
     }
 }
 
