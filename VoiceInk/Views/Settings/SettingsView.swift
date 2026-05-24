@@ -111,31 +111,42 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            generalTab
-                .tabItem { Label(SettingsTab.general.label, systemImage: SettingsTab.general.icon) }
-                .tag(SettingsTab.general)
+        VStack(spacing: 0) {
+            // Top breathing room — the TabView tab strip sits glued to the
+            // window chrome otherwise, which reads as cramped on macOS.
+            Spacer()
+                .frame(height: 16)
 
-            shortcutsTab
-                .tabItem { Label(SettingsTab.shortcuts.label, systemImage: SettingsTab.shortcuts.icon) }
-                .tag(SettingsTab.shortcuts)
+            TabView(selection: $selectedTab) {
+                generalTab
+                    .tabItem { Label(SettingsTab.general.label, systemImage: SettingsTab.general.icon) }
+                    .tag(SettingsTab.general)
 
-            recordingTab
-                .tabItem { Label(SettingsTab.recording.label, systemImage: SettingsTab.recording.icon) }
-                .tag(SettingsTab.recording)
+                shortcutsTab
+                    .tabItem { Label(SettingsTab.shortcuts.label, systemImage: SettingsTab.shortcuts.icon) }
+                    .tag(SettingsTab.shortcuts)
 
-            powerModeTab
-                .tabItem { Label(SettingsTab.powerMode.label, systemImage: SettingsTab.powerMode.icon) }
-                .tag(SettingsTab.powerMode)
+                recordingTab
+                    .tabItem { Label(SettingsTab.recording.label, systemImage: SettingsTab.recording.icon) }
+                    .tag(SettingsTab.recording)
 
-            dataTab
-                .tabItem { Label(SettingsTab.data.label, systemImage: SettingsTab.data.icon) }
-                .tag(SettingsTab.data)
+                powerModeTab
+                    .tabItem { Label(SettingsTab.powerMode.label, systemImage: SettingsTab.powerMode.icon) }
+                    .tag(SettingsTab.powerMode)
 
-            advancedTab
-                .tabItem { Label(SettingsTab.advanced.label, systemImage: SettingsTab.advanced.icon) }
-                .tag(SettingsTab.advanced)
+                dataTab
+                    .tabItem { Label(SettingsTab.data.label, systemImage: SettingsTab.data.icon) }
+                    .tag(SettingsTab.data)
+
+                advancedTab
+                    .tabItem { Label(SettingsTab.advanced.label, systemImage: SettingsTab.advanced.icon) }
+                    .tag(SettingsTab.advanced)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
         .alert("Reset Onboarding", isPresented: $showResetOnboardingAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Reset", role: .destructive) {
@@ -201,6 +212,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
     }
 
     // MARK: - Shortcuts tab
@@ -319,6 +331,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
     }
 
     // MARK: - Recording tab — feedback + interface
@@ -391,6 +404,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
     }
 
     // MARK: - Power Mode tab
@@ -402,6 +416,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
     }
 
     // MARK: - Data tab — Privacy + Backup
@@ -461,6 +476,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
     }
 
     // MARK: - Advanced tab — Experimental + Diagnostics
@@ -477,6 +493,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
     }
 
     @ViewBuilder
