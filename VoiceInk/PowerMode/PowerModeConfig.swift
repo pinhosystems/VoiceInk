@@ -52,6 +52,14 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     var removeFillerWordsOverride: Bool? = nil
     var appendTrailingSpaceOverride: Bool? = nil
 
+    // Section-level customization flags. When false, the entire transcription
+    // (resp. LLM) section is treated as "use system defaults" — the Power Mode
+    // session leaves the corresponding UserDefaults / service state untouched
+    // when it activates. Defaults to true to preserve legacy behavior for any
+    // config saved before this field existed.
+    var customizeTranscription: Bool = true
+    var customizeLLM: Bool = true
+
     enum CodingKeys: String, CodingKey {
         // `removePunctuation` is kept as a legacy key so older exports decode
         // cleanly — the init(from:) below tries `punctuationCleanupMode` first
@@ -62,6 +70,7 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         case selectedWhisperModel
         case selectedTranscriptionModelName
         case llmOutputLanguageOverride, localeNormalizationEnabledOverride, whisperPromptDomainOverride, removeFillerWordsOverride, appendTrailingSpaceOverride
+        case customizeTranscription, customizeLLM
     }
 
     init(id: UUID = UUID(), name: String, emoji: String, appConfigs: [AppConfig]? = nil,
@@ -128,6 +137,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         whisperPromptDomainOverride = try container.decodeIfPresent(String.self, forKey: .whisperPromptDomainOverride)
         removeFillerWordsOverride = try container.decodeIfPresent(Bool.self, forKey: .removeFillerWordsOverride)
         appendTrailingSpaceOverride = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpaceOverride)
+        customizeTranscription = try container.decodeIfPresent(Bool.self, forKey: .customizeTranscription) ?? true
+        customizeLLM = try container.decodeIfPresent(Bool.self, forKey: .customizeLLM) ?? true
 
         if let newModelName = try container.decodeIfPresent(String.self, forKey: .selectedTranscriptionModelName) {
             selectedTranscriptionModelName = newModelName
@@ -165,6 +176,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         try container.encodeIfPresent(whisperPromptDomainOverride, forKey: .whisperPromptDomainOverride)
         try container.encodeIfPresent(removeFillerWordsOverride, forKey: .removeFillerWordsOverride)
         try container.encodeIfPresent(appendTrailingSpaceOverride, forKey: .appendTrailingSpaceOverride)
+        try container.encode(customizeTranscription, forKey: .customizeTranscription)
+        try container.encode(customizeLLM, forKey: .customizeLLM)
     }
     
     

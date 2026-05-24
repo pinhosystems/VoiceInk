@@ -141,37 +141,44 @@ class PowerModeSessionManager {
               let stateProvider = stateProvider else { return }
 
         await MainActor.run {
-            enhancementService.isEnhancementEnabled = config.isAIEnhancementEnabled
-            enhancementService.useScreenCaptureContext = config.useScreenCapture
+            // LLM section: gated by `customizeLLM`. When false, every
+            // LLM-related field (enhancement toggle, prompt, provider, model)
+            // is left at whatever the global state was when the session
+            // started, so the Power Mode acts as a transcription-only profile.
+            if config.customizeLLM {
+                enhancementService.isEnhancementEnabled = config.isAIEnhancementEnabled
 
-            if config.isAIEnhancementEnabled {
-                if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
-                    // Guard against orphan references: Power Mode
-                    // configs persisted before recent dedup /
-                    // template-promotion migrations may point at a
-                    // CustomPrompt that no longer exists. Setting the
-                    // invalid UUID would make activePrompt resolve to
-                    // nil — silently — and the history row's prompt
-                    // pill would render blank. Validate the lookup
-                    // and fall back to nil (Default) when the prompt
-                    // is gone, so getSystemMessage and enhance() both
-                    // route through the predefined Default.
-                    if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
-                        enhancementService.selectedPromptId = uuid
-                    } else {
-                        enhancementService.selectedPromptId = nil
+                if config.isAIEnhancementEnabled {
+                    if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
+                        // Guard against orphan references: Power Mode
+                        // configs persisted before recent dedup /
+                        // template-promotion migrations may point at a
+                        // CustomPrompt that no longer exists. Setting the
+                        // invalid UUID would make activePrompt resolve to
+                        // nil — silently — and the history row's prompt
+                        // pill would render blank. Validate the lookup
+                        // and fall back to nil (Default) when the prompt
+                        // is gone, so getSystemMessage and enhance() both
+                        // route through the predefined Default.
+                        if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
+                            enhancementService.selectedPromptId = uuid
+                        } else {
+                            enhancementService.selectedPromptId = nil
+                        }
                     }
-                }
 
-                if let aiService = enhancementService.getAIService() {
-                    if let providerName = config.selectedAIProvider, let provider = AIProvider(rawValue: providerName) {
-                        aiService.selectedProvider = provider
-                    }
-                    if let model = config.selectedAIModel {
-                        aiService.selectModel(model)
+                    if let aiService = enhancementService.getAIService() {
+                        if let providerName = config.selectedAIProvider, let provider = AIProvider(rawValue: providerName) {
+                            aiService.selectedProvider = provider
+                        }
+                        if let model = config.selectedAIModel {
+                            aiService.selectModel(model)
+                        }
                     }
                 }
             }
+
+            enhancementService.useScreenCaptureContext = config.useScreenCapture
 
             UserDefaults.standard.set(config.isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
             PunctuationCleanupMode.setCurrent(config.punctuationCleanupMode)
@@ -197,14 +204,19 @@ class PowerModeSessionManager {
             }
         }
 
-        if let modelName = config.selectedTranscriptionModelName,
-           let selectedModel = await stateProvider.allAvailableModels.first(where: { $0.name == modelName }),
-           stateProvider.currentTranscriptionModel?.name != modelName {
-            await handleModelChange(to: selectedModel)
-        }
+        // Transcription section: gated by `customizeTranscription`. When
+        // false, the model + language stay on whatever the user had set
+        // globally, so the Power Mode acts as an LLM-only profile.
+        if config.customizeTranscription {
+            if let modelName = config.selectedTranscriptionModelName,
+               let selectedModel = await stateProvider.allAvailableModels.first(where: { $0.name == modelName }),
+               stateProvider.currentTranscriptionModel?.name != modelName {
+                await handleModelChange(to: selectedModel)
+            }
 
-        if let language = config.selectedLanguage {
-            applyCompatibleLanguage(language, preferredModelName: config.selectedTranscriptionModelName)
+            if let language = config.selectedLanguage {
+                applyCompatibleLanguage(language, preferredModelName: config.selectedTranscriptionModelName)
+            }
         }
 
         await MainActor.run {
