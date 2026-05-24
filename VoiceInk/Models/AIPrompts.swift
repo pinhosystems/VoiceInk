@@ -29,28 +29,43 @@ enum AIPrompts {
         }
     }
 
-    /// Explicit audio-language hint. The default "Same language as
-    /// <TRANSCRIPT>" line tells the model to mirror what it sees, but
-    /// short utterances and code-switched audio routinely fool the
-    /// model into responding in English. Surfacing the *selected* STT
+    /// Explicit audio-language + output-language hint. The default "Same
+    /// language as <TRANSCRIPT>" line tells the model to mirror what it
+    /// sees, but short utterances and code-switched audio routinely fool
+    /// the model into responding in English. Surfacing the *selected* STT
     /// language lets the LLM ground its output on a concrete BCP-47 tag
     /// instead of guessing from the transcript alone.
     ///
-    /// Returns an empty string when the language is unknown, "auto", or
-    /// the empty value — leaving the prompt to fall back on the
-    /// "Same language" rule.
-    static func audioLanguageBlock(code: String?) -> String {
-        guard let raw = code?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty,
-              raw.lowercased() != "auto" else { return "" }
+    /// When `outputCode` differs from `sttCode` (the user picked a separate
+    /// LLM output language), the block flips to a translate-mode directive
+    /// telling the LLM the audio was in `sttCode` but the final response
+    /// must be in `outputCode`.
+    ///
+    /// Returns an empty string when the STT language is unknown, "auto", or
+    /// the empty value — leaving the prompt to fall back on the "Same
+    /// language" rule.
+    static func audioLanguageBlock(sttCode: String?, outputCode: String? = nil) -> String {
+        guard let rawSTT = sttCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawSTT.isEmpty,
+              rawSTT.lowercased() != "auto" else { return "" }
 
-        let localizedName = Locale(identifier: "en")
-            .localizedString(forIdentifier: raw)
-            ?? raw
+        let sttName = Locale(identifier: "en").localizedString(forIdentifier: rawSTT) ?? rawSTT
+        let rawOutput = outputCode?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isDifferent = rawOutput.map { !$0.isEmpty && $0.lowercased() != rawSTT.lowercased() } ?? false
+
+        if isDifferent, let target = rawOutput {
+            let outputName = Locale(identifier: "en").localizedString(forIdentifier: target) ?? target
+            return """
+            <AUDIO_LANGUAGE>
+            User is speaking in \(sttName) (\(rawSTT)). Translate and respond in \(outputName) (\(target)). The final output MUST be in \(outputName) regardless of what language the <TRANSCRIPT> is written in.
+            </AUDIO_LANGUAGE>
+
+            """
+        }
 
         return """
         <AUDIO_LANGUAGE>
-        User is speaking in \(localizedName) (\(raw)). Output MUST be in the same language unless the USER_RULES below explicitly require another. Do not translate. Do not switch to English.
+        User is speaking in \(sttName) (\(rawSTT)). Output MUST be in the same language unless the USER_RULES below explicitly require another. Do not translate. Do not switch to English.
         </AUDIO_LANGUAGE>
 
         """

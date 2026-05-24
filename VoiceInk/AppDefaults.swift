@@ -74,6 +74,14 @@ enum AppDefaults {
             // shipping enabled.
             "LocaleNormalizationEnabled": true,
 
+            // LLM output language. `match` keeps the legacy behavior — the
+            // LLM enhancement responds in the same language the audio was
+            // transcribed in. Any BCP-47 value here decouples the output
+            // language from the STT language and turns enhancement into a
+            // translate-and-clean step (e.g. dictate in pt-BR, get an
+            // English email out).
+            "LLMOutputLanguage": "match",
+
             // Model
             "PrewarmModelOnWake": true,
 

@@ -274,8 +274,17 @@ class AIEnhancementService: ObservableObject {
         // transcript whether it should respond in English or
         // Portuguese.
         let selectedLanguageCode = UserDefaults.standard.string(forKey: "SelectedLanguage")
-        let languageBlock = AIPrompts.audioLanguageBlock(code: selectedLanguageCode)
-        let activePack = LocalePackRegistry.pack(for: selectedLanguageCode)
+        // The STT pack stays tied to the STT language for Whisper seeds,
+        // vocabulary biasing, and filler removal. The LLM-side pack — which
+        // drives the <LOCALE_RULES> block — follows the override below, so
+        // a user transcribing pt-BR audio can ask for the LLM response in
+        // English without touching the STT picker.
+        let outputLanguageCode = LocalePackRegistry.outputLanguageCode(sttCode: selectedLanguageCode)
+        let languageBlock = AIPrompts.audioLanguageBlock(
+            sttCode: selectedLanguageCode,
+            outputCode: outputLanguageCode
+        )
+        let activePack = LocalePackRegistry.pack(for: outputLanguageCode)
 
         // Per-locale tech-term salvage table. Non-English speakers
         // routinely mix English dev jargon into their dictation

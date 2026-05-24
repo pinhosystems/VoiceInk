@@ -22,6 +22,25 @@ enum LocalePackRegistry {
     static let normalizationEnabledKey = "LocaleNormalizationEnabled"
     static let legacyNormalizationEnabledKey = "BrazilianNormalizationEnabled"
 
+    /// UserDefaults key for the LLM-side output-language override.
+    /// Sentinel `"match"` (default) routes the LLM through the same pack as
+    /// the STT language. Any BCP-47 value here decouples the LLM output
+    /// language from the STT input — see `outputLanguageCode(sttCode:)`.
+    static let outputLanguageKey = "LLMOutputLanguage"
+    static let outputLanguageMatchSentinel = "match"
+
+    /// Effective LLM output language. Returns the STT code when the user has
+    /// left the override on `match` (the default); otherwise returns the
+    /// explicitly chosen BCP-47 code.
+    static func outputLanguageCode(sttCode: String?) -> String? {
+        let raw = (UserDefaults.standard.string(forKey: outputLanguageKey) ?? outputLanguageMatchSentinel)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty || raw.lowercased() == outputLanguageMatchSentinel {
+            return sttCode
+        }
+        return raw
+    }
+
     /// Curated packs ship with the binary. Order does not matter — lookup
     /// matches by `bcp47` first, then `primarySubtag`.
     private static let curated: [LocalePack] = [
