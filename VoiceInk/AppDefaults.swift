@@ -70,6 +70,11 @@ enum AppDefaults {
 
             // UI & Behavior
             "IsMenuBarOnly": false,
+            // Power Mode is now a permanent, always-on feature. The flag
+            // stays in the registered defaults purely so legacy paths that
+            // still read it (logs, exported diagnostics) see `true`. The UI
+            // no longer exposes a way to disable it.
+            "powerModeUIFlag": true,
             "powerModePersistConfig": false,
             // Hotkey
             "isMiddleClickToggleEnabled": false,
@@ -104,6 +109,16 @@ enum AppDefaults {
         migrateLegacyNormalizationKeyIfNeeded()
         PunctuationCleanupMode.migrateLegacyUserDefaultIfNeeded()
         markDefaultAppLanguageConfirmedForExistingInstalls()
+        forcePowerModeAlwaysOn()
+    }
+
+    /// Power Mode is no longer toggleable; flip the legacy flag so every
+    /// runtime read returns true regardless of what the user had before.
+    /// Idempotent — once true, the call is a no-op.
+    private static func forcePowerModeAlwaysOn() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: "powerModeUIFlag") else { return }
+        defaults.set(true, forKey: "powerModeUIFlag")
     }
 
     /// Users who completed onboarding before the language-confirm gate

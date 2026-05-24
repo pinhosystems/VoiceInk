@@ -96,31 +96,24 @@ struct ContentView: View {
     @EnvironmentObject private var whisperModelManager: WhisperModelManager
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject private var hotkeyManager: HotkeyManager
-    @AppStorage("powerModeUIFlag") private var powerModeUIFlag = false
     @State private var selectedView: ViewType? = .metrics
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     @StateObject private var licenseViewModel = LicenseViewModel()
 
     /// Returns sections with hidden items pruned out. Sections that end
-    /// up empty are dropped so we don't render orphan headers. Power Mode
-    /// is kept as a disabled discovery entry when its UI flag is off —
-    /// the click navigates to Settings instead of opening the disabled
-    /// view, see `body`.
+    /// up empty are dropped so we don't render orphan headers.
     private var visibleSections: [SidebarSection] {
         SidebarSection.allSections.compactMap { section in
-            // Every item stays visible — the disabled-entry rendering for
-            // Power Mode is handled in the row builder.
             let filtered = section.items
             guard !filtered.isEmpty else { return nil }
             return SidebarSection(id: section.id, title: section.title, items: filtered)
         }
     }
 
-    /// True when this view type is currently routable. Power Mode is the
-    /// only conditional case today — disabled until the feature flag is
-    /// turned on in Settings.
+    /// Every sidebar destination is routable. Power Mode used to gate on
+    /// the legacy `powerModeUIFlag`; the feature is now always-on so the
+    /// check is gone.
     private func isRoutable(_ viewType: ViewType) -> Bool {
-        if viewType == .powerMode { return powerModeUIFlag }
         return true
     }
 

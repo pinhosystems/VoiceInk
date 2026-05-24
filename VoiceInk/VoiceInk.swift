@@ -43,10 +43,9 @@ struct VoiceInkApp: App {
 
         AppDefaults.registerDefaults()
 
-        if UserDefaults.standard.object(forKey: "powerModeUIFlag") == nil {
-            let hasEnabledPowerModes = PowerModeManager.shared.configurations.contains { $0.isEnabled }
-            UserDefaults.standard.set(hasEnabledPowerModes, forKey: "powerModeUIFlag")
-        }
+        // Power Mode is always-on; the bootstrap migration that used to
+        // gate the flag on "has any enabled config" is obsolete now.
+        // AppDefaults.registerDefaults guarantees the flag reads true.
 
         let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "Initialization")
         // Keep existing model order stable; append new models after synced entities.
