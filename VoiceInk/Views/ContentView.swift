@@ -130,6 +130,37 @@ struct ContentView: View {
         return true
     }
 
+    /// Bottom-anchored About entry. Sits inside `safeAreaInset(edge:.bottom)`
+    /// so it floats below the List instead of competing with the section
+    /// rows. Renders as a small, secondary-color label with the SF symbol
+    /// shrunk down — explicitly subordinate to the Setup section above.
+    @ViewBuilder
+    private var aboutFooter: some View {
+        let target = SidebarSection.footerItem
+        Button {
+            selectedView = target
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: target.icon)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Text(target.rawValue)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(appVersion)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary.opacity(0.65))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(Divider().opacity(0.5), alignment: .top)
+        .background(Color.clear)
+    }
+
     /// Renders a single sidebar row. Extracted so the Setup section's
     /// DisclosureGroup and the regular sections can share identical row
     /// styling without duplicating the navigation glue.
@@ -181,16 +212,16 @@ struct ContentView: View {
                         }
                     }
                 }
-
-                // Footer: About sits at the bottom, visually detached from
-                // the configuration sections. Single read-only screen with
-                // version + credits — does not deserve a section slot.
-                Section {
-                    sidebarRow(for: SidebarSection.footerItem)
-                        .opacity(0.85)
-                }
             }
             .listStyle(.sidebar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // About is anchored to the sidebar floor via safeAreaInset
+                // so it never competes for attention with the active
+                // sections. Smaller font, secondary color, no section
+                // header, no list-row chrome — visually clearly subordinate
+                // to Setup right above it.
+                aboutFooter
+            }
             .navigationTitle("Open Voice")
             .navigationSplitViewColumnWidth(210)
         } detail: {
