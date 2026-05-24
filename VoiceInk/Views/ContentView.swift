@@ -69,8 +69,9 @@ struct SidebarSection: Identifiable {
         SidebarSection(
             id: "setup",
             title: "Setup",
-            // One-time / rarely-touched. Rendered collapsible in the
-            // sidebar so it does not compete with daily-use entries.
+            // One-time / rarely-touched entries. Rendered as a regular
+            // sidebar section (always expanded) so the user can reach
+            // permissions and settings without an extra click.
             items: [.permissions, .settings]
         ),
     ]
@@ -108,7 +109,6 @@ struct ContentView: View {
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject private var hotkeyManager: HotkeyManager
     @State private var selectedView: ViewType? = .metrics
-    @AppStorage("sidebarSetupSectionExpanded") private var isSetupSectionExpanded = false
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     @StateObject private var licenseViewModel = LicenseViewModel()
 
@@ -175,29 +175,9 @@ struct ContentView: View {
                 }
 
                 ForEach(visibleSections) { section in
-                    if section.id == "setup" {
-                        // Setup section collapses by default — entries here
-                        // are one-time setup actions (permissions, app
-                        // preferences). DisclosureGroup keeps them
-                        // discoverable without consuming vertical real
-                        // estate above Daily / Configure.
-                        Section {
-                            DisclosureGroup(isExpanded: $isSetupSectionExpanded) {
-                                ForEach(section.items) { viewType in
-                                    sidebarRow(for: viewType)
-                                }
-                            } label: {
-                                Text(section.title)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .textCase(nil)
-                            }
-                        }
-                    } else {
-                        Section(section.title) {
-                            ForEach(section.items) { viewType in
-                                sidebarRow(for: viewType)
-                            }
+                    Section(section.title) {
+                        ForEach(section.items) { viewType in
+                            sidebarRow(for: viewType)
                         }
                     }
                 }
