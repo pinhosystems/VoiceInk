@@ -208,7 +208,8 @@ struct ConfigurationView: View {
                                 AppPickerPopover(
                                     installedApps: filteredApps,
                                     selectedAppConfigs: $selectedAppConfigs,
-                                    searchText: $searchText
+                                    searchText: $searchText,
+                                    currentConfigId: powerModeConfigId
                                 )
                             }
                         }
