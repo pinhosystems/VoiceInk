@@ -8,6 +8,11 @@ import Foundation
 /// pt-PT). Region-specific packs are a future extension — see Section 7.5 of
 /// `docs/MULTILINGUAL_PLAN.md`.
 protocol LocalePack {
+    /// Full BCP-47 tag this pack targets exactly (e.g. "pt-BR"). When set, the
+    /// registry matches it before falling back to `primarySubtag`. nil for
+    /// packs that cover an entire primary subtag.
+    var bcp47: String? { get }
+
     /// BCP-47 primary subtag this pack matches (e.g. "pt", "es"). Lowercase.
     var primarySubtag: String { get }
 
@@ -44,6 +49,17 @@ protocol LocalePack {
     /// punctuation for this locale. Generic packs ship a single sentence;
     /// curated packs ship the full conventions block.
     var aiPromptFormatRules: String { get }
+
+    /// Escape hatch for transforms that regex+template substitution cannot
+    /// express (per-match validation, arithmetic, multi-pass logic). Runs in
+    /// `LocaleNormalizer.apply` AFTER `normalizerRules`. nil for packs that
+    /// have no custom logic.
+    var customNormalize: ((String) -> String)? { get }
+}
+
+extension LocalePack {
+    var bcp47: String? { nil }
+    var customNormalize: ((String) -> String)? { nil }
 }
 
 /// A single regex-based normalization step contributed by a `LocalePack`. The

@@ -83,13 +83,24 @@ Components that are **already generic** and need no work:
 
 ```
 VoiceInk/Locale/
-├── LocalePack.swift              # Protocol + NormalizerRule struct
-├── LocalePackRegistry.swift      # Lookup with curated → generic → nil fallback chain
-├── LocaleNormalizer.swift        # Applies NormalizerRule[] to a String
+├── LocalePack.swift                  # Protocol + NormalizerRule struct
+├── LocalePackRegistry.swift          # BCP-47 → primary-subtag → generic → nil chain
+├── LocaleNormalizer.swift            # Applies NormalizerRule[] + customNormalize hook
 └── Packs/
-    ├── GenericLocalePack.swift   # Fallback for any non-EN locale without a curated pack
-    └── PortuguesePack.swift      # All content from the four Brazilian* files
+    ├── GenericLocalePack.swift       # Fallback for any non-EN locale without curated content
+    ├── PortuguesePack.swift          # Generic pt fallback (pt, pt-PT, pt-AO, pt-MZ, ...) — output-only
+    └── BrazilianPortuguesePack.swift # Curated pt-BR — full content from the four Brazilian* files
 ```
+
+Pack split rationale (2026-05-24): `pt-BR` and `pt-PT`/PALOP diverge in
+lexicon (ônibus/autocarro, geladeira/frigorífico, R$/€), grammar (você
+vs tu, proclitic vs enclitic pronouns), and phonetics (BR atonal vowels
+preserved, EU reduced). Curated pt-BR content (BR taxes, BR civic
+identifiers, BR banks, BR chat slang, BR fillers like "né"/"tipo") is
+not safe to serve to non-BR pt users. The generic `PortuguesePack`
+covers everything else under primary subtag `"pt"` with a conservative
+output-only block; specific pt-PT/pt-AO/pt-MZ curated packs ship later
+if a contributor needs them.
 
 ### 3.2 Files (deleted after Phase 7)
 
@@ -108,6 +119,7 @@ branch.)
 
 ```swift
 protocol LocalePack {
+    var bcp47: String? { get }                              // "pt-BR" — nil for primary-subtag-only packs
     var primarySubtag: String { get }                       // "pt", "es"
     var displayName: String { get }                         // "Brazilian Portuguese"
 
@@ -117,6 +129,12 @@ protocol LocalePack {
     var fillerWords: [String] { get }
     var whisperPromptSeeds: [String: String] { get }        // domain (e.g. "default", "technical") → seed copy
     var aiPromptFormatRules: String { get }                 // becomes the <LOCALE_RULES> block content
+    var customNormalize: ((String) -> String)? { get }      // escape hatch — runs AFTER normalizerRules
+}
+
+extension LocalePack {
+    var bcp47: String? { nil }
+    var customNormalize: ((String) -> String)? { nil }
 }
 
 struct NormalizerRule {
@@ -126,21 +144,38 @@ struct NormalizerRule {
 }
 ```
 
+**Why `customNormalize`?** `NormalizerRule` is pure regex→template
+substitution. Some curated transforms require per-match logic that
+regex templates cannot express: CPF/CNPJ digit-count validation,
+Portuguese number-word arithmetic ("duas horas e meia" → "2h30",
+"cinquenta por cento" → "50%"), thousands-separator insertion. Rather
+than complicate the rule type, packs expose an optional
+`customNormalize` closure that `LocaleNormalizer.apply(_:rules:pack:)`
+runs after the rules pass. The legacy `BrazilianTextNormalizer.normalize`
+function plugs straight in until Phase 7 inlines it into the pack.
+
 ### 3.4 Registry contract
 
 ```swift
 enum LocalePackRegistry {
     /// Curated packs ship with the binary. Append a new pack here
-    /// after creating the file under Locale/Packs.
-    private static let curated: [LocalePack] = [PortuguesePack()]
+    /// after creating the file under Locale/Packs. Order does not
+    /// matter — lookup matches by `bcp47` then `primarySubtag`.
+    private static let curated: [LocalePack] = [
+        BrazilianPortuguesePack(),
+        PortuguesePack()
+    ]
 
-    /// Resolves a BCP-47 code (e.g. "pt-BR", "es-MX") through three
-    /// tiers:
-    ///   1. Curated pack whose `primarySubtag` matches the input's
-    ///      primary subtag.
-    ///   2. `GenericLocalePack` synthesized from the primary subtag
+    /// Resolves a BCP-47 code (e.g. "pt-BR", "es-MX") through four
+    /// tiers, in order:
+    ///   1. Curated pack whose `bcp47` matches the full input
+    ///      (case-insensitive). "pt-BR" → `BrazilianPortuguesePack`.
+    ///   2. Curated pack whose `primarySubtag` matches the input's
+    ///      primary subtag. "pt-PT", "pt-AO", plain "pt", etc. →
+    ///      `PortuguesePack`.
+    ///   3. `GenericLocalePack` synthesized from the primary subtag
     ///      for any non-English locale without curated content.
-    ///   3. nil for English (en, en-*), "auto", and empty values.
+    ///   4. nil for English (en, en-*), "auto", and empty values.
     static func pack(for languageCode: String?) -> LocalePack?
 }
 ```
@@ -162,23 +197,52 @@ reverted in isolation.
   imports it yet.
 - Build + `make install-local`. App behavior unchanged.
 
-### Phase 2 — `PortuguesePack` extraction
+### Phase 2 — `BrazilianPortuguesePack` (pt-BR) + generic `PortuguesePack` (pt)
 
-- New file: `VoiceInk/Locale/Packs/PortuguesePack.swift` containing
-  every BR content list previously in:
-    - `BrazilianTextNormalizer.swift` (regex → `normalizerRules`)
-    - `BrazilianWordReplacements.swift` → `wordReplacements`
-    - `BrazilianVocabularyTemplate.swift` → `vocabularyTerms`
-    - `FillerWordManager.brazilianPortugueseFillerWords` →
-      `fillerWords`
-    - `WhisperPrompt`'s BR seed copy → `whisperPromptSeeds`
-    - The pt-BR / pt-PT lines inside `AIPrompts.localeRulesBlock`
-      → `aiPromptFormatRules`
-- Source code is reproduced verbatim — same regex, same lists,
-  same seed strings. Tests of `BrazilianTextNormalizer` (if any)
-  still pass.
-- The legacy `Brazilian*` files are **not deleted yet** — they
-  stay so the consumers that still reference them keep working.
+Two packs ship in this phase. Both extract content from existing files;
+nothing is rewritten.
+
+- New file:
+  `VoiceInk/Locale/Packs/BrazilianPortuguesePack.swift`
+  — Curated, region-specific pt-BR.
+    - `bcp47 = "pt-BR"`, `primarySubtag = "pt"`,
+      `displayName = "Brazilian Portuguese"`.
+    - `customNormalize` delegates verbatim to
+      `BrazilianTextNormalizer.normalize(_:)` — preserves the existing
+      CPF/CNPJ/CEP/phone/hour/percent/decimal/currency logic without
+      duplication. The function body is moved into the pack in Phase 7.
+    - `normalizerRules`: empty for now (every BR rule today needs
+      per-match transforms; they live in `customNormalize`).
+    - `wordReplacements` ← `BrazilianWordReplacements.canonicalReplacements`.
+    - `vocabularyTerms` ← `BrazilianVocabularyTemplate.canonicalWords`.
+    - `fillerWords` ← `FillerWordManager.brazilianPortugueseFillerWords`.
+    - `whisperPromptSeeds` ← the "pt" entry in `WhisperPrompt.languagePrompts`
+      under key `"default"`, plus every entry from
+      `WhisperPrompt.brazilianDomainSeeds` keyed by domain raw value.
+    - `aiPromptFormatRules`: the "pt-BR" line copied verbatim from
+      `AIPrompts.localeRulesBlock`.
+- New file:
+  `VoiceInk/Locale/Packs/PortuguesePack.swift`
+  — Conservative, output-only generic pt.
+    - `bcp47 = nil`, `primarySubtag = "pt"`,
+      `displayName = "Portuguese"`.
+    - `normalizerRules`, `wordReplacements`, `vocabularyTerms`,
+      `fillerWords`: empty. None of the BR-curated content is safe to
+      serve to pt-PT / pt-AO / pt-MZ users by default.
+    - `customNormalize = nil`.
+    - `whisperPromptSeeds["default"]`: short pan-Lusophone seed —
+      "Olá, como está? Hoje vamos rever a próxima fase do projeto." —
+      neutral lexicon, no R$/dd-mm-aaaa anchors.
+    - `aiPromptFormatRules`: the "pt-PT" line copied verbatim from
+      `AIPrompts.localeRulesBlock`, plus a fallback sentence covering
+      other pt variants ("Other pt-* variants follow European Portuguese
+      conventions unless otherwise indicated.").
+
+- Source content is reproduced verbatim — same regex (via delegation),
+  same lists, same seed strings. No behavior change yet because no
+  consumer reads the packs.
+- The legacy `Brazilian*` files are **not deleted yet** — they stay so
+  consumers that still reference them keep working.
 
 ### Phase 3 — `GenericLocalePack` + `LocalePackRegistry`
 
@@ -291,7 +355,8 @@ After Phase 7 ships, contributing a curated pack is mechanical.
 
 | Subtag | Pack name | Status | Source path |
 |---|---|---|---|
-| pt | `PortuguesePack` | Curated (BR-flavored; covers pt-PT via primary-subtag match) | `VoiceInk/Locale/Packs/PortuguesePack.swift` |
+| pt-BR | `BrazilianPortuguesePack` | Curated, region-specific. Full content (BR civic identifiers, BR taxes, BR banks, BR fillers, BR chat slang, pt-BR LLM rules). | `VoiceInk/Locale/Packs/BrazilianPortuguesePack.swift` |
+| pt | `PortuguesePack` | Generic pt fallback (output-only). Covers pt-PT, pt-AO, pt-MZ, plain "pt". | `VoiceInk/Locale/Packs/PortuguesePack.swift` |
 | es | — | Generic fallback only. Curate when patterns observed. | — |
 | fr | — | Generic fallback only. | — |
 | de | — | Generic fallback only. | — |
@@ -403,11 +468,18 @@ contributor wants** (most flexible). Default recommendation:
 input-only is acceptable; output-only is degenerate (LLM has no
 input to fix); both is the gold standard.
 
-**Resolved 2026-05-23 (pre-Phase-2/5):**
-- **Curated packs MUST provide both** input normalization rules
-  and output `aiPromptFormatRules`. Reviewer rejects curated-pack
-  PRs missing either side. This keeps the gold standard the only
-  shipped depth for curated content.
+**Resolved 2026-05-23 (pre-Phase-2/5), amended 2026-05-24:**
+- **Region-specific curated packs (with `bcp47` set) MUST provide
+  both** input normalization (`normalizerRules` and/or
+  `customNormalize`) AND `aiPromptFormatRules`. Reviewer rejects PRs
+  missing either side. Example: `BrazilianPortuguesePack`
+  (`bcp47 = "pt-BR"`) ships both.
+- **Primary-subtag-only curated packs (with `bcp47 = nil`) MAY ship
+  output-only** when the scope is too broad for safe input rules.
+  Example: `PortuguesePack` (`primarySubtag = "pt"`, `bcp47 = nil`)
+  covers pt-PT/pt-AO/pt-MZ/plain-pt with conservative output-only
+  content; no input rules ship because BR-specific transforms
+  would mislead non-BR users.
 - **`GenericLocalePack` ships output-only** — empty
   `normalizerRules` + `wordReplacements` + `vocabularyTerms` +
   `fillerWords`, with a single-sentence `aiPromptFormatRules`
@@ -439,6 +511,23 @@ between a user who picked plain `"pt"` in some flow and the
 refactor must keep `LocalePackRegistry.pack(for:)` matching on
 primary subtag so this fallback stays compatible; region-aware
 matching is a future extension that this path will not block.
+
+**Revisited 2026-05-24:** Decision pulled forward. Two packs ship in
+Phase 2: `BrazilianPortuguesePack` (`bcp47 = "pt-BR"`, all curated BR
+content) and `PortuguesePack` (`bcp47 = nil`, `primarySubtag = "pt"`,
+conservative output-only). `LocalePackRegistry.pack(for:)` matches on
+`bcp47` first, then `primarySubtag`, so the same primary-subtag default
+described above keeps working — only routing changes:
+
+| Input | Resolves to |
+|---|---|
+| `"pt-BR"` | `BrazilianPortuguesePack` (exact `bcp47` match) |
+| `"pt"` (bare, from Whisper detection) | `PortuguesePack` (primary subtag) |
+| `"pt-PT"`, `"pt-AO"`, `"pt-MZ"` | `PortuguesePack` (primary subtag fallback) |
+
+Future PALOP-specific packs (e.g. `PortuguesePackAngolan` with
+`bcp47 = "pt-AO"`) drop in via the same `bcp47`-first lookup —
+zero code change in the registry, just append the pack instance.
 
 ### 7.6 Power Mode preset prompts and locale
 
@@ -489,6 +578,7 @@ NEW in Phases 1-3:
   VoiceInk/Locale/LocalePack.swift
   VoiceInk/Locale/LocaleNormalizer.swift
   VoiceInk/Locale/LocalePackRegistry.swift
+  VoiceInk/Locale/Packs/BrazilianPortuguesePack.swift
   VoiceInk/Locale/Packs/PortuguesePack.swift
   VoiceInk/Locale/Packs/GenericLocalePack.swift
 
