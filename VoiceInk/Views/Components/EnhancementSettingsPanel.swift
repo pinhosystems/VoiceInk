@@ -6,10 +6,41 @@ struct EnhancementSettingsPanel: View {
     @AppStorage("ShortEnhancementWordThreshold") private var shortEnhancementWordThreshold = 3
     @AppStorage("EnhancementTimeoutSeconds") private var enhancementTimeoutSeconds = 7
     @AppStorage("EnhancementRetryOnTimeout") private var retryOnTimeout = true
+    @AppStorage("SelectedLanguage") private var selectedLanguage = "en"
+    @AppStorage(LocalePackRegistry.normalizationEnabledKey) private var localeNormalizationEnabled = true
+    @AppStorage(LocalePackRegistry.outputLanguageKey)
+    private var llmOutputLanguage = LocalePackRegistry.outputLanguageMatchSentinel
     @State private var isShortEnhancementExpanded = false
     @State private var isHandlingToggleChange = false
 
     var onDismiss: () -> Void
+
+    /// Picker entries for the LLM output-language override. The sentinel
+    /// `"match"` keeps legacy behavior; the rest are explicit BCP-47 codes
+    /// for the languages we most often translate into. Adding more options
+    /// is a one-line edit.
+    private static let outputLanguageOptions: [(code: String, label: String)] = [
+        (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription (default)"),
+        ("en", "English"),
+        ("pt-BR", "Portuguese (Brazil)"),
+        ("pt-PT", "Portuguese (Portugal)"),
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("zh", "Chinese")
+    ]
+
+    private var sttPack: LocalePack? {
+        LocalePackRegistry.pack(for: selectedLanguage)
+    }
+
+    private var hasNormalizationContent: Bool {
+        guard let pack = sttPack else { return false }
+        return !pack.normalizerRules.isEmpty || pack.customNormalize != nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -145,6 +176,47 @@ struct EnhancementSettingsPanel: View {
                     HStack(spacing: 4) {
                         Text("Request Timeout")
                         InfoTip("Set how long to wait for the AI provider to respond. If no response is received within this duration, you can either fail immediately and paste the original transcription, or retry the request (up to 3 attempts).")
+                    }
+                }
+
+                Section {
+                    Picker(selection: $llmOutputLanguage) {
+                        ForEach(Self.outputLanguageOptions, id: \.code) { option in
+                            Text(option.label).tag(option.code)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("LLM output language")
+                            InfoTip("Forces the LLM enhancement step to respond in the chosen language regardless of what the transcription language is. \"Match transcription\" keeps the legacy behavior — same language in and out. Pick any other value to translate (e.g. dictate in Portuguese, get an English email).")
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Text("Decoupled from the transcription provider. Picking any value other than \"Match transcription\" turns the LLM step into a translate-and-clean pass.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    let normLabel = sttPack.map { "\($0.displayName) normalization" } ?? "Locale text normalization"
+                    Toggle(isOn: $localeNormalizationEnabled) {
+                        HStack(spacing: 4) {
+                            Text(normLabel)
+                            InfoTip(hasNormalizationContent
+                                    ? "Post-transcription text formatting: numbers, dates, currency, and identifiers (CPF, CNPJ, CEP, R$, 14h30) are reshaped before the LLM sees the text. Does NOT change the transcription language — pick that under AI Models."
+                                    : "The selected transcription language has no curated input transforms. This toggle is inert until a pack ships them.")
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!hasNormalizationContent)
+
+                    Text(hasNormalizationContent
+                         ? "Post-transcription text formatting. Does not change the transcription language."
+                         : "No curated formatting rules ship for the current transcription language.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } header: {
+                    HStack(spacing: 4) {
+                        Text("Locale")
+                        InfoTip("LLM output language picks the response language. The normalization toggle applies locale-specific text shaping (e.g. CPF/R$/dd-mm-aaaa for pt-BR) BEFORE the LLM sees the transcript.")
                     }
                 }
 
