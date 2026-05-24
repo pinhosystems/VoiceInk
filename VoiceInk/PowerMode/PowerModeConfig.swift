@@ -41,7 +41,17 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     var isEnabled: Bool = true
     var isDefault: Bool = false
     var hotkeyShortcut: String? = nil
-        
+
+    // Optional overrides — when nil, the Power Mode does not touch the
+    // corresponding system default; when set, the value is applied while
+    // the session is active and reverted on session end. Lets a profile
+    // declare "default" for any field by simply leaving the override unset.
+    var llmOutputLanguageOverride: String? = nil
+    var localeNormalizationEnabledOverride: Bool? = nil
+    var whisperPromptDomainOverride: String? = nil
+    var removeFillerWordsOverride: Bool? = nil
+    var appendTrailingSpaceOverride: Bool? = nil
+
     enum CodingKeys: String, CodingKey {
         // `removePunctuation` is kept as a legacy key so older exports decode
         // cleanly — the init(from:) below tries `punctuationCleanupMode` first
@@ -51,6 +61,7 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         case id, name, emoji, appConfigs, urlConfigs, isAIEnhancementEnabled, selectedPrompt, selectedLanguage, isTextFormattingEnabled, punctuationCleanupMode, removePunctuation, lowercaseTranscription, useScreenCapture, selectedAIProvider, selectedAIModel, isAutoSendEnabled, autoSendKey, isEnabled, isDefault, hotkeyShortcut
         case selectedWhisperModel
         case selectedTranscriptionModelName
+        case llmOutputLanguageOverride, localeNormalizationEnabledOverride, whisperPromptDomainOverride, removeFillerWordsOverride, appendTrailingSpaceOverride
     }
 
     init(id: UUID = UUID(), name: String, emoji: String, appConfigs: [AppConfig]? = nil,
@@ -112,6 +123,11 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         hotkeyShortcut = try container.decodeIfPresent(String.self, forKey: .hotkeyShortcut)
+        llmOutputLanguageOverride = try container.decodeIfPresent(String.self, forKey: .llmOutputLanguageOverride)
+        localeNormalizationEnabledOverride = try container.decodeIfPresent(Bool.self, forKey: .localeNormalizationEnabledOverride)
+        whisperPromptDomainOverride = try container.decodeIfPresent(String.self, forKey: .whisperPromptDomainOverride)
+        removeFillerWordsOverride = try container.decodeIfPresent(Bool.self, forKey: .removeFillerWordsOverride)
+        appendTrailingSpaceOverride = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpaceOverride)
 
         if let newModelName = try container.decodeIfPresent(String.self, forKey: .selectedTranscriptionModelName) {
             selectedTranscriptionModelName = newModelName
@@ -144,6 +160,11 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(isDefault, forKey: .isDefault)
         try container.encodeIfPresent(hotkeyShortcut, forKey: .hotkeyShortcut)
+        try container.encodeIfPresent(llmOutputLanguageOverride, forKey: .llmOutputLanguageOverride)
+        try container.encodeIfPresent(localeNormalizationEnabledOverride, forKey: .localeNormalizationEnabledOverride)
+        try container.encodeIfPresent(whisperPromptDomainOverride, forKey: .whisperPromptDomainOverride)
+        try container.encodeIfPresent(removeFillerWordsOverride, forKey: .removeFillerWordsOverride)
+        try container.encodeIfPresent(appendTrailingSpaceOverride, forKey: .appendTrailingSpaceOverride)
     }
     
     

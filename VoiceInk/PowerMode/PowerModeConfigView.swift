@@ -37,6 +37,31 @@ struct ConfigurationView: View {
     @State private var powerModeConfigId: UUID = UUID()
     @State private var isTranscriptFormattingExpanded = false
 
+    // Optional override state. Each picker exposes a "Default" entry that
+    // maps the override back to nil — meaning the Power Mode session won't
+    // touch the corresponding system default when it activates. Setting a
+    // concrete value writes through to UserDefaults at session start and
+    // gets reverted when the session ends.
+    @State private var llmOutputLanguageOverride: String?
+    @State private var localeNormalizationEnabledOverride: Bool?
+    @State private var whisperPromptDomainOverride: String?
+    @State private var removeFillerWordsOverride: Bool?
+    @State private var appendTrailingSpaceOverride: Bool?
+
+    private static let llmOutputLanguageOptions: [(code: String, label: String)] = [
+        (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription"),
+        ("en", "English"),
+        ("pt-BR", "Portuguese (Brazil)"),
+        ("pt-PT", "Portuguese (Portugal)"),
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("zh", "Chinese")
+    ]
+
     private var effectiveModelName: String? {
         selectedTranscriptionModelName ?? transcriptionModelManager.currentTranscriptionModel?.name
     }
@@ -115,6 +140,11 @@ struct ConfigurationView: View {
             _selectedAIProvider = State(initialValue: latestConfig.selectedAIProvider)
             _selectedAIModel = State(initialValue: latestConfig.selectedAIModel)
             _isTranscriptFormattingExpanded = State(initialValue: latestConfig.isTextFormattingEnabled || latestConfig.punctuationCleanupMode != .keep || latestConfig.lowercaseTranscription)
+            _llmOutputLanguageOverride = State(initialValue: latestConfig.llmOutputLanguageOverride)
+            _localeNormalizationEnabledOverride = State(initialValue: latestConfig.localeNormalizationEnabledOverride)
+            _whisperPromptDomainOverride = State(initialValue: latestConfig.whisperPromptDomainOverride)
+            _removeFillerWordsOverride = State(initialValue: latestConfig.removeFillerWordsOverride)
+            _appendTrailingSpaceOverride = State(initialValue: latestConfig.appendTrailingSpaceOverride)
         case .addFromPreset(let seed):
             // Pre-populated by a Power Mode preset. The caller already
             // cloned the prompt template and filtered apps to ones
@@ -137,6 +167,11 @@ struct ConfigurationView: View {
             _selectedAIProvider = State(initialValue: seed.selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider"))
             _selectedAIModel = State(initialValue: seed.selectedAIModel)
             _isTranscriptFormattingExpanded = State(initialValue: seed.isTextFormattingEnabled || seed.punctuationCleanupMode != .keep || seed.lowercaseTranscription)
+            _llmOutputLanguageOverride = State(initialValue: seed.llmOutputLanguageOverride)
+            _localeNormalizationEnabledOverride = State(initialValue: seed.localeNormalizationEnabledOverride)
+            _whisperPromptDomainOverride = State(initialValue: seed.whisperPromptDomainOverride)
+            _removeFillerWordsOverride = State(initialValue: seed.removeFillerWordsOverride)
+            _appendTrailingSpaceOverride = State(initialValue: seed.appendTrailingSpaceOverride)
         }
     }
 
@@ -519,6 +554,55 @@ struct ConfigurationView: View {
                     }
                 }
 
+                Section {
+                    Picker(selection: $llmOutputLanguageOverride) {
+                        Text("Default (use system setting)").tag(String?.none)
+                        ForEach(Self.llmOutputLanguageOptions, id: \.code) { option in
+                            Text(option.label).tag(option.code as String?)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("LLM output language")
+                            InfoTip("Per-Power-Mode override for the LLM enhancement output language. \"Default\" leaves the system setting (Enhancement → Locale) untouched while this Power Mode is active.")
+                        }
+                    }
+
+                    Picker(selection: $whisperPromptDomainOverride) {
+                        Text("Default (use system setting)").tag(String?.none)
+                        ForEach(WhisperPromptDomain.allCases) { domain in
+                            Text(domain.displayName).tag(domain.rawValue as String?)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Whisper prompt domain")
+                            InfoTip("Per-Power-Mode override for the Whisper prompt domain seed used to bias local STT decoding.")
+                        }
+                    }
+
+                    tristateRow(
+                        title: "Locale normalization",
+                        binding: $localeNormalizationEnabledOverride,
+                        info: "Per-Power-Mode override for locale-specific post-STT text formatting (CPF/CNPJ/R$ for pt-BR, etc.)."
+                    )
+
+                    tristateRow(
+                        title: "Remove filler words",
+                        binding: $removeFillerWordsOverride,
+                        info: "Per-Power-Mode override for filler-word removal (uh, um, né, tipo, ...)."
+                    )
+
+                    tristateRow(
+                        title: "Append trailing space",
+                        binding: $appendTrailingSpaceOverride,
+                        info: "Per-Power-Mode override for whether a single trailing space is appended after paste."
+                    )
+                } header: {
+                    HStack(spacing: 4) {
+                        Text("Overrides")
+                        InfoTip("Each picker defaults to leaving the corresponding system setting untouched. Choose a concrete value to apply it whenever this Power Mode activates; it reverts when the Power Mode ends.")
+                    }
+                }
+
                 Section("Advanced") {
                     Toggle(isOn: $isDefault) {
                         HStack(spacing: 6) {
@@ -646,13 +730,30 @@ struct ConfigurationView: View {
         newWebsiteURL = ""
     }
 
+    /// Three-state picker for an `Optional<Bool>` override: Default / On / Off.
+    /// "Default" maps to nil so the Power Mode session does not touch the
+    /// corresponding UserDefault when it activates.
+    @ViewBuilder
+    private func tristateRow(title: String, binding: Binding<Bool?>, info: String) -> some View {
+        Picker(selection: binding) {
+            Text("Default (use system setting)").tag(Bool?.none)
+            Text("On").tag(Bool?.some(true))
+            Text("Off").tag(Bool?.some(false))
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                InfoTip(info)
+            }
+        }
+    }
+
     private func getConfigForForm() -> PowerModeConfig {
         let shortcut = KeyboardShortcuts.getShortcut(for: .powerMode(id: powerModeConfigId))
         let hotkeyString = shortcut != nil ? "configured" : nil
 
         switch mode {
         case .add, .addFromPreset:
-            return PowerModeConfig(
+            var config = PowerModeConfig(
                 id: powerModeConfigId,
                 name: configName,
                 emoji: selectedEmoji,
@@ -672,6 +773,12 @@ struct ConfigurationView: View {
                 isDefault: isDefault,
                 hotkeyShortcut: hotkeyString
             )
+            config.llmOutputLanguageOverride = llmOutputLanguageOverride
+            config.localeNormalizationEnabledOverride = localeNormalizationEnabledOverride
+            config.whisperPromptDomainOverride = whisperPromptDomainOverride
+            config.removeFillerWordsOverride = removeFillerWordsOverride
+            config.appendTrailingSpaceOverride = appendTrailingSpaceOverride
+            return config
         case .edit(let config):
             var updatedConfig = config
             updatedConfig.name = configName
@@ -691,6 +798,11 @@ struct ConfigurationView: View {
             updatedConfig.selectedAIModel = selectedAIModel
             updatedConfig.isDefault = isDefault
             updatedConfig.hotkeyShortcut = hotkeyString
+            updatedConfig.llmOutputLanguageOverride = llmOutputLanguageOverride
+            updatedConfig.localeNormalizationEnabledOverride = localeNormalizationEnabledOverride
+            updatedConfig.whisperPromptDomainOverride = whisperPromptDomainOverride
+            updatedConfig.removeFillerWordsOverride = removeFillerWordsOverride
+            updatedConfig.appendTrailingSpaceOverride = appendTrailingSpaceOverride
             return updatedConfig
         }
     }

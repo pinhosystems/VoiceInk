@@ -13,6 +13,11 @@ struct ApplicationState: Codable {
     var punctuationCleanupMode: PunctuationCleanupMode?
     var removePunctuation: Bool?
     var lowercaseTranscription: Bool?
+    var llmOutputLanguage: String?
+    var localeNormalizationEnabled: Bool?
+    var whisperPromptDomain: String?
+    var removeFillerWords: Bool?
+    var appendTrailingSpace: Bool?
 }
 
 struct PowerModeSession: Codable {
@@ -60,7 +65,12 @@ class PowerModeSessionManager {
                 isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
                 punctuationCleanupMode: punctuationCleanupMode,
                 removePunctuation: punctuationCleanupMode == .removeAll,
-                lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription")
+                lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription"),
+                llmOutputLanguage: UserDefaults.standard.string(forKey: LocalePackRegistry.outputLanguageKey),
+                localeNormalizationEnabled: UserDefaults.standard.object(forKey: LocalePackRegistry.normalizationEnabledKey) as? Bool,
+                whisperPromptDomain: UserDefaults.standard.string(forKey: WhisperPrompt.domainKey),
+                removeFillerWords: UserDefaults.standard.object(forKey: "RemoveFillerWords") as? Bool,
+                appendTrailingSpace: UserDefaults.standard.object(forKey: "AppendTrailingSpace") as? Bool
             )
 
             let newSession = PowerModeSession(
@@ -114,7 +124,12 @@ class PowerModeSessionManager {
             isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
             punctuationCleanupMode: punctuationCleanupMode,
             removePunctuation: punctuationCleanupMode == .removeAll,
-            lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription")
+            lowercaseTranscription: UserDefaults.standard.bool(forKey: "LowercaseTranscription"),
+            llmOutputLanguage: UserDefaults.standard.string(forKey: LocalePackRegistry.outputLanguageKey),
+            localeNormalizationEnabled: UserDefaults.standard.object(forKey: LocalePackRegistry.normalizationEnabledKey) as? Bool,
+            whisperPromptDomain: UserDefaults.standard.string(forKey: WhisperPrompt.domainKey),
+            removeFillerWords: UserDefaults.standard.object(forKey: "RemoveFillerWords") as? Bool,
+            appendTrailingSpace: UserDefaults.standard.object(forKey: "AppendTrailingSpace") as? Bool
         )
 
         session.originalState = updatedState
@@ -161,6 +176,25 @@ class PowerModeSessionManager {
             UserDefaults.standard.set(config.isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
             PunctuationCleanupMode.setCurrent(config.punctuationCleanupMode)
             UserDefaults.standard.set(config.lowercaseTranscription, forKey: "LowercaseTranscription")
+
+            // Optional per-Power-Mode overrides. When the override is nil the
+            // profile leaves the system default untouched — this is the
+            // "Default" sentinel state surfaced in the editor UI.
+            if let value = config.llmOutputLanguageOverride {
+                UserDefaults.standard.set(value, forKey: LocalePackRegistry.outputLanguageKey)
+            }
+            if let value = config.localeNormalizationEnabledOverride {
+                UserDefaults.standard.set(value, forKey: LocalePackRegistry.normalizationEnabledKey)
+            }
+            if let value = config.whisperPromptDomainOverride {
+                UserDefaults.standard.set(value, forKey: WhisperPrompt.domainKey)
+            }
+            if let value = config.removeFillerWordsOverride {
+                UserDefaults.standard.set(value, forKey: "RemoveFillerWords")
+            }
+            if let value = config.appendTrailingSpaceOverride {
+                UserDefaults.standard.set(value, forKey: "AppendTrailingSpace")
+            }
         }
 
         if let modelName = config.selectedTranscriptionModelName,
@@ -207,6 +241,16 @@ class PowerModeSessionManager {
             if let lowercaseTranscription = state.lowercaseTranscription {
                 UserDefaults.standard.set(lowercaseTranscription, forKey: "LowercaseTranscription")
             }
+
+            // Restore optional per-Power-Mode override keys back to whatever
+            // the user had before the session started. nil here means the
+            // key was absent — we mirror that by removing the key so the
+            // registered default re-applies.
+            applyOptionalString(state.llmOutputLanguage, forKey: LocalePackRegistry.outputLanguageKey)
+            applyOptionalBool(state.localeNormalizationEnabled, forKey: LocalePackRegistry.normalizationEnabledKey)
+            applyOptionalString(state.whisperPromptDomain, forKey: WhisperPrompt.domainKey)
+            applyOptionalBool(state.removeFillerWords, forKey: "RemoveFillerWords")
+            applyOptionalBool(state.appendTrailingSpace, forKey: "AppendTrailingSpace")
         }
 
         if let modelName = state.transcriptionModelName,
@@ -217,6 +261,24 @@ class PowerModeSessionManager {
 
         if let language = state.selectedLanguage {
             applyCompatibleLanguage(language, preferredModelName: state.transcriptionModelName)
+        }
+    }
+
+    /// Writes `value` to `forKey` if non-nil, otherwise removes the key so
+    /// the registered default from `AppDefaults` becomes the effective value.
+    private func applyOptionalBool(_ value: Bool?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private func applyOptionalString(_ value: String?, forKey key: String) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 
