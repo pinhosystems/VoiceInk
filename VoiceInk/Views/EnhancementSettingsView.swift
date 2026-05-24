@@ -53,6 +53,47 @@ struct EnhancementSettingsView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            EnhancementPowerModeBanner()
+            formBody
+        }
+        .frame(minWidth: 500, minHeight: 400)
+        .background(Color(NSColor.controlBackgroundColor))
+        .onAppear { resetSelectedProviderIfDisconnected() }
+        .onReceive(NotificationCenter.default.publisher(for: .aiProviderKeyChanged)) { _ in
+            resetSelectedProviderIfDisconnected()
+        }
+        .slidingPanel(isPresented: .init(
+            get: { isPanelOpen },
+            set: { newValue in
+                if !newValue { closePanel() }
+            }
+        ), width: panelWidth) {
+            Group {
+                switch activePanel {
+                case .settings:
+                    EnhancementSettingsPanel(onDismiss: closePanel)
+                case .promptEditor:
+                    Group {
+                        if let prompt = selectedPromptForEdit {
+                            PromptEditorView(mode: .edit(prompt)) {
+                                closePanel()
+                            }
+                        } else if isEditingPrompt {
+                            PromptEditorView(mode: .add) {
+                                closePanel()
+                            }
+                        }
+                    }
+                    .id(panelID)
+                case nil:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    private var formBody: some View {
         Form {
             Section {
                 Toggle(isOn: $enhancementService.isEnhancementEnabled) {
@@ -97,6 +138,8 @@ struct EnhancementSettingsView: View {
 
             EnhancementLocaleSection()
 
+            EnhancementTestSection()
+
             Section {
                 ReorderablePromptGrid(
                     selectedPromptId: enhancementService.selectedPromptId,
@@ -137,40 +180,6 @@ struct EnhancementSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(Color(NSColor.controlBackgroundColor))
-        .onAppear { resetSelectedProviderIfDisconnected() }
-        .onReceive(NotificationCenter.default.publisher(for: .aiProviderKeyChanged)) { _ in
-            resetSelectedProviderIfDisconnected()
-        }
-        .slidingPanel(isPresented: .init(
-            get: { isPanelOpen },
-            set: { newValue in
-                if !newValue { closePanel() }
-            }
-        ), width: panelWidth) {
-            Group {
-                switch activePanel {
-                case .settings:
-                    EnhancementSettingsPanel(onDismiss: closePanel)
-                case .promptEditor:
-                    Group {
-                        if let prompt = selectedPromptForEdit {
-                            PromptEditorView(mode: .edit(prompt)) {
-                                closePanel()
-                            }
-                        } else if isEditingPrompt {
-                            PromptEditorView(mode: .add) {
-                                closePanel()
-                            }
-                        }
-                    }
-                    .id(panelID)
-                case nil:
-                    EmptyView()
-                }
-            }
-        }
-        .frame(minWidth: 500, minHeight: 400)
     }
 
     @ViewBuilder
