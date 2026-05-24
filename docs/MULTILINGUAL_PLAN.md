@@ -1,9 +1,14 @@
 # Multilingual Pipeline Plan
 
-> Status: Approved, not yet implemented. Source of truth for the
-> refactor that moves the app from a hardcoded pt-BR pipeline to a
-> truly multilingual one. Future sessions: read this file front-to-
-> back before touching any code.
+> Status: **Implemented** (Phases 1 → 7 shipped on 2026-05-24).
+> Phase commits, in order: `8e4f8d4`, `876034d`, `25f287b`,
+> `9a2850c`, `66a1dc1`, `c69edad`, plus the Phase 7 commit that
+> ships this status update. The codebase now routes all locale-
+> specific behavior through `LocalePackRegistry`; curated content
+> ships for pt-BR, a conservative generic pack covers other pt-*
+> variants, and a synthesised `GenericLocalePack` handles every
+> other non-English locale. The Brazilian* legacy files have been
+> deleted; their content lives inside `BrazilianPortuguesePack`.
 
 ## 0. Reading guide
 
@@ -186,7 +191,7 @@ Each phase is **one commit** that builds and installs cleanly. Do
 not bundle phases — keep blast radius small so any phase can be
 reverted in isolation.
 
-### Phase 1 — `LocalePack` protocol + supporting types
+### Phase 1 (DONE in 8e4f8d4) — `LocalePack` protocol + supporting types
 
 - New file: `VoiceInk/Locale/LocalePack.swift` with the protocol +
   `NormalizerRule` struct.
@@ -197,7 +202,7 @@ reverted in isolation.
   imports it yet.
 - Build + `make install-local`. App behavior unchanged.
 
-### Phase 2 — `BrazilianPortuguesePack` (pt-BR) + generic `PortuguesePack` (pt)
+### Phase 2 (DONE in 876034d) — `BrazilianPortuguesePack` (pt-BR) + generic `PortuguesePack` (pt)
 
 Two packs ship in this phase. Both extract content from existing files;
 nothing is rewritten.
@@ -244,7 +249,7 @@ nothing is rewritten.
 - The legacy `Brazilian*` files are **not deleted yet** — they stay so
   consumers that still reference them keep working.
 
-### Phase 3 — `GenericLocalePack` + `LocalePackRegistry`
+### Phase 3 (DONE in 25f287b) — `GenericLocalePack` + `LocalePackRegistry`
 
 - New file: `VoiceInk/Locale/Packs/GenericLocalePack.swift`.
   Synthesizes a pack from any primary subtag:
@@ -259,7 +264,7 @@ nothing is rewritten.
   three-tier `pack(for:)` lookup.
 - Still no consumer changes.
 
-### Phase 4 — Refactor STT pipeline + vocabulary + Whisper prompt
+### Phase 4 (DONE in 9a2850c) — Refactor STT pipeline + vocabulary + Whisper prompt
 
 - `VocabularyDomain` — replace `case brazilian` with
   `case locale(String)`. Update every switch over it.
@@ -281,7 +286,7 @@ nothing is rewritten.
   }
   ```
 
-### Phase 5 — Refactor AIPrompts + FillerWordManager
+### Phase 5 (DONE in 66a1dc1) — Refactor AIPrompts + FillerWordManager
 
 - `AIPrompts.localeRulesBlock` becomes a function that takes a
   `LocalePack?` and emits the pack's `aiPromptFormatRules` (or a
@@ -293,7 +298,7 @@ nothing is rewritten.
   let extras = LocalePackRegistry.pack(for: SelectedLanguage)?.fillerWords ?? []
   ```
 
-### Phase 6 — Migration + Settings UI
+### Phase 6 (DONE in c69edad) — Migration + Settings UI
 
 - New UserDefault: `LocaleNormalizationEnabled` (bool, default
   true).
@@ -312,7 +317,7 @@ nothing is rewritten.
   - Disabled / hidden when active pack has empty
     `wordReplacements` / `vocabularyTerms`.
 
-### Phase 7 — Cleanup + docs
+### Phase 7 (DONE in this commit) — Cleanup + docs
 
 - Delete `BrazilianTextNormalizer.swift`,
   `BrazilianWordReplacements.swift`,
@@ -582,11 +587,13 @@ NEW in Phases 1-3:
   VoiceInk/Locale/Packs/PortuguesePack.swift
   VoiceInk/Locale/Packs/GenericLocalePack.swift
 
-MODIFIED in Phases 4-6:
+MODIFIED in Phases 4-7:
   VoiceInk/AppDefaults.swift
   VoiceInk/Models/AIPrompts.swift
+  VoiceInk/Models/CustomPrompt.swift
   VoiceInk/Models/VocabularyDomain.swift
   VoiceInk/Services/AIEnhancement/AIEnhancementService.swift
+  VoiceInk/Services/DictionaryService.swift
   VoiceInk/Services/VocabularyResolver.swift
   VoiceInk/Transcription/Engine/TranscriptionPipeline.swift
   VoiceInk/Transcription/Processing/FillerWordManager.swift
@@ -595,5 +602,5 @@ MODIFIED in Phases 4-6:
   VoiceInk/Views/Dictionary/WordReplacementView.swift
   VoiceInk/Views/Settings/SettingsView.swift
   README.md
-  docs/MULTILINGUAL_PLAN.md  (this file — mark phases done as they ship)
+  docs/MULTILINGUAL_PLAN.md  (status banner + Phase headings)
 ```
