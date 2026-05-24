@@ -50,10 +50,12 @@ struct VocabularyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            DictionaryPipelineStripView(stage: .preTranscription)
+
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Label {
-                        Text("Biases the speech recognizer toward these words. Cloud STT (Deepgram, Soniox, xAI, AssemblyAI, Speechmatics) consumes them as keyterm; local Whisper uses them as prompt seed. Works with or without AI enhancement.")
+                        Text("Biases the speech recognizer toward these words BEFORE the transcript exists. Cloud STT (Deepgram, Soniox, xAI, AssemblyAI, Speechmatics) consumes them as keyterm; local Whisper uses them as prompt seed. Also injected into the LLM enhancement prompt so the model never sees a wrong spelling.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -62,7 +64,7 @@ struct VocabularyView: View {
                             .foregroundColor(.blue)
                     }
 
-                    Text("Use it for: proper nouns, product names, jargon, people's names — anything the engine mishears (e.g. \"voicing\" → VoiceInk, \"react query\" stays as one term).")
+                    Text("Use it for: proper nouns, product names, jargon, people's names — anything the engine MISHEARS. If the engine hears the word correctly but you want it rewritten (e.g. \"my email\" → support@…), use Word Replacements instead.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .padding(.leading, 22)

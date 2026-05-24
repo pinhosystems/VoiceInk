@@ -67,10 +67,12 @@ struct WordReplacementView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            DictionaryPipelineStripView(stage: .postPaste)
+
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Label {
-                        Text("Rewrites the final transcript. Runs after the engine and after AI enhancement. Word-boundary aware and case-insensitive.")
+                        Text("Rewrites the FINAL transcript right before paste. Runs AFTER the engine and AFTER any AI enhancement. Word-boundary aware and case-insensitive. The trigger must be text the engine actually emits — if the engine never types your trigger, the rule never fires.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -85,7 +87,7 @@ struct WordReplacementView: View {
                         }
                     }
 
-                    Text("Use it for: text expansion (\"my email\" → support@…), brand normalization (\"voicing, voice ink\" → VoiceInk), boilerplate phrases. Use Vocabulary instead when the engine simply doesn't know the word.")
+                    Text("Use it for: text expansion (\"my email\" → support@…), boilerplate phrases, chat-style abbreviations you actually dictate aloud. If the engine MISHEARS a word, fix it in Vocabulary instead (Vocabulary fires before transcription; Word Replacement fires after).")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .padding(.leading, 22)
