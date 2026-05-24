@@ -60,11 +60,12 @@ struct SidebarSection: Identifiable {
         SidebarSection(
             id: "configure",
             title: "Configure",
-            // Profiles first — they're the central paradigm now and act as
-            // the entry point that ties everything below together.
-            // Enhancement → AI Models → Providers → Audio Input descends
-            // from "things you touch often" to "things you touch once".
-            items: [.powerMode, .enhancement, .models, .providers, .audioInput]
+            // Pipeline order: signal flows from input device → transcription
+            // (providers + AI models) → LLM enhancement → profiles (the
+            // routing layer that composes everything above per-app).
+            // Profiles is intentionally last because it depends on every
+            // step before it.
+            items: [.audioInput, .providers, .models, .enhancement, .powerMode]
         ),
         SidebarSection(
             id: "setup",
