@@ -27,6 +27,15 @@ struct SettingsView: View {
     @State private var showResetOnboardingAlert = false
     @State private var currentShortcut = KeyboardShortcuts.getShortcut(for: .toggleMiniRecorder)
     @State private var isCustomCancelEnabled = KeyboardShortcuts.getShortcut(for: .cancelRecorder) != nil
+    // Dictionary is reached from Advanced → "Open Dictionary…" as a modal
+    // sheet rather than a sidebar destination. We deliberately do NOT route
+    // through the global `.navigateToDestination` notification + ContentView
+    // selectedView swap: `List(selection:)` in the NavigationSplitView only
+    // accepts values that exist as a sidebar row, and Dictionary is hidden
+    // from the sidebar by design. The notification path was a no-op because
+    // of that clamping. A self-contained sheet on SettingsView is the right
+    // affordance here — the workflow is "open, edit, close".
+    @State private var isShowingDictionarySheet = false
 
     // Expansion states - all collapsed by default
     @State private var isCustomCancelExpanded = false
@@ -172,7 +181,7 @@ struct SettingsView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text("Default language")
-                        InfoTip("Your primary language for dictation and LLM enhancement. Every per-context language picker (STT model language, LLM output language, Power Mode profiles) pre-selects this value, falling back to the closest supported variant when a context does not expose the exact code. Regional variants resolve to their generic primary subtag automatically: en-US → en, pt-BR → pt, es-MX → es, etc.")
+                        InfoTip("Your primary language. Resolves live at every runtime read for surfaces that left the inherit option selected (AI Models on \"Default\", Enhancement on \"Match transcription language\", Power Mode on \"Inherit from Settings\"). Explicit overrides in any of those screens are preserved and untouched by changes here. Regional variants resolve to their generic primary subtag when a downstream context does not expose the exact code (en-US → en, pt-BR → pt, etc.).")
                     }
                 }
                 .pickerStyle(.menu)
@@ -180,7 +189,7 @@ struct SettingsView: View {
                     propagateDefaultLanguage(newValue)
                 }
 
-                Text("Changing this updates the active transcription language and the LLM output language using the closest available match for each. Per-context overrides you set afterwards stay until you re-pick the default.")
+                Text("Changing this updates every per-context picker that is still on its inherit-from-Settings option (AI Models on \"Default\", Enhancement on \"Match transcription language\", Power Mode on \"Inherit from Settings\"). Explicit overrides you set in those screens are preserved and never overwritten by changes here.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -506,11 +515,7 @@ struct SettingsView: View {
             Section {
                 LabeledContent("Vocabulary & Word Replacements") {
                     Button("Open Dictionary…") {
-                        NotificationCenter.default.post(
-                            name: .navigateToDestination,
-                            object: nil,
-                            userInfo: ["destination": "Dictionary"]
-                        )
+                        isShowingDictionarySheet = true
                     }
                 }
             } header: {
@@ -529,6 +534,24 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
         .padding(.top, 12)
+        .sheet(isPresented: $isShowingDictionarySheet) {
+            // Wrap DictionarySettingsView in a fixed-size NavigationStack so
+            // it gets a title bar with a Done button to dismiss the sheet.
+            // The inner view doesn't ship its own close affordance because
+            // when it lived in the sidebar the navigation chrome did that
+            // job; here in a modal sheet we add it back at the wrapper level.
+            NavigationStack {
+                DictionarySettingsView(whisperPrompt: WhisperPrompt())
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                isShowingDictionarySheet = false
+                            }
+                        }
+                    }
+            }
+            .frame(minWidth: 720, minHeight: 560)
+        }
     }
 
     @ViewBuilder
@@ -553,36 +576,20 @@ struct SettingsView: View {
         .fixedSize()
     }
 
-    /// Pushes the new default-language choice into every per-context language
-    /// picker, resolving via `LanguageFallbackResolver` so a regional variant
-    /// the context does not expose collapses to the closest available match
-    /// (typically the generic primary subtag).
+    /// Fires after the user picks a new `DefaultAppLanguage`.
     ///
-    /// Touch points:
-    ///   - `SelectedLanguage` (STT): resolved against the active
-    ///     transcription model's supported language list, with
-    ///     `TranscriptionLanguageSupport.validLanguageOrFallback` as a final
-    ///     safety net (handles provider quirks like Apple Native ↔ BCP-47).
-    ///   - `LLMOutputLanguage`: resolved against the picker's hard-coded
-    ///     entries. When the chosen default has no representative there, the
-    ///     sentinel `match` is restored so the LLM mirrors the STT language
-    ///     instead of silently translating into an unrelated locale.
+    /// The downstream pickers (AI Models STT, Enhancement LLM, Power Mode
+    /// profile language) are sentinel-based: surfaces left on
+    /// `LanguageResolver.defaultSentinel` ("default") for STT, `"match"`
+    /// for LLM, or `nil` for Power Mode resolve through Settings at every
+    /// runtime read via `LanguageResolver.effectiveSTTCode(...)` and
+    /// `LocalePackRegistry.outputLanguageCode(sttCode:)`. So this callback
+    /// no longer writes anything — explicit customizations the user made
+    /// in the downstream pickers are preserved. The notification fired by
+    /// `LanguageDefaultPropagator.apply` re-renders any open view that
+    /// displays a resolved label.
     private func propagateDefaultLanguage(_ newDefault: String) {
-        let sttAvailable: [String]?
-        let validator: ((String) -> String)?
-        if let model = transcriptionModelManager.currentTranscriptionModel {
-            sttAvailable = Array(TranscriptionLanguageSupport.languages(for: model).keys)
-            validator = { TranscriptionLanguageSupport.validLanguageOrFallback($0, for: model) }
-        } else {
-            sttAvailable = nil
-            validator = nil
-        }
-
-        LanguageDefaultPropagator.apply(
-            newDefault,
-            sttModelLanguages: sttAvailable,
-            sttValidator: validator
-        )
+        LanguageDefaultPropagator.apply(newDefault)
     }
 }
 
