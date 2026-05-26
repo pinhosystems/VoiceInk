@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import Cocoa
 import KeyboardShortcuts
+import ScreenCaptureKit
 
 class PermissionManager: ObservableObject {
     @Published var audioPermissionStatus = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -58,7 +59,18 @@ class PermissionManager: ObservableObject {
     }
     
     func requestScreenRecordingPermission() {
+        // CGRequestScreenCaptureAccess alone does not always register the
+        // bundle in System Settings → Privacy & Security → Screen Recording
+        // on macOS Sequoia (15+) — the OS only adds the row to that pane
+        // after the app actually exercises the ScreenCaptureKit code path
+        // it ships with. Trigger SCShareableContent so TCC writes a record
+        // for this bundle and the pane shows the toggle the user needs
+        // to flip. The legacy CG call stays so the system prompt still
+        // fires on first request.
         CGRequestScreenCaptureAccess()
+        Task.detached(priority: .userInitiated) {
+            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        }
     }
     
     func checkAudioPermissionStatus() {
@@ -269,11 +281,13 @@ struct PermissionsView: View {
                         isGranted: permissionManager.isScreenRecordingEnabled,
                         buttonTitle: "Request Permission",
                         buttonAction: {
+                            // The CG + SCK request already triggers macOS's
+                            // native alert (with its own "Open System Settings"
+                            // button). Don't also call NSWorkspace.open — that
+                            // pops the System Settings pane behind the alert
+                            // and the user ends up with two redundant windows.
+                            // The legacy code did exactly that.
                             permissionManager.requestScreenRecordingPermission()
-                            // After requesting, open system preferences as fallback
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                                NSWorkspace.shared.open(url)
-                            }
                         },
                         checkPermission: { permissionManager.checkScreenRecordingPermission() },
                         infoTipMessage: "VoiceInk captures on-screen text to understand the context of your voice input, which significantly improves transcription accuracy. Your privacy is important: this data is processed locally and is not stored.",
