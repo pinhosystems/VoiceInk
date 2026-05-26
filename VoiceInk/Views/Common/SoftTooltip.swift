@@ -12,6 +12,13 @@ struct SoftTooltipModifier: ViewModifier {
 
     @State private var isShowing = false
     @State private var hoverTask: Task<Void, Never>?
+    /// Measured height of the chip view. Drives the offset that lifts the
+    /// chip above the parent — kept in state because the chip height varies
+    /// with line count (single-line "Pause" vs. two-line Power Mode copy).
+    @State private var chipHeight: CGFloat = 0
+
+    /// Vertical gap between the chip's bottom edge and the parent's top edge.
+    private static let chipParentGap: CGFloat = 8
 
     func body(content: Content) -> some View {
         content
@@ -32,23 +39,71 @@ struct SoftTooltipModifier: ViewModifier {
             .overlay(alignment: .top) {
                 if isShowing {
                     Text(text)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundColor(Color(NSColor.labelColor))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill(.regularMaterial)
-                                .shadow(color: .black.opacity(0.14), radius: 6, x: 0, y: 2)
+                            ZStack {
+                                // Solid backing first so the chip never reads as
+                                // translucent over the window content; the
+                                // material layer on top picks up subtle
+                                // vibrancy without bleeding through to the text.
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color(NSColor.controlBackgroundColor))
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                    .opacity(0.6)
+                            }
                         )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        )
+                        .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
+                        .shadow(color: .black.opacity(0.06), radius: 1, x: 0, y: 1)
                         .fixedSize()
-                        .offset(y: -32)
+                        // Measure the chip's actual rendered height. The chip
+                        // can be one or several lines tall depending on copy
+                        // length (`\n` in the source text, plus future wraps),
+                        // and `alignmentGuide(.top)` proved unreliable here
+                        // — SwiftUI honored the value on first hover but not
+                        // on transitions, so tips ended up rendered BELOW the
+                        // button instead of above. A measured offset removes
+                        // that ambiguity.
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .preference(
+                                        key: TooltipChipHeightKey.self,
+                                        value: proxy.size.height
+                                    )
+                            }
+                        )
+                        .offset(y: -(chipHeight + Self.chipParentGap))
                         .allowsHitTesting(false)
                         .transition(.opacity.combined(with: .offset(y: 4)))
                         .zIndex(999)
                 }
             }
             .animation(.easeOut(duration: 0.18), value: isShowing)
+            .onPreferenceChange(TooltipChipHeightKey.self) { newHeight in
+                if newHeight > 0 {
+                    chipHeight = newHeight
+                }
+            }
+    }
+}
+
+/// PreferenceKey carrying the chip's measured height up the view tree so the
+/// modifier can offset the overlay precisely.
+private struct TooltipChipHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

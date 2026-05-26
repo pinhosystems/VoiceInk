@@ -625,7 +625,15 @@ private struct HistoryCardRow: View {
         .background(
             Capsule().fill(tint.opacity(0.12))
         )
-        .softTooltip(help ?? text)
+        // Native NSToolTip instead of the soft overlay used elsewhere:
+        // history rows live inside a ScrollView and the soft tooltip's
+        // overlay (offset y: -32) gets clipped by the scroll viewport on
+        // the topmost row, and shoots off the trailing edge of the window
+        // for pills near the right edge with long help text (full STT/LLM
+        // model names). NSToolTip is repositioned by AppKit to always
+        // stay on screen and wraps long text, which is what the dense
+        // metadata row needs.
+        .help(help ?? text)
     }
 
     var body: some View {
