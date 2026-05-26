@@ -34,8 +34,18 @@ actor WhisperContext {
         let maxThreads = max(1, min(8, cpuCount() - 2))
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         
-        // Read language directly from UserDefaults
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
+        // Resolve via LanguageResolver so the "default" sentinel expands
+        // through Settings → Default language. "auto" still drops through
+        // to the model's own auto-detect path below.
+        //
+        // Whisper expects 2-letter ISO 639-1 codes ("pt", "en") and does
+        // not accept regioned BCP-47 ("pt-BR", "en-US"). Strip any region
+        // tag so a Settings value like "pt-BR" still drives the Whisper
+        // language hint instead of getting rejected at the C boundary.
+        var selectedLanguage = LanguageResolver.effectiveSTTCode(fallback: "auto")
+        if let hyphenIndex = selectedLanguage.firstIndex(of: "-") {
+            selectedLanguage = String(selectedLanguage[..<hyphenIndex])
+        }
         if selectedLanguage != "auto" {
             languageCString = Array(selectedLanguage.utf8CString)
             params.language = languageCString?.withUnsafeBufferPointer { ptr in

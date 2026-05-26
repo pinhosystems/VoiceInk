@@ -40,13 +40,20 @@ enum AppDefaults {
             "RemoveFillerWords": true,
             "RemovePunctuation": false,
             "LowercaseTranscription": false,
-            "SelectedLanguage": defaultSelectedLanguage,
-            // Global default app language. Drives the initial value of every
-            // per-context language picker (STT model language, LLM output
-            // language, Power Mode language, ...) on first launch and after
-            // the user explicitly picks one in Settings. Each picker still
-            // owns its own UserDefault — the default-app-language acts as the
-            // seed + propagation source, not a runtime override.
+            // Fresh installs use the `"default"` sentinel so the AI Models
+            // language picker shows "Inherit from Settings" out of the box.
+            // Runtime callers go through LanguageResolver, which expands
+            // the sentinel into DefaultAppLanguage at every read. Existing
+            // installs that already wrote a concrete BCP-47 code here keep
+            // it (treated as an explicit user customization).
+            "SelectedLanguage": LanguageResolver.defaultSentinel,
+            // Global default app language — the canonical source of truth.
+            // Surfaces with the `"default"` sentinel (AI Models STT picker,
+            // Power Mode profile with selectedLanguage=nil, Enhancement
+            // with LLMOutputLanguage="match") all resolve through this at
+            // runtime. Changing this in Settings is non-destructive: it
+            // does NOT overwrite any explicit customization the user made
+            // in the downstream pickers.
             "DefaultAppLanguage": defaultSelectedLanguage,
             // True once the user has confirmed the default language through
             // the onboarding step (or by explicitly re-picking it in

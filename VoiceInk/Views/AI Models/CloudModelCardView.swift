@@ -107,6 +107,13 @@ struct CloudModelCardView: View {
             return
         }
 
+        // The inherit-from-Settings sentinel is always valid — its
+        // concrete value is resolved (and validated against the model)
+        // through LanguageResolver at every runtime read. Collapsing it
+        // here would freeze the picker to whatever Settings currently
+        // holds and break live inheritance on the next Settings change.
+        if selectedLanguage.lowercased() == LanguageResolver.defaultSentinel { return }
+
         let compatibleLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(selectedLanguage, for: model)
         if selectedLanguage != compatibleLanguage {
             selectedLanguage = compatibleLanguage

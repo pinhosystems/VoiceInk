@@ -276,7 +276,11 @@ class AIEnhancementService: ObservableObject {
         // message so the LLM never has to guess from a 3-word
         // transcript whether it should respond in English or
         // Portuguese.
-        let selectedLanguageCode = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        // Resolve via LanguageResolver so the "default" sentinel collapses
+        // into Settings → Default language. The LLM step needs a concrete
+        // code to build <AUDIO_LANGUAGE> + <LOCALE_RULES>; the sentinel
+        // would otherwise leak into the prompt as literal "default".
+        let selectedLanguageCode = LanguageResolver.effectiveSTTCode()
         // The STT pack stays tied to the STT language for Whisper seeds,
         // vocabulary biasing, and filler removal. The LLM-side pack — which
         // drives the <LOCALE_RULES> block — follows the override below, so

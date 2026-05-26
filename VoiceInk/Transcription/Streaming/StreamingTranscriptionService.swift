@@ -138,7 +138,11 @@ class StreamingTranscriptionService {
         let provider = createProvider(for: model)
         self.provider = provider
 
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
+        // Model-aware resolution so the inherit-from-Settings sentinel
+        // collapses through DefaultAppLanguage AND validates against the
+        // model's supported set before the streaming provider sees the
+        // language hint.
+        let selectedLanguage = LanguageResolver.effectiveSTTCode(for: model)
         logger.notice("Streaming start requested model=\(model.displayName, privacy: .public) language=\(selectedLanguage, privacy: .public)")
 
         try await provider.connect(model: model, language: selectedLanguage)

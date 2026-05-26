@@ -117,6 +117,15 @@ class TranscriptionModelManager: ObservableObject {
 
     private func ensureSelectedLanguageIsSupported(by model: any TranscriptionModel) {
         let currentLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        // The inherit-from-Settings sentinel is always "valid" — its
+        // concrete value is resolved (and validated against the model)
+        // through LanguageResolver at every runtime read. Touching it
+        // here would collapse the sentinel into whatever Settings
+        // currently holds and break live inheritance on any subsequent
+        // Settings change.
+        if currentLanguage?.lowercased() == LanguageResolver.defaultSentinel {
+            return
+        }
         let firstPass = TranscriptionLanguageSupport.validLanguageOrFallback(currentLanguage, for: model)
 
         // Two semantics overlap here:

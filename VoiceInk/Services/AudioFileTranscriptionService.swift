@@ -53,7 +53,7 @@ class AudioTranscriptionService: ObservableObject {
 
             apiLog.steps.append(Self.makeSTTStep(
                 model: model,
-                language: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+                language: LanguageResolver.effectiveSTTCode(for: model),
                 durationMs: Int(transcriptionDuration * 1000),
                 response: text,
                 error: nil

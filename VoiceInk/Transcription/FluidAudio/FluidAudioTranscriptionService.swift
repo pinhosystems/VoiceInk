@@ -90,8 +90,13 @@ class FluidAudioTranscriptionService: TranscriptionService {
             throw ASRError.notInitialized
         }
 
+        // Model-aware resolution collapses the inherit-from-Settings
+        // sentinel AND validates the result against FluidAudio's
+        // supported language list so a Settings choice like "pt-BR"
+        // gets demoted to "pt" if the model doesn't ship the regioned
+        // variant.
         let languageHint = Self.languageHint(
-            from: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+            from: LanguageResolver.effectiveSTTCode(for: model),
             model: model
         )
         let audioSamples = try readAudioSamples(from: audioURL)

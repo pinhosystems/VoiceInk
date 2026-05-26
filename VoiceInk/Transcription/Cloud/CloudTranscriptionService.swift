@@ -62,7 +62,7 @@ class CloudTranscriptionService: TranscriptionService {
     func transcribe(audioURL: URL, model: any TranscriptionModel) async throws -> String {
         let audioData = try loadAudioData(from: audioURL)
         let fileName = audioURL.lastPathComponent
-        let language = selectedLanguage()
+        let language = selectedLanguage(for: model)
         let resourceTimeout = Self.configuredResourceTimeout()
 
         var lastError: CloudTranscriptionError?
@@ -182,8 +182,14 @@ class CloudTranscriptionService: TranscriptionService {
         return apiKey
     }
 
-    private func selectedLanguage() -> String? {
-        let lang = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
+    /// Model-aware. Resolves the inherit-from-Settings sentinel AND
+    /// validates the resulting code against the model's supported list
+    /// (e.g. Settings "pt-BR" + ElevenLabs which only ships "pt" →
+    /// returns "pt"). Without the model-aware step, a Settings choice
+    /// like "pt-BR" reached the ElevenLabs API verbatim and got rejected
+    /// because the provider does not accept regioned Portuguese codes.
+    private func selectedLanguage(for model: any TranscriptionModel) -> String? {
+        let lang = LanguageResolver.effectiveSTTCode(for: model)
         return (lang == "auto" || lang.isEmpty) ? nil : lang
     }
 
