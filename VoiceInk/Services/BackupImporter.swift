@@ -4,7 +4,7 @@ import LaunchAtLogin
 import SwiftData
 import os
 
-private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "BackupImporter")
+private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "BackupImporter")
 
 enum BackupImportError: LocalizedError {
     case saveFailed(String, Error)
@@ -194,6 +194,23 @@ enum BackupImporter {
         }
         if let appleScriptPaste = general.useAppleScriptPaste {
             UserDefaults.standard.set(appleScriptPaste, forKey: "useAppleScriptPaste")
+        }
+        if let defaultLanguage = general.defaultAppLanguage, !defaultLanguage.isEmpty {
+            UserDefaults.standard.set(defaultLanguage, forKey: "DefaultAppLanguage")
+            // Importing a backup means the user already confirmed their
+            // preferences elsewhere — skip the onboarding language gate.
+            UserDefaults.standard.set(true, forKey: "DefaultAppLanguageConfirmed")
+        }
+        if let stt = general.selectedLanguage, !stt.isEmpty {
+            UserDefaults.standard.set(stt, forKey: "SelectedLanguage")
+        }
+        if let llm = general.llmOutputLanguage, !llm.isEmpty {
+            UserDefaults.standard.set(llm, forKey: LocalePackRegistry.outputLanguageKey)
+        }
+        if general.defaultAppLanguage != nil
+            || general.selectedLanguage != nil
+            || general.llmOutputLanguage != nil {
+            NotificationCenter.default.post(name: .languageDidChange, object: nil)
         }
 
         logger.notice("Imported general settings")

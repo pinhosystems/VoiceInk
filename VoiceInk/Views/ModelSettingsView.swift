@@ -3,6 +3,17 @@ import SwiftUI
 struct ModelSettingsView: View {
     @ObservedObject var whisperPrompt: WhisperPrompt
     @AppStorage("SelectedLanguage") private var selectedLanguage: String = "en"
+    @AppStorage("DefaultAppLanguage") private var defaultAppLanguage: String = "en"
+
+    /// Concrete BCP-47 code to key the per-language custom whisper prompt
+    /// under. Resolves the inherit-from-Settings sentinel so prompts never
+    /// get stored under the literal "default" string.
+    private var promptLanguageKey: String {
+        if selectedLanguage.lowercased() == LanguageResolver.defaultSentinel {
+            return defaultAppLanguage
+        }
+        return selectedLanguage
+    }
     @AppStorage("IsTextFormattingEnabled") private var isTextFormattingEnabled = true
     @AppStorage(PunctuationCleanupMode.userDefaultsKey) private var punctuationCleanupModeRaw = PunctuationCleanupMode.current().rawValue
     @AppStorage("LowercaseTranscription") private var lowercaseTranscription = false
@@ -41,17 +52,17 @@ struct ModelSettingsView: View {
                             .scrollContentBackground(.hidden)
 
                         Button("Save") {
-                            whisperPrompt.setCustomPrompt(customPrompt, for: selectedLanguage)
+                            whisperPrompt.setCustomPrompt(customPrompt, for: promptLanguageKey)
                             isEditing = false
                         }
                     } else {
-                        Text(whisperPrompt.getLanguagePrompt(for: selectedLanguage))
+                        Text(whisperPrompt.getLanguagePrompt(for: promptLanguageKey))
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                         Button("Edit") {
-                            customPrompt = whisperPrompt.getLanguagePrompt(for: selectedLanguage)
+                            customPrompt = whisperPrompt.getLanguagePrompt(for: promptLanguageKey)
                             isEditing = true
                         }
                     }
@@ -155,7 +166,7 @@ struct ModelSettingsView: View {
         .scrollContentBackground(.hidden)
         .onChange(of: selectedLanguage) { oldValue, newValue in
             if isEditing {
-                customPrompt = whisperPrompt.getLanguagePrompt(for: selectedLanguage)
+                customPrompt = whisperPrompt.getLanguagePrompt(for: promptLanguageKey)
             }
         }
     }

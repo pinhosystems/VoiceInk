@@ -12,7 +12,7 @@ class TranscriptionModelManager: ObservableObject {
     private weak var fluidAudioModelManager: FluidAudioModelManager?
     private var customModelsCancellable: AnyCancellable?
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionModelManager")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "TranscriptionModelManager")
 
     init(whisperModelManager: WhisperModelManager, fluidAudioModelManager: FluidAudioModelManager) {
         self.whisperModelManager = whisperModelManager
@@ -117,12 +117,57 @@ class TranscriptionModelManager: ObservableObject {
 
     private func ensureSelectedLanguageIsSupported(by model: any TranscriptionModel) {
         let currentLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
-        let compatibleLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(currentLanguage, for: model)
+        // The inherit-from-Settings sentinel is always "valid" — its
+        // concrete value is resolved (and validated against the model)
+        // through LanguageResolver at every runtime read. Touching it
+        // here would collapse the sentinel into whatever Settings
+        // currently holds and break live inheritance on any subsequent
+        // Settings change.
+        if currentLanguage?.lowercased() == LanguageResolver.defaultSentinel {
+            return
+        }
+        let firstPass = TranscriptionLanguageSupport.validLanguageOrFallback(currentLanguage, for: model)
+
+        // Two semantics overlap here:
+        //   1. Provider quirk demotion (Apple Native "pt-BR" → Whisper "pt"):
+        //      primary subtag is preserved, user intent intact. Keep
+        //      firstPass.
+        //   2. Hard rejection (current "pt-BR" → model that only ships EN):
+        //      primary subtag changes, so the user's intent is already lost
+        //      via the validator. Before accepting that loss, try to honor
+        //      the user's GLOBAL intent (DefaultAppLanguage) — they picked
+        //      that explicitly as the source of truth; if it maps to a
+        //      compatible code under the new model, prefer it over the
+        //      validator's blunt fallback.
+        let primaryPreserved = primarySubtag(of: currentLanguage) == primarySubtag(of: firstPass)
+        var compatibleLanguage = firstPass
+
+        if !primaryPreserved {
+            let modelLanguages = Array(TranscriptionLanguageSupport.languages(for: model).keys)
+            let defaultAppLanguage = UserDefaults.standard.string(forKey: "DefaultAppLanguage")
+            if let intent = LanguageFallbackResolver.resolve(
+                target: defaultAppLanguage,
+                available: modelLanguages
+            ) {
+                compatibleLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(intent, for: model)
+            }
+        }
 
         if currentLanguage != compatibleLanguage {
             UserDefaults.standard.set(compatibleLanguage, forKey: "SelectedLanguage")
             NotificationCenter.default.post(name: .languageDidChange, object: nil)
         }
+    }
+
+    private func primarySubtag(of code: String?) -> String? {
+        guard let lowered = code?.lowercased() else { return nil }
+        if let hyphen = lowered.firstIndex(of: "-") {
+            return String(lowered[..<hyphen])
+        }
+        if let underscore = lowered.firstIndex(of: "_") {
+            return String(lowered[..<underscore])
+        }
+        return lowered
     }
 
     // MARK: - Refresh all available models

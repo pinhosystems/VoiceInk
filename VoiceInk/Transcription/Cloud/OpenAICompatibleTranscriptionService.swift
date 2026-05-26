@@ -19,7 +19,14 @@ class OpenAICompatibleTranscriptionService {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(model.apiKey)", forHTTPHeaderField: "Authorization")
 
-        let bodyURL = try writeMultipartBody(audioURL: audioURL, modelName: model.modelName, boundary: boundary)
+        // Model-aware: resolves the inherit-from-Settings sentinel AND
+        // validates the resulting code against the custom model's
+        // supported list so a Settings choice like "pt-BR" doesn't reach
+        // a provider that only ships "pt".
+        let resolvedLanguage = LanguageResolver.effectiveSTTCode(for: model)
+        let language = resolvedLanguage.isEmpty ? "auto" : resolvedLanguage
+
+        let bodyURL = try writeMultipartBody(audioURL: audioURL, modelName: model.modelName, language: language, boundary: boundary)
         defer { try? FileManager.default.removeItem(at: bodyURL) }
 
         let configuration = URLSessionConfiguration.ephemeral
@@ -60,7 +67,7 @@ class OpenAICompatibleTranscriptionService {
     /// was built in a single `Data` in memory. For long recordings this kept the full
     /// audio resident in process heap during the upload — wasteful and unnecessary,
     /// since URLSession can already stream from a file via `upload(for:fromFile:)`.
-    private func writeMultipartBody(audioURL: URL, modelName: String, boundary: String) throws -> URL {
+    private func writeMultipartBody(audioURL: URL, modelName: String, language: String, boundary: String) throws -> URL {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("voiceink-multipart-\(UUID().uuidString)")
         FileManager.default.createFile(atPath: tempURL.path, contents: nil)
@@ -75,7 +82,7 @@ class OpenAICompatibleTranscriptionService {
 
         do {
             let crlf = "\r\n"
-            let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto"
+            let selectedLanguage = language
             let prompt = UserDefaults.standard.string(forKey: "TranscriptionPrompt") ?? ""
 
             func write(_ string: String) throws {

@@ -10,7 +10,7 @@ class FluidAudioTranscriptionService: TranscriptionService {
     private var activeVersion: AsrModelVersion?
     private var cachedModels: AsrModels?
     private var loadingTask: (version: AsrModelVersion, task: Task<AsrModels, Error>)?
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink.fluidaudio", category: "FluidAudioTranscriptionService")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink.fluidaudio", category: "FluidAudioTranscriptionService")
 
     private func version(for model: any TranscriptionModel) -> AsrModelVersion {
         FluidAudioModelManager.asrVersion(for: model.name)
@@ -90,8 +90,13 @@ class FluidAudioTranscriptionService: TranscriptionService {
             throw ASRError.notInitialized
         }
 
+        // Model-aware resolution collapses the inherit-from-Settings
+        // sentinel AND validates the result against FluidAudio's
+        // supported language list so a Settings choice like "pt-BR"
+        // gets demoted to "pt" if the model doesn't ship the regioned
+        // variant.
         let languageHint = Self.languageHint(
-            from: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+            from: LanguageResolver.effectiveSTTCode(for: model),
             model: model
         )
         let audioSamples = try readAudioSamples(from: audioURL)

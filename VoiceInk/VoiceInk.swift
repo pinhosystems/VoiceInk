@@ -41,14 +41,20 @@ struct VoiceInkApp: App {
         // Disable HTTP response caching — prevents API responses from being stored in Cache.db
         URLCache.shared = URLCache(memoryCapacity: 0, diskCapacity: 0)
 
+        // Must run before AppDefaults.registerDefaults and before
+        // createPersistentContainer — migrates UserDefaults, the
+        // Application Support directory, and Keychain items from the
+        // upstream bundle id (com.prakashjoshipax.VoiceInk) to the fork
+        // bundle id (agabo.dev.voiceink). One-shot; guarded by a flag.
+        BundleIdMigration.runIfNeeded()
+
         AppDefaults.registerDefaults()
 
-        if UserDefaults.standard.object(forKey: "powerModeUIFlag") == nil {
-            let hasEnabledPowerModes = PowerModeManager.shared.configurations.contains { $0.isEnabled }
-            UserDefaults.standard.set(hasEnabledPowerModes, forKey: "powerModeUIFlag")
-        }
+        // Power Mode is always-on; the bootstrap migration that used to
+        // gate the flag on "has any enabled config" is obsolete now.
+        // AppDefaults.registerDefaults guarantees the flag reads true.
 
-        let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "Initialization")
+        let logger = Logger(subsystem: "agabo.dev.voiceink", category: "Initialization")
         // Keep existing model order stable; append new models after synced entities.
         let schema = Schema([
             Transcription.self,
@@ -106,7 +112,7 @@ struct VoiceInkApp: App {
 
         // 1. Create modelsDirectory URL
         let appSupportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("com.prakashjoshipax.VoiceInk")
+            .appendingPathComponent("agabo.dev.voiceink")
         let modelsDirectory = appSupportDirectory.appendingPathComponent("WhisperModels")
 
         // 2. Create model managers
@@ -202,7 +208,7 @@ struct VoiceInkApp: App {
         do {
             // Create app-specific Application Support directory URL
             let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("com.prakashjoshipax.VoiceInk", isDirectory: true)
+                .appendingPathComponent("agabo.dev.voiceink", isDirectory: true)
 
             // Create the directory if it doesn't exist
             try? FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
@@ -226,7 +232,7 @@ struct VoiceInkApp: App {
             #if LOCAL_BUILD
             let dictionaryCloudKit: ModelConfiguration.CloudKitDatabase = .none
             #else
-            let dictionaryCloudKit: ModelConfiguration.CloudKitDatabase = .private("iCloud.com.prakashjoshipax.VoiceInk")
+            let dictionaryCloudKit: ModelConfiguration.CloudKitDatabase = .private("iCloud.agabo.dev.voiceink")
             #endif
             let dictionaryConfig = ModelConfiguration(
                 "dictionary",
@@ -362,7 +368,7 @@ struct VoiceInkApp: App {
                     .environmentObject(providerCatalog)
                     .frame(minWidth: 880, minHeight: 780)
                     .background(WindowAccessor { window in
-                        if window.identifier == nil || window.identifier != NSUserInterfaceItemIdentifier("com.prakashjoshipax.voiceink.onboardingWindow") {
+                        if window.identifier == nil || window.identifier != NSUserInterfaceItemIdentifier("agabo.dev.voiceink.onboardingWindow") {
                             WindowManager.shared.configureOnboardingPanel(window)
                         }
                     })

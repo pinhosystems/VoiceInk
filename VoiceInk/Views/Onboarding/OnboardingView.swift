@@ -2,21 +2,63 @@ import SwiftUI
 
 struct OnboardingView: View {
     @Binding var hasCompletedOnboarding: Bool
+    @AppStorage("DefaultAppLanguageConfirmed") private var languageConfirmed: Bool = false
+    @AppStorage("DefaultAppLanguage") private var defaultAppLanguage: String = "en"
     @State private var textOpacity: CGFloat = 0
     @State private var showSecondaryElements = false
     @State private var showPermissions = false
-    
+
     // Animation timing
     private let animationDelay = 0.2
     private let textAnimationDuration = 0.6
-    
+
+    /// Greeting word per primary subtag. Picked off `defaultAppLanguage` so a
+    /// user who selected pt-BR sees "Olá!" even though the rest of the
+    /// onboarding strings stay in English (we localize the *greeting*, not
+    /// the entire flow — see Block 2 spec separating language selection from
+    /// the personality moment).
+    private static let greetings: [String: String] = [
+        "en": "Hello!",
+        "pt": "Olá!",
+        "es": "¡Hola!",
+        "fr": "Bonjour !",
+        "de": "Hallo!",
+        "it": "Ciao!",
+        "ja": "こんにちは!",
+        "ko": "안녕하세요!",
+        "zh": "你好!"
+    ]
+
+    private var greeting: String {
+        let primary = defaultAppLanguage
+            .lowercased()
+            .split(separator: "-")
+            .first
+            .map(String.init)
+            ?? "en"
+        return Self.greetings[primary] ?? "Hello!"
+    }
+
     var body: some View {
+        ZStack {
+            if !languageConfirmed {
+                OnboardingLanguageView()
+                    .transition(.opacity)
+            } else {
+                welcomeContent
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: languageConfirmed)
+    }
+
+    @ViewBuilder
+    private var welcomeContent: some View {
         ZStack {
             GeometryReader { geometry in
                 ZStack {
                     // Reusable background
                     OnboardingBackgroundView()
-                    
+
                     // Content container
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(spacing: 0) {
@@ -24,18 +66,31 @@ struct OnboardingView: View {
                             VStack(spacing: 60) {
                                 Spacer()
                                     .frame(height: 40)
-                                
-                                // Title and subtitle
+
+                                // Greeting + title
                                 VStack(spacing: 16) {
-                                    Text("Welcome to the Future of Typing")
-                                        .font(.system(size: min(geometry.size.width * 0.055, 42), weight: .bold, design: .rounded))
+                                    Text(greeting)
+                                        .font(.system(size: min(geometry.size.width * 0.07, 56), weight: .bold, design: .rounded))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color.accentColor, Color.white.opacity(0.9)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .opacity(textOpacity)
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal)
+
+                                    Text("Welcome to VoiceInk")
+                                        .font(.system(size: min(geometry.size.width * 0.04, 28), weight: .semibold, design: .rounded))
                                         .foregroundColor(.white)
                                         .opacity(textOpacity)
                                         .multilineTextAlignment(.center)
                                         .padding(.horizontal)
-                                    
+
                                     Text("A New Way to Type")
-                                        .font(.system(size: min(geometry.size.width * 0.032, 24), weight: .medium, design: .rounded))
+                                        .font(.system(size: min(geometry.size.width * 0.028, 20), weight: .medium, design: .rounded))
                                         .foregroundColor(.white.opacity(0.7))
                                         .opacity(textOpacity)
                                         .multilineTextAlignment(.center)

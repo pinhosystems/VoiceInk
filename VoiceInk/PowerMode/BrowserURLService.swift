@@ -94,7 +94,7 @@ class BrowserURLService {
     private static let appleScriptTimeoutSeconds: TimeInterval = 3.0
 
     private let logger = Logger(
-        subsystem: "com.prakashjoshipax.voiceink",
+        subsystem: "agabo.dev.voiceink",
         category: "browser.applescript"
     )
 

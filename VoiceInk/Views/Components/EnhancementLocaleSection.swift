@@ -6,17 +6,31 @@ import SwiftUI
 /// without trapping the controls behind a gear icon.
 struct EnhancementLocaleSection: View {
     @AppStorage("SelectedLanguage") private var selectedLanguage = "en"
+    // Subscribed so the view re-renders when Settings → Default language
+    // changes while the STT picker is on its "default" sentinel.
+    @AppStorage("DefaultAppLanguage") private var defaultAppLanguage = "en"
     @AppStorage(LocalePackRegistry.normalizationEnabledKey) private var localeNormalizationEnabled = true
     @AppStorage(LocalePackRegistry.outputLanguageKey)
     private var llmOutputLanguage = LocalePackRegistry.outputLanguageMatchSentinel
 
     @State private var isNormalizationExamplesExpanded = false
 
+    /// STT code after sentinel expansion. The raw `selectedLanguage` may
+    /// be `LanguageResolver.defaultSentinel`, which the rest of this view
+    /// must not display literally.
+    private var effectiveSTTCode: String {
+        let raw = selectedLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty || raw.lowercased() == LanguageResolver.defaultSentinel {
+            return defaultAppLanguage
+        }
+        return raw
+    }
+
     /// Picker entries for the LLM output-language override. The sentinel
     /// `"match"` keeps legacy behavior; the rest are explicit BCP-47 codes
     /// for the languages we most often translate into.
     private static let outputLanguageOptions: [(code: String, label: String)] = [
-        (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription (default)"),
+        (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription language"),
         ("en", "English"),
         ("pt-BR", "Portuguese (Brazil)"),
         ("pt-PT", "Portuguese (Portugal)"),
@@ -30,11 +44,11 @@ struct EnhancementLocaleSection: View {
     ]
 
     private var sttPack: LocalePack? {
-        LocalePackRegistry.pack(for: selectedLanguage)
+        LocalePackRegistry.pack(for: effectiveSTTCode)
     }
 
     private var examplesPack: LocalePack? {
-        let effective = LocalePackRegistry.outputLanguageCode(sttCode: selectedLanguage)
+        let effective = LocalePackRegistry.outputLanguageCode(sttCode: effectiveSTTCode)
         return LocalePackRegistry.pack(for: effective)
     }
 
@@ -44,7 +58,7 @@ struct EnhancementLocaleSection: View {
     }
 
     private var selectedLanguageDisplayName: String {
-        let raw = selectedLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = effectiveSTTCode.trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty || raw.lowercased() == "auto" { return "the auto-detected language" }
         let locale = Locale(identifier: "en")
         return locale.localizedString(forIdentifier: raw)
@@ -82,12 +96,12 @@ struct EnhancementLocaleSection: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("LLM output language")
-                    InfoTip("Forces the LLM enhancement step to respond in the chosen language regardless of what the transcription language is. \"Match transcription\" keeps the legacy behavior — same language in and out. Pick any other value to translate (e.g. dictate in Portuguese, get an English email).")
+                    InfoTip("Forces the LLM enhancement step to respond in the chosen language regardless of what the transcription language is. \"Match transcription language\" keeps the live link to the STT picker — whatever the STT decides, the LLM responds in. Pick any other value to translate (e.g. dictate in Portuguese, get an English email). Change here only overrides Settings → Language for the LLM step; the STT language is controlled separately.")
                 }
             }
             .pickerStyle(.menu)
 
-            Text("Decoupled from the transcription provider. Picking any value other than \"Match transcription\" turns the LLM step into a translate-and-clean pass.")
+            Text("Decoupled from the transcription provider. Picking any value other than \"Match transcription language\" turns the LLM step into a translate-and-clean pass.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 

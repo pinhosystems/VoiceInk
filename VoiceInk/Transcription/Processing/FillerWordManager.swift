@@ -41,7 +41,7 @@ class FillerWordManager: ObservableObject {
     /// other locales contribute whatever their pack ships. UserDefaults stays
     /// untouched — the union is computed on demand.
     var effectiveFillerWords: [String] {
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
+        let selectedLanguage = LanguageResolver.effectiveSTTCode()
         guard let packFillers = LocalePackRegistry.pack(for: selectedLanguage)?.fillerWords,
               !packFillers.isEmpty
         else {

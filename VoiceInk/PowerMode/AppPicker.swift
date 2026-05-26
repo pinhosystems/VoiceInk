@@ -92,7 +92,6 @@ struct AppPickerPopover: View {
     private func conflictingProfiles(for bundleId: String) -> [PowerModeConfig] {
         powerModeManager.configurations.filter { config in
             config.id != currentConfigId
-                && config.isEnabled
                 && (config.appConfigs?.contains(where: { $0.bundleIdentifier == bundleId }) ?? false)
         }
     }
@@ -102,16 +101,11 @@ struct AppPickerPopover: View {
         let names = conflicts.map { "\($0.emoji) \($0.name)" }.joined(separator: ", ")
         Menu {
             Text(conflicts.count == 1
-                 ? "Already in another enabled Power Mode. Both profiles will match this app — the one higher in the list wins."
-                 : "Already in \(conflicts.count) other enabled Power Modes. The one highest in the list wins.")
+                 ? "This app is already in another profile. Both profiles will match — the one higher in the list wins. Edit that profile to remove this app if you want exclusive ownership."
+                 : "This app is already in \(conflicts.count) other profiles. The one highest in the list wins. Edit those profiles to remove this app if you want exclusive ownership.")
             Divider()
             ForEach(conflicts) { config in
-                Button {
-                    powerModeManager.disableConfiguration(with: config.id)
-                    onDisableProfile?(config.id)
-                } label: {
-                    Label("Disable \(config.emoji) \(config.name)", systemImage: "minus.circle")
-                }
+                Label("\(config.emoji) \(config.name)", systemImage: "doc.text")
             }
         } label: {
             HStack(spacing: 4) {

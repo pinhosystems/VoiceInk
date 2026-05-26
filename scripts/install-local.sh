@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-BUNDLE_ID="com.prakashjoshipax.VoiceInk"
+BUNDLE_ID="agabo.dev.voiceink"
 INSTALL_PATH="/Applications/VoiceInk.app"
 BUILD_OUTPUT="$HOME/Downloads/VoiceInk.app"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

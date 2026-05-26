@@ -17,7 +17,7 @@ final class LocalCLIProviderManager: ObservableObject {
 
     @Published private(set) var providers: [LocalCLIProvider] = []
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "LocalCLIProviderManager")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "LocalCLIProviderManager")
     private let storageKey = "localCLIProvidersV1"
     private let migrationFlagKey = "localCLIProvidersV1.migrated"
     private let userDefaults = UserDefaults.standard

@@ -11,7 +11,7 @@ class TranscriptionPipeline {
     private let serviceRegistry: TranscriptionServiceRegistry
     private let enhancementService: AIEnhancementService?
     private let promptDetectionService = PromptDetectionService()
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "TranscriptionPipeline")
 
     var licenseViewModel: LicenseViewModel
 
@@ -88,7 +88,7 @@ class TranscriptionPipeline {
             // their own rules; the generic Portuguese fallback ships none.
             // Placed BEFORE the user-cleanup step so the LLM enhancement and
             // final output both see well-formed identifiers and currency.
-            let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage")
+            let selectedLanguage = LanguageResolver.effectiveSTTCode()
             if let pack = LocalePackRegistry.pack(for: selectedLanguage),
                LocalePackRegistry.normalizationEnabled {
                 text = LocaleNormalizer.apply(text, pack: pack)
@@ -198,7 +198,7 @@ class TranscriptionPipeline {
             var failureLog = APICallLog()
             failureLog.steps.append(makeSTTStep(
                 model: model,
-                language: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+                language: LanguageResolver.effectiveSTTCode(for: model),
                 durationMs: 0,
                 response: nil,
                 error: errorDescription

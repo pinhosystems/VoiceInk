@@ -7,12 +7,12 @@ import OSLog
 // the visible order and grouping live in `SidebarSection.allSections`.
 enum ViewType: String, CaseIterable, Identifiable {
     case metrics = "Dashboard"
-    case transcribeAudio = "Transcribe File"
+    case transcribeAudio = "File"
     case history = "History"
     case providers = "Providers"
     case models = "AI Models"
     case enhancement = "Enhancement"
-    case powerMode = "Power Mode"
+    case powerMode = "Profiles"
     case permissions = "Permissions"
     case audioInput = "Audio Input"
     case dictionary = "Dictionary"
@@ -32,7 +32,7 @@ enum ViewType: String, CaseIterable, Identifiable {
         case .providers: return "powerplug.fill"
         case .models: return "brain.head.profile"
         case .enhancement: return "wand.and.stars"
-        case .powerMode: return "sparkles.square.fill.on.square"
+        case .powerMode: return "bolt.fill"
         case .permissions: return "shield.fill"
         case .audioInput: return "mic.fill"
         case .dictionary: return "character.book.closed.fill"
@@ -53,21 +53,38 @@ struct SidebarSection: Identifiable {
 
     static let allSections: [SidebarSection] = [
         SidebarSection(
-            id: "activity",
-            title: "Activity",
-            items: [.metrics, .history, .transcribeAudio]
+            id: "daily",
+            title: "Daily",
+            // File-upload transcription used to live here as `.transcribeAudio`,
+            // but it's a sporadic action — moved into the History toolbar as
+            // an "Upload File…" button. The route itself stays alive at the
+            // `.transcribeAudio` view so notifications still resolve.
+            items: [.metrics, .history]
         ),
         SidebarSection(
-            id: "pipeline",
-            title: "Voice Pipeline",
-            items: [.audioInput, .providers, .models, .enhancement, .powerMode, .dictionary]
+            id: "configure",
+            title: "Configure",
+            // Pipeline order: signal flows from input device → transcription
+            // (providers + AI models) → LLM enhancement → profiles (the
+            // routing layer that composes everything above per-app).
+            // Profiles is intentionally last because it depends on every
+            // step before it.
+            items: [.providers, .models, .enhancement, .powerMode]
         ),
         SidebarSection(
-            id: "system",
-            title: "System",
-            items: [.permissions, .settings, .license]
+            id: "setup",
+            title: "Setup",
+            // One-time / rarely-touched entries. Rendered as a regular
+            // sidebar section (always expanded) so the user can reach
+            // permissions and settings without an extra click.
+            items: [.permissions, .settings]
         ),
     ]
+
+    /// About lives outside the regular sections and renders as a
+    /// bottom-anchored footer entry. It is a single read-only screen the
+    /// user visits at most once, so it should not consume a section slot.
+    static let footerItem: ViewType = .license
 }
 
 struct VisualEffectView: NSViewRepresentable {
@@ -89,39 +106,96 @@ struct VisualEffectView: NSViewRepresentable {
 }
 
 struct ContentView: View {
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "ContentView")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "ContentView")
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var engine: VoiceInkEngine
     @EnvironmentObject private var whisperModelManager: WhisperModelManager
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject private var hotkeyManager: HotkeyManager
-    @AppStorage("powerModeUIFlag") private var powerModeUIFlag = false
     @State private var selectedView: ViewType? = .metrics
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     @StateObject private var licenseViewModel = LicenseViewModel()
 
     /// Returns sections with hidden items pruned out. Sections that end
-    /// up empty are dropped so we don't render orphan headers. Power Mode
-    /// is kept as a disabled discovery entry when its UI flag is off —
-    /// the click navigates to Settings instead of opening the disabled
-    /// view, see `body`.
+    /// up empty are dropped so we don't render orphan headers.
+    ///
+    /// Conditional priority: while the user has NOT activated the paid
+    /// plan we lift Providers to the top of the Configure section so the
+    /// app's most-pressing onboarding step (connecting an STT or LLM
+    /// provider) is the first sidebar entry under the section. Once the
+    /// user is on the paid plan we drop the boost and restore the natural
+    /// Profiles-first order; at that point Providers no longer drives the
+    /// conversion funnel, so it sinks back down to its usual slot.
     private var visibleSections: [SidebarSection] {
-        SidebarSection.allSections.compactMap { section in
-            // Every item stays visible — the disabled-entry rendering for
-            // Power Mode is handled in the row builder.
-            let filtered = section.items
-            guard !filtered.isEmpty else { return nil }
-            return SidebarSection(id: section.id, title: section.title, items: filtered)
+        let isPaidUser: Bool = {
+            if case .licensed = licenseViewModel.licenseState { return true }
+            return false
+        }()
+
+        return SidebarSection.allSections.compactMap { section in
+            let items: [ViewType]
+            if section.id == "configure" && !isPaidUser {
+                items = prioritizeProviders(in: section.items)
+            } else {
+                items = section.items
+            }
+            guard !items.isEmpty else { return nil }
+            return SidebarSection(id: section.id, title: section.title, items: items)
         }
     }
 
-    /// True when this view type is currently routable. Power Mode is the
-    /// only conditional case today — disabled until the feature flag is
-    /// turned on in Settings.
+    /// Moves `.providers` to the front of the list, preserving the relative
+    /// order of every other entry. Safe to call even if Providers is not in
+    /// the list — returns the original list unchanged in that case.
+    private func prioritizeProviders(in items: [ViewType]) -> [ViewType] {
+        guard let providersIndex = items.firstIndex(of: .providers) else { return items }
+        var reordered = items
+        let providers = reordered.remove(at: providersIndex)
+        reordered.insert(providers, at: 0)
+        return reordered
+    }
+
+    /// Every sidebar destination is routable. Power Mode used to gate on
+    /// the legacy `powerModeUIFlag`; the feature is now always-on so the
+    /// check is gone. Kept as a method so future feature-flag gates can
+    /// hook in without restructuring the sidebar body.
     private func isRoutable(_ viewType: ViewType) -> Bool {
-        if viewType == .powerMode { return powerModeUIFlag }
         return true
+    }
+
+    /// Bottom-anchored About entry. Lives outside the List via
+    /// `safeAreaInset(edge:.bottom)` so it occupies the sidebar floor as a
+    /// dedicated footer band — a macOS-native pattern (Finder sidebar, Mail
+    /// account footer) where ancillary information sits in its own strip
+    /// with a thin separator above. The row stays interactive: hover
+    /// surfaces a soft accent background, selection paints the accent
+    /// fully, and a single tap routes to the About screen.
+    @ViewBuilder
+    private var aboutFooter: some View {
+        AboutFooterRow(
+            target: SidebarSection.footerItem,
+            appVersion: appVersion,
+            isSelected: selectedView == SidebarSection.footerItem,
+            isPro: {
+                if case .licensed = licenseViewModel.licenseState { return true }
+                return false
+            }()
+        ) {
+            selectedView = SidebarSection.footerItem
+        }
+    }
+
+    /// Renders a single sidebar row. Extracted so the Setup section's
+    /// DisclosureGroup and the regular sections can share identical row
+    /// styling without duplicating the navigation glue.
+    @ViewBuilder
+    private func sidebarRow(for viewType: ViewType) -> some View {
+        NavigationLink(value: viewType) {
+            SidebarItemView(viewType: viewType)
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+        .listRowSeparator(.hidden)
     }
 
     var body: some View {
@@ -138,7 +212,7 @@ struct ContentView: View {
                                 .cornerRadius(8)
                         }
 
-                        Text("Open Voice")
+                        Text("VoiceInk")
                             .font(.system(size: 14, weight: .semibold))
 
                         if case .licensed = licenseViewModel.licenseState {
@@ -159,34 +233,21 @@ struct ContentView: View {
                 ForEach(visibleSections) { section in
                     Section(section.title) {
                         ForEach(section.items) { viewType in
-                            if isRoutable(viewType) {
-                                NavigationLink(value: viewType) {
-                                    SidebarItemView(viewType: viewType)
-                                }
-                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .listRowSeparator(.hidden)
-                            } else {
-                                // Power Mode is gated by a feature flag. Render
-                                // a faded, click-through entry that promotes the
-                                // toggle in Settings rather than hiding the
-                                // feature entirely — users couldn't discover it
-                                // before because the sidebar simply didn't list
-                                // it.
-                                Button(action: { selectedView = .settings }) {
-                                    SidebarItemView(viewType: viewType)
-                                        .opacity(0.4)
-                                }
-                                .buttonStyle(.plain)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                                .listRowSeparator(.hidden)
-                                .help("Power Mode is disabled. Open Settings → Power Mode to enable.")
-                            }
+                            sidebarRow(for: viewType)
                         }
                     }
                 }
             }
             .listStyle(.sidebar)
-            .navigationTitle("Open Voice")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // About is anchored to the sidebar floor via safeAreaInset
+                // so it never competes for attention with the active
+                // sections. Smaller font, secondary color, no section
+                // header, no list-row chrome — visually clearly subordinate
+                // to Setup right above it.
+                aboutFooter
+            }
+            .navigationTitle("VoiceInk")
             .navigationSplitViewColumnWidth(210)
         } detail: {
             if let selectedView = selectedView {
@@ -225,13 +286,18 @@ struct ContentView: View {
                     selectedView = .permissions
                 case "Enhancement":
                     selectedView = .enhancement
-                // Accept both the current label and the legacy
-                // "Transcribe Audio" key so notifications stored before
-                // the rename still route correctly.
-                case "Transcribe File", "Transcribe Audio":
+                // Accept the current label plus every legacy key — the
+                // sidebar has been through "Transcribe Audio" →
+                // "Transcribe File" → "file" and notifications stored
+                // before each rename should still route correctly.
+                case "File", "file", "Transcribe File", "Transcribe Audio":
                     selectedView = .transcribeAudio
-                case "Power Mode":
+                case "Profiles", "Power Mode":
                     selectedView = .powerMode
+                case "Audio Input":
+                    selectedView = .audioInput
+                case "Dictionary":
+                    selectedView = .dictionary
                 default:
                     break
                 }
@@ -267,6 +333,91 @@ struct ContentView: View {
         case .permissions:
             PermissionsView()
         }
+    }
+}
+
+/// Sidebar footer that hosts the About destination. Designed as a
+/// dedicated band at the floor of the sidebar (own background,
+/// separator above, hover affordance, selection state) instead of a
+/// loose `Button` inside `safeAreaInset` so it looks like a finished
+/// macOS pattern rather than an after-thought strip.
+private struct AboutFooterRow: View {
+    let target: ViewType
+    let appVersion: String
+    let isSelected: Bool
+    let isPro: Bool
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: target.icon)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(iconForeground)
+                    .frame(width: 20, alignment: .center)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(target.rawValue)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(primaryForeground)
+
+                        if isPro {
+                            Text("PRO")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.85))
+                                .cornerRadius(3)
+                        }
+                    }
+
+                    Text("Version \(appVersion)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(secondaryForeground)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(chevronForeground)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .background(rowBackground)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .overlay(Divider().opacity(0.65), alignment: .top)
+    }
+
+    private var rowBackground: Color {
+        if isSelected { return Color.accentColor.opacity(0.18) }
+        if isHovering { return Color.primary.opacity(0.05) }
+        return Color.clear
+    }
+
+    private var primaryForeground: Color {
+        isSelected ? .primary : .primary
+    }
+
+    private var secondaryForeground: Color {
+        .secondary
+    }
+
+    private var iconForeground: Color {
+        isSelected ? .accentColor : .secondary
+    }
+
+    private var chevronForeground: Color {
+        isHovering || isSelected ? .secondary : .secondary.opacity(0.35)
     }
 }
 

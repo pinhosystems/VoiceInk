@@ -475,8 +475,8 @@ struct AudioPlayerView: View {
                     )
                     .softTooltip(
                         hasActivePowerMode
-                            ? "Active Power Mode: \(powerModeManager.activeConfiguration?.name ?? ""). Pick None to re-enable the individual LLM + transcription model pickers."
-                            : "Select Power Mode profile (applied to next Re-analyze / Retranscribe). When active, the LLM + transcription model pickers are locked to the Power Mode's values."
+                            ? "Active: \(powerModeManager.activeConfiguration?.name ?? "")\nPick None to unlock the model pickers"
+                            : "Power Mode profile\nLocks the model pickers when active"
                     )
                     .popover(isPresented: $showPowerModePopover, arrowEdge: .bottom) {
                         PowerModePopover()

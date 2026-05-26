@@ -51,8 +51,10 @@ struct ConfigurationView: View {
     // Section-level customization flags. When false, the corresponding Form
     // section dims and applyConfiguration in PowerModeSessionManager skips
     // every field in that section, leaving system defaults untouched.
-    @State private var customizeTranscription: Bool = true
-    @State private var customizeLLM: Bool = true
+    // Initial value matches PowerModeConfig's struct default; the real
+    // value is injected from the seed/latestConfig in init().
+    @State private var customizeTranscription: Bool = false
+    @State private var customizeLLM: Bool = false
 
     private static let llmOutputLanguageOptions: [(code: String, label: String)] = [
         (LocalePackRegistry.outputLanguageMatchSentinel, "Match transcription"),
@@ -94,8 +96,14 @@ struct ConfigurationView: View {
     }
 
     private func useCompatibleLanguage(for model: any TranscriptionModel) {
+        // Preserve the nil sentinel ("Default — inherit from global"). Only
+        // resolve a concrete language code when the user already picked
+        // one explicitly. Without this guard, changing the model on a
+        // profile that meant to inherit the global default would silently
+        // bake the current global value into the profile.
+        guard let explicit = selectedLanguage else { return }
         selectedLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(
-            selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage"),
+            explicit,
             for: model
         )
     }
@@ -131,8 +139,18 @@ struct ConfigurationView: View {
             _powerModeConfigId = State(initialValue: latestConfig.id)
             _isAIEnhancementEnabled = State(initialValue: latestConfig.isAIEnhancementEnabled)
             _selectedPromptId = State(initialValue: latestConfig.selectedPrompt.flatMap { UUID(uuidString: $0) })
-            _selectedTranscriptionModelName = State(initialValue: latestConfig.selectedTranscriptionModelName)
-            _selectedLanguage = State(initialValue: latestConfig.selectedLanguage)
+            // Customize-gated fields: when the corresponding `customize*` flag
+            // is OFF, ignore any stale value baked into the persisted config.
+            // Legacy profiles (saved before the customize toggles existed) had
+            // the global state of the day snapshotted into these fields; without
+            // this guard, toggling Customize ON in the editor would surface
+            // the snapshotted "openai" / "groq-whisper-large-v3" instead of the
+            // current global, and the model picker would render blank because
+            // the resolved provider doesn't ship the bound model. Bindings on
+            // the pickers fall back to the live `aiService` / `transcriptionModelManager`
+            // values when State is nil, which is what the user expects.
+            _selectedTranscriptionModelName = State(initialValue: latestConfig.customizeTranscription ? latestConfig.selectedTranscriptionModelName : nil)
+            _selectedLanguage = State(initialValue: latestConfig.customizeTranscription ? latestConfig.selectedLanguage : nil)
             _isTextFormattingEnabled = State(initialValue: latestConfig.isTextFormattingEnabled)
             _punctuationCleanupMode = State(initialValue: latestConfig.punctuationCleanupMode)
             _lowercaseTranscription = State(initialValue: latestConfig.lowercaseTranscription)
@@ -143,8 +161,8 @@ struct ConfigurationView: View {
             _useScreenCapture = State(initialValue: latestConfig.useScreenCapture)
             _autoSendKey = State(initialValue: latestConfig.autoSendKey)
             _isDefault = State(initialValue: latestConfig.isDefault)
-            _selectedAIProvider = State(initialValue: latestConfig.selectedAIProvider)
-            _selectedAIModel = State(initialValue: latestConfig.selectedAIModel)
+            _selectedAIProvider = State(initialValue: latestConfig.customizeLLM ? latestConfig.selectedAIProvider : nil)
+            _selectedAIModel = State(initialValue: latestConfig.customizeLLM ? latestConfig.selectedAIModel : nil)
             _isTranscriptFormattingExpanded = State(initialValue: latestConfig.isTextFormattingEnabled || latestConfig.punctuationCleanupMode != .keep || latestConfig.lowercaseTranscription)
             _llmOutputLanguageOverride = State(initialValue: latestConfig.llmOutputLanguageOverride)
             _localeNormalizationEnabledOverride = State(initialValue: latestConfig.localeNormalizationEnabledOverride)
@@ -160,8 +178,11 @@ struct ConfigurationView: View {
             _powerModeConfigId = State(initialValue: seed.id)
             _isAIEnhancementEnabled = State(initialValue: seed.isAIEnhancementEnabled)
             _selectedPromptId = State(initialValue: seed.selectedPrompt.flatMap { UUID(uuidString: $0) })
-            _selectedTranscriptionModelName = State(initialValue: seed.selectedTranscriptionModelName)
-            _selectedLanguage = State(initialValue: seed.selectedLanguage)
+            // Same customize-gating rule as the .edit path — presets that
+            // don't opt into Customize must NOT freeze a snapshot of the
+            // current global into the new profile.
+            _selectedTranscriptionModelName = State(initialValue: seed.customizeTranscription ? seed.selectedTranscriptionModelName : nil)
+            _selectedLanguage = State(initialValue: seed.customizeTranscription ? seed.selectedLanguage : nil)
             _isTextFormattingEnabled = State(initialValue: seed.isTextFormattingEnabled)
             _punctuationCleanupMode = State(initialValue: seed.punctuationCleanupMode)
             _lowercaseTranscription = State(initialValue: seed.lowercaseTranscription)
@@ -172,8 +193,8 @@ struct ConfigurationView: View {
             _useScreenCapture = State(initialValue: seed.useScreenCapture)
             _autoSendKey = State(initialValue: seed.autoSendKey)
             _isDefault = State(initialValue: false)
-            _selectedAIProvider = State(initialValue: seed.selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider"))
-            _selectedAIModel = State(initialValue: seed.selectedAIModel)
+            _selectedAIProvider = State(initialValue: seed.customizeLLM ? seed.selectedAIProvider : nil)
+            _selectedAIModel = State(initialValue: seed.customizeLLM ? seed.selectedAIModel : nil)
             _isTranscriptFormattingExpanded = State(initialValue: seed.isTextFormattingEnabled || seed.punctuationCleanupMode != .keep || seed.lowercaseTranscription)
             _llmOutputLanguageOverride = State(initialValue: seed.llmOutputLanguageOverride)
             _localeNormalizationEnabledOverride = State(initialValue: seed.localeNormalizationEnabledOverride)
@@ -389,18 +410,27 @@ struct ConfigurationView: View {
                         } else if let selectedModel = effectiveModelName,
                                   let modelInfo = transcriptionModelManager.allAvailableModels.first(where: { $0.name == selectedModel }),
                                   modelInfo.isMultilingualModel {
-                            let languageBinding = Binding<String?>(
-                                get: { selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "auto" },
-                                set: { selectedLanguage = $0 }
-                            )
-
-                            Picker("Language", selection: languageBinding) {
+                            // Bind directly to the optional so the nil tag
+                            // (Default — inherit global selection) survives
+                            // the round-trip. The previous binding auto-
+                            // filled from SelectedLanguage on read, which
+                            // forced every Power Mode to ship with an
+                            // explicit language even when the user wanted
+                            // the profile to defer to the global default.
+                            Picker(selection: $selectedLanguage) {
+                                Text("Inherit from Settings → Language")
+                                    .tag(String?.none)
                                 ForEach(availableLanguages(for: modelInfo).sorted(by: {
                                     if $0.key == "auto" { return true }
                                     if $1.key == "auto" { return false }
                                     return $0.value < $1.value
                                 }), id: \.key) { key, value in
                                     Text(value).tag(key as String?)
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("Language")
+                                    InfoTip("\"Inherit from Settings → Language\" leaves the Power Mode silent about language — when this profile activates, whatever you have in Settings → Language at that moment stays in effect (live inheritance). Pick a concrete language to override Settings for this profile only.")
                                 }
                             }
                         } else if let selectedModel = effectiveModelName,
@@ -472,7 +502,7 @@ struct ConfigurationView: View {
                         title: "Transcription",
                         toggleLabel: "Customize",
                         binding: $customizeTranscription,
-                        info: "When off, this Power Mode does not change the transcription model or language — both keep the global defaults while the profile is active. Transcript formatting below is always applied."
+                        info: "When off, this Power Mode does not change the transcription model, language, or transcript formatting — every field in this section keeps the global default while the profile is active."
                     )
                 }
 
@@ -563,33 +593,46 @@ struct ConfigurationView: View {
                             }
                         }
 
-                        if enhancementService.allPrompts.isEmpty {
-                            LabeledContent("Enhancement Prompt") {
-                                Text("No prompts available")
-                                    .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Picker("Enhancement Prompt", selection: $selectedPromptId) {
-                                ForEach(enhancementService.allPrompts) { prompt in
-                                    Text(prompt.title).tag(prompt.id as UUID?)
-                                }
-                            }
-                        }
-
                         Toggle("Context Awareness", isOn: $useScreenCapture)
                     }
                     } else {
-                        Text("Power Mode will keep the system defaults for AI Enhancement, prompt, provider, and model while this profile is active.")
+                        Text("Power Mode will keep the system defaults for AI Enhancement state, provider, and model while this profile is active. The prompt picker below is still editable — it applies whenever enhancement runs, even with the section above on Default.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Prompt picker lives OUTSIDE the customizeLLM gate so the
+                    // user can pin a profile-specific prompt without
+                    // committing to overriding the AI Enhancement state,
+                    // provider, and model. When enhancement runs (either
+                    // because the global setting is on or because the
+                    // customizeLLM section forces it on), this prompt
+                    // applies. "Default" leaves the global prompt in place.
+                    if enhancementService.allPrompts.isEmpty {
+                        LabeledContent("Enhancement Prompt") {
+                            Text("No prompts available")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Picker(selection: $selectedPromptId) {
+                            Text("Default (use global selection)").tag(UUID?.none)
+                            ForEach(enhancementService.allPrompts) { prompt in
+                                Text(prompt.title).tag(prompt.id as UUID?)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("Enhancement Prompt")
+                                InfoTip("Independent from the Customize toggle above. Pick a concrete prompt to apply it whenever this profile runs the LLM step (regardless of whether the rest of the AI Enhancement section is customized). \"Default\" leaves the global prompt in place.")
+                            }
+                        }
                     }
                 } header: {
                     sectionHeader(
                         title: "AI Enhancement",
                         toggleLabel: "Customize",
                         binding: $customizeLLM,
-                        info: "When off, this Power Mode does not change the AI Enhancement state, prompt, provider, or model — they keep the global defaults while the profile is active."
+                        info: "When off, this Power Mode does not change the AI Enhancement state, provider, model, or Context Awareness — those keep the global defaults while the profile is active. The prompt picker below this header is independent and stays editable either way."
                     )
                 }
 
@@ -676,6 +719,33 @@ struct ConfigurationView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
             .background(Color(NSColor.controlBackgroundColor))
+            // OFF→ON transitions on the Customize toggles must seed the
+            // gated State from the live global, not leave it nil. Without
+            // this, the user toggles Customize on, the pickers render the
+            // global (via binding fallback), but if they don't manually
+            // re-pick, the saved config holds nil — which the runtime then
+            // interprets as "no override" and the profile silently behaves
+            // as if Customize was OFF. Seeding here makes the editor's
+            // visible state and the persisted state agree.
+            .onChange(of: customizeLLM) { _, newValue in
+                guard newValue else { return }
+                if selectedAIProvider == nil {
+                    selectedAIProvider = aiService.selectedProvider.rawValue
+                }
+                if selectedAIModel == nil || selectedAIModel?.isEmpty == true {
+                    selectedAIModel = aiService.currentModel
+                }
+            }
+            .onChange(of: customizeTranscription) { _, newValue in
+                guard newValue else { return }
+                if selectedTranscriptionModelName == nil {
+                    selectedTranscriptionModelName = transcriptionModelManager.currentTranscriptionModel?.name
+                }
+                // `selectedLanguage` intentionally left nil here — the
+                // language picker uses the "Default" sentinel that
+                // LanguageResolver resolves at runtime against the Settings
+                // value. Seeding it would collapse the inheritance.
+            }
             .confirmationDialog(
                 "Delete Power Mode?",
                 isPresented: $isShowingDeleteConfirmation,
@@ -812,6 +882,20 @@ struct ConfigurationView: View {
         let shortcut = KeyboardShortcuts.getShortcut(for: .powerMode(id: powerModeConfigId))
         let hotkeyString = shortcut != nil ? "configured" : nil
 
+        // When the user did NOT opt into transcription customization, do
+        // not persist the staged-in model/language. Leaving the local
+        // state to flow through would freeze whatever value the picker
+        // happened to default to at form-load time into the saved profile,
+        // even though the UI no longer shows the picker.
+        let persistedTranscriptionModel = customizeTranscription ? selectedTranscriptionModelName : nil
+        let persistedTranscriptionLanguage = customizeTranscription ? selectedLanguage : nil
+        // Mirror for the LLM section — without this gate, legacy profiles
+        // re-save the snapshot provider/model on every edit even when the
+        // user keeps the Customize toggle OFF, which is the exact bug that
+        // made the "habilitar customização" flow surface the wrong provider.
+        let persistedAIProvider = customizeLLM ? selectedAIProvider : nil
+        let persistedAIModel = customizeLLM ? selectedAIModel : nil
+
         switch mode {
         case .add, .addFromPreset:
             var config = PowerModeConfig(
@@ -822,14 +906,14 @@ struct ConfigurationView: View {
                 urlConfigs: websiteConfigs.isEmpty ? nil : websiteConfigs,
                 isAIEnhancementEnabled: isAIEnhancementEnabled,
                 selectedPrompt: selectedPromptId?.uuidString,
-                selectedTranscriptionModelName: selectedTranscriptionModelName,
-                selectedLanguage: selectedLanguage,
+                selectedTranscriptionModelName: persistedTranscriptionModel,
+                selectedLanguage: persistedTranscriptionLanguage,
                 useScreenCapture: useScreenCapture,
                 isTextFormattingEnabled: isTextFormattingEnabled,
                 punctuationCleanupMode: punctuationCleanupMode,
                 lowercaseTranscription: lowercaseTranscription,
-                selectedAIProvider: selectedAIProvider,
-                selectedAIModel: selectedAIModel,
+                selectedAIProvider: persistedAIProvider,
+                selectedAIModel: persistedAIModel,
                 autoSendKey: autoSendKey,
                 isDefault: isDefault,
                 hotkeyShortcut: hotkeyString
@@ -848,8 +932,8 @@ struct ConfigurationView: View {
             updatedConfig.emoji = selectedEmoji
             updatedConfig.isAIEnhancementEnabled = isAIEnhancementEnabled
             updatedConfig.selectedPrompt = selectedPromptId?.uuidString
-            updatedConfig.selectedTranscriptionModelName = selectedTranscriptionModelName
-            updatedConfig.selectedLanguage = selectedLanguage
+            updatedConfig.selectedTranscriptionModelName = persistedTranscriptionModel
+            updatedConfig.selectedLanguage = persistedTranscriptionLanguage
             updatedConfig.isTextFormattingEnabled = isTextFormattingEnabled
             updatedConfig.punctuationCleanupMode = punctuationCleanupMode
             updatedConfig.lowercaseTranscription = lowercaseTranscription
@@ -857,8 +941,8 @@ struct ConfigurationView: View {
             updatedConfig.urlConfigs = websiteConfigs.isEmpty ? nil : websiteConfigs
             updatedConfig.useScreenCapture = useScreenCapture
             updatedConfig.autoSendKey = autoSendKey
-            updatedConfig.selectedAIProvider = selectedAIProvider
-            updatedConfig.selectedAIModel = selectedAIModel
+            updatedConfig.selectedAIProvider = persistedAIProvider
+            updatedConfig.selectedAIModel = persistedAIModel
             updatedConfig.isDefault = isDefault
             updatedConfig.hotkeyShortcut = hotkeyString
             updatedConfig.llmOutputLanguageOverride = llmOutputLanguageOverride

@@ -17,7 +17,7 @@ final class DeepgramStreamingProvider: StreamingTranscriptionProvider {
     private static let warnedAboutTruncation = OSAllocatedUnfairLock<Bool>(initialState: false)
 
     private static let logger = Logger(
-        subsystem: "com.prakashjoshipax.voiceink",
+        subsystem: "agabo.dev.voiceink",
         category: "DeepgramStreamingProvider"
     )
 

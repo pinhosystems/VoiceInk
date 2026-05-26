@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Sliding panel reached via the gear icon in the Enhancement screen. After
-/// the Phase A redesign this panel holds only the less-touched configuration:
-/// short-transcription skipping, request timeout, and the keyboard shortcut.
-/// Context, locale, and output language now live as full sections inside the
-/// main EnhancementSettingsView so they are visible without opening the gear.
+/// Sliding panel reached via the gear icon in the Enhancement screen. Holds
+/// the less-touched configuration: short-transcription skipping, request
+/// timeout, and the keyboard shortcut. Context, locale, and output language
+/// live as full sections inside the main EnhancementSettingsView so they are
+/// visible without opening the gear.
 struct EnhancementSettingsPanel: View {
     @AppStorage("SkipShortEnhancement") private var isSkipShortEnhancementEnabled = true
     @AppStorage("ShortEnhancementWordThreshold") private var shortEnhancementWordThreshold = 3

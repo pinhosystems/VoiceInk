@@ -26,7 +26,7 @@ final class CustomProviderManager: ObservableObject {
 
     @Published private(set) var providers: [CustomProvider] = []
 
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "CustomProviderManager")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "CustomProviderManager")
     private let storageKey = "customProvidersV1"
     private let migrationFlagKey = "customProvidersV1.migrated"
     private let userDefaults = UserDefaults.standard

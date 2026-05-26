@@ -55,10 +55,18 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     // Section-level customization flags. When false, the entire transcription
     // (resp. LLM) section is treated as "use system defaults" — the Power Mode
     // session leaves the corresponding UserDefaults / service state untouched
-    // when it activates. Defaults to true to preserve legacy behavior for any
-    // config saved before this field existed.
-    var customizeTranscription: Bool = true
-    var customizeLLM: Bool = true
+    // when it activates. Defaults to false so brand-new profiles start as
+    // "thin overlays" (only the prompt/app routing matters) and the user has
+    // to explicitly opt into overriding either pipeline section. The Codable
+    // decode fallback below ALSO defaults to false: legacy profiles persisted
+    // before this field existed had a `selectedTranscriptionModelName` baked
+    // in from whatever the global default was at creation time — re-interpreting
+    // that snapshot as an explicit pin makes the profile silently override the
+    // current global model and is the exact bug the customize toggle was added
+    // to solve. Users who actually want a pin can re-enable the toggle in the
+    // editor; the pinned name is preserved in the encoded payload either way.
+    var customizeTranscription: Bool = false
+    var customizeLLM: Bool = false
 
     enum CodingKeys: String, CodingKey {
         // `removePunctuation` is kept as a legacy key so older exports decode
@@ -89,12 +97,28 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         self.autoSendKey = autoSendKey
         self.selectedAIProvider = selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider")
         self.selectedAIModel = selectedAIModel
-        self.selectedTranscriptionModelName = selectedTranscriptionModelName ?? UserDefaults.standard.string(forKey: "CurrentTranscriptionModel")
-        self.selectedLanguage = selectedLanguage ?? UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "en"
+        // Preserve the nil sentinel — it represents "inherit from the
+        // current global transcription model." PowerModeSessionManager.
+        // applyConfiguration only writes the model when this is non-nil
+        // AND customizeTranscription is true, so a freshly-created
+        // uncustomized profile must NOT bake whatever the user happens
+        // to have selected globally at creation time. The previous
+        // `?? UserDefaults.standard.string(forKey: "CurrentTranscriptionModel")`
+        // fallback locked the profile to that model forever, even after
+        // the user later switched the global default to something else.
+        self.selectedTranscriptionModelName = selectedTranscriptionModelName
+        // Same rule for language — see PowerModeSessionManager comment
+        // above, the nil sentinel means "inherit from global default."
+        self.selectedLanguage = selectedLanguage
         self.isTextFormattingEnabled = isTextFormattingEnabled
         self.punctuationCleanupMode = punctuationCleanupMode
         self.lowercaseTranscription = lowercaseTranscription
-        self.isEnabled = isEnabled
+        // Profiles cannot be disabled. The init parameter is accepted for
+        // call-site compatibility but always coerced to true so legacy
+        // factories that passed `isEnabled: false` (e.g. duplicate-as-
+        // disabled) silently produce an enabled profile.
+        _ = isEnabled
+        self.isEnabled = true
         self.isDefault = isDefault
         self.hotkeyShortcut = hotkeyShortcut
     }
@@ -129,7 +153,10 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         } else {
             autoSendKey = .none
         }
-        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        // Always coerce to true on decode — older builds could persist
+        // `isEnabled = false`; profiles are now always-on.
+        _ = try container.decodeIfPresent(Bool.self, forKey: .isEnabled)
+        isEnabled = true
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         hotkeyShortcut = try container.decodeIfPresent(String.self, forKey: .hotkeyShortcut)
         llmOutputLanguageOverride = try container.decodeIfPresent(String.self, forKey: .llmOutputLanguageOverride)
@@ -137,8 +164,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         whisperPromptDomainOverride = try container.decodeIfPresent(String.self, forKey: .whisperPromptDomainOverride)
         removeFillerWordsOverride = try container.decodeIfPresent(Bool.self, forKey: .removeFillerWordsOverride)
         appendTrailingSpaceOverride = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpaceOverride)
-        customizeTranscription = try container.decodeIfPresent(Bool.self, forKey: .customizeTranscription) ?? true
-        customizeLLM = try container.decodeIfPresent(Bool.self, forKey: .customizeLLM) ?? true
+        customizeTranscription = try container.decodeIfPresent(Bool.self, forKey: .customizeTranscription) ?? false
+        customizeLLM = try container.decodeIfPresent(Bool.self, forKey: .customizeLLM) ?? false
 
         if let newModelName = try container.decodeIfPresent(String.self, forKey: .selectedTranscriptionModelName) {
             selectedTranscriptionModelName = newModelName
@@ -295,7 +322,11 @@ class PowerModeManager: ObservableObject {
         copy.name = uniqueName(basedOn: source.name)
         copy.isDefault = false
         copy.hotkeyShortcut = nil
-        copy.isEnabled = false
+        // Profiles cannot be disabled. The duplicate used to land
+        // disabled so it would not shadow the source on the next app
+        // match; now that disabling is gone, the user must rename / edit
+        // the duplicate before it conflicts.
+        copy.isEnabled = true
 
         configurations.insert(copy, at: sourceIndex + 1)
         saveConfigurations()

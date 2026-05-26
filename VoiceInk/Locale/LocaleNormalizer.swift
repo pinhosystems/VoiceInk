@@ -8,7 +8,7 @@ import os
 /// express — CPF digit validation, number-word arithmetic, etc.).
 enum LocaleNormalizer {
     private static let logger = Logger(
-        subsystem: "com.prakashjoshipax.voiceink",
+        subsystem: "agabo.dev.voiceink",
         category: "LocaleNormalizer"
     )
 

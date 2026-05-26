@@ -27,6 +27,15 @@ struct SettingsView: View {
     @State private var showResetOnboardingAlert = false
     @State private var currentShortcut = KeyboardShortcuts.getShortcut(for: .toggleMiniRecorder)
     @State private var isCustomCancelEnabled = KeyboardShortcuts.getShortcut(for: .cancelRecorder) != nil
+    // Dictionary is reached from Advanced → "Open Dictionary…" as a modal
+    // sheet rather than a sidebar destination. We deliberately do NOT route
+    // through the global `.navigateToDestination` notification + ContentView
+    // selectedView swap: `List(selection:)` in the NavigationSplitView only
+    // accepts values that exist as a sidebar row, and Dictionary is hidden
+    // from the sidebar by design. The notification path was a no-op because
+    // of that clamping. A self-contained sheet on SettingsView is the right
+    // affordance here — the workflow is "open, edit, close".
+    @State private var isShowingDictionarySheet = false
 
     // Expansion states - all collapsed by default
     @State private var isCustomCancelExpanded = false
@@ -49,20 +58,20 @@ struct SettingsView: View {
     /// subtag when the regional variant is missing.
     private static let defaultLanguageOptions: [(code: String, label: String)] = [
         ("auto", "Auto-detect (per provider)"),
-        ("en", "English (generic)"),
+        ("en", "English"),
         ("en-US", "English (United States)"),
         ("en-GB", "English (United Kingdom)"),
         ("en-AU", "English (Australia)"),
-        ("pt", "Portuguese (generic)"),
+        ("pt", "Portuguese"),
         ("pt-BR", "Portuguese (Brazil)"),
         ("pt-PT", "Portuguese (Portugal)"),
-        ("es", "Spanish (generic)"),
+        ("es", "Spanish"),
         ("es-ES", "Spanish (Spain)"),
         ("es-MX", "Spanish (Mexico)"),
-        ("fr", "French (generic)"),
+        ("fr", "French"),
         ("fr-FR", "French (France)"),
         ("fr-CA", "French (Canada)"),
-        ("de", "German (generic)"),
+        ("de", "German"),
         ("de-DE", "German (Germany)"),
         ("de-AT", "German (Austria)"),
         ("de-CH", "German (Switzerland)"),
@@ -80,7 +89,88 @@ struct SettingsView: View {
         "en", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ja", "ko", "zh"
     ]
 
+    private enum SettingsTab: String, CaseIterable, Identifiable {
+        case general, shortcuts, recording, powerMode, data, advanced
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .general: return "General"
+            case .shortcuts: return "Shortcuts"
+            case .recording: return "Recording"
+            case .powerMode: return "Profiles"
+            case .data: return "Data"
+            case .advanced: return "Advanced"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .general: return "gear"
+            case .shortcuts: return "keyboard"
+            case .recording: return "mic.fill"
+            case .powerMode: return "bolt.fill"
+            case .data: return "folder.fill"
+            case .advanced: return "wrench.and.screwdriver.fill"
+            }
+        }
+    }
+
+    @State private var selectedTab: SettingsTab = .general
+
     var body: some View {
+        VStack(spacing: 0) {
+            // Top breathing room — the TabView tab strip sits glued to the
+            // window chrome otherwise, which reads as cramped on macOS.
+            Spacer()
+                .frame(height: 16)
+
+            TabView(selection: $selectedTab) {
+                generalTab
+                    .tabItem { Label(SettingsTab.general.label, systemImage: SettingsTab.general.icon) }
+                    .tag(SettingsTab.general)
+
+                shortcutsTab
+                    .tabItem { Label(SettingsTab.shortcuts.label, systemImage: SettingsTab.shortcuts.icon) }
+                    .tag(SettingsTab.shortcuts)
+
+                recordingTab
+                    .tabItem { Label(SettingsTab.recording.label, systemImage: SettingsTab.recording.icon) }
+                    .tag(SettingsTab.recording)
+
+                powerModeTab
+                    .tabItem { Label(SettingsTab.powerMode.label, systemImage: SettingsTab.powerMode.icon) }
+                    .tag(SettingsTab.powerMode)
+
+                dataTab
+                    .tabItem { Label(SettingsTab.data.label, systemImage: SettingsTab.data.icon) }
+                    .tag(SettingsTab.data)
+
+                advancedTab
+                    .tabItem { Label(SettingsTab.advanced.label, systemImage: SettingsTab.advanced.icon) }
+                    .tag(SettingsTab.advanced)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
+        .alert("Reset Onboarding", isPresented: $showResetOnboardingAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                DispatchQueue.main.async {
+                    hasCompletedOnboarding = false
+                }
+            }
+        } message: {
+            Text("You'll see the introduction screens again the next time you launch the app.")
+        }
+    }
+
+    // MARK: - General tab — Language + general app preferences
+
+    private var generalTab: some View {
         Form {
             // MARK: - Language (mandatory)
             Section {
@@ -91,7 +181,7 @@ struct SettingsView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text("Default language")
-                        InfoTip("Your primary language for dictation and LLM enhancement. Every per-context language picker (STT model language, LLM output language, Power Mode profiles) pre-selects this value, falling back to the closest supported variant when a context does not expose the exact code. Regional variants resolve to their generic primary subtag automatically: en-US → en, pt-BR → pt, es-MX → es, etc.")
+                        InfoTip("Your primary language. Resolves live at every runtime read for surfaces that left the inherit option selected (AI Models on \"Default\", Enhancement on \"Match transcription language\", Power Mode on \"Inherit from Settings\"). Explicit overrides in any of those screens are preserved and untouched by changes here. Regional variants resolve to their generic primary subtag when a downstream context does not expose the exact code (en-US → en, pt-BR → pt, etc.).")
                     }
                 }
                 .pickerStyle(.menu)
@@ -99,7 +189,7 @@ struct SettingsView: View {
                     propagateDefaultLanguage(newValue)
                 }
 
-                Text("Changing this updates the active transcription language and the LLM output language using the closest available match for each. Per-context overrides you set afterwards stay until you re-pick the default.")
+                Text("Changing this updates every per-context picker that is still on its inherit-from-Settings option (AI Models on \"Default\", Enhancement on \"Match transcription language\", Power Mode on \"Inherit from Settings\"). Explicit overrides you set in those screens are preserved and never overwritten by changes here.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -107,6 +197,37 @@ struct SettingsView: View {
                 Text("Language")
             }
 
+            Section("General") {
+                Toggle("Hide Dock Icon", isOn: $menuBarManager.isMenuBarOnly)
+
+                LaunchAtLogin.Toggle("Launch at Login")
+
+                Toggle("Show Announcements", isOn: $enableAnnouncements)
+                    .onChange(of: enableAnnouncements) { _, newValue in
+                        if newValue {
+                            AnnouncementsService.shared.start()
+                        } else {
+                            AnnouncementsService.shared.stop()
+                        }
+                    }
+
+                HStack {
+                    Button("Reset Onboarding") {
+                        showResetOnboardingAlert = true
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
+    }
+
+    // MARK: - Shortcuts tab
+
+    private var shortcutsTab: some View {
+        Form {
             // MARK: - Shortcuts
             Section {
                 LabeledContent("Shortcut 1") {
@@ -215,6 +336,34 @@ struct SettingsView: View {
                 }
             }
 
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
+    }
+
+    // MARK: - Recording tab — feedback + interface
+
+    private var recordingTab: some View {
+        Form {
+            // MARK: - Input Device (rarely-changed; deep screen behind a button)
+            Section {
+                LabeledContent("Microphone & Input Mode") {
+                    Button("Open Audio Input…") {
+                        NotificationCenter.default.post(
+                            name: .navigateToDestination,
+                            object: nil,
+                            userInfo: ["destination": "Audio Input"]
+                        )
+                    }
+                }
+            } header: {
+                Text("Input Device")
+            } footer: {
+                Text("Choose between the system default, a specific microphone, or a prioritized fallback list. Most users set this once and never revisit it.")
+            }
+
             // MARK: - Recording Feedback
             Section("Recording Feedback") {
                 // Sound Feedback
@@ -269,9 +418,6 @@ struct SettingsView: View {
 
             }
 
-            // MARK: - Power Mode
-            PowerModeSection()
-
             // MARK: - Interface
             Section("Interface") {
                 Picker("Recorder Style", selection: $recorderUIManager.recorderType) {
@@ -279,40 +425,30 @@ struct SettingsView: View {
                     Text("Mini").tag("mini")
                 }
                 .pickerStyle(.segmented)
-
             }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
+    }
 
-            // MARK: - Experimental
-            ExperimentalSection()
+    // MARK: - Power Mode tab
 
-            // MARK: - General
-            Section("General") {
-                Toggle("Hide Dock Icon", isOn: $menuBarManager.isMenuBarOnly)
+    private var powerModeTab: some View {
+        Form {
+            PowerModeSection()
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
+    }
 
-                LaunchAtLogin.Toggle("Launch at Login")
+    // MARK: - Data tab — Privacy + Backup
 
-                // Auto-update and "Check for Updates" intentionally removed in
-                // this fork — the upstream Beingpax appcast is not consumed.
-                // See `UpdaterViewModel` in VoiceInk.swift for the full
-                // rationale. Toggling those controls would have been a no-op
-                // and confusing for users.
-
-                Toggle("Show Announcements", isOn: $enableAnnouncements)
-                    .onChange(of: enableAnnouncements) { _, newValue in
-                        if newValue {
-                            AnnouncementsService.shared.start()
-                        } else {
-                            AnnouncementsService.shared.stop()
-                        }
-                    }
-
-                HStack {
-                    Button("Reset Onboarding") {
-                        showResetOnboardingAlert = true
-                    }
-                }
-            }
-
+    private var dataTab: some View {
+        Form {
             // MARK: - Privacy
             Section {
                 AudioCleanupSettingsView()
@@ -362,6 +498,33 @@ struct SettingsView: View {
                 Text("Export all settings, or choose specific categories when importing a backup.")
             }
 
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(NSColor.controlBackgroundColor))
+        .padding(.top, 12)
+    }
+
+    // MARK: - Advanced tab — Experimental + Diagnostics
+
+    private var advancedTab: some View {
+        Form {
+            ExperimentalSection()
+
+            // MARK: - Dictionary (secondary)
+            Section {
+                LabeledContent("Vocabulary & Word Replacements") {
+                    Button("Open Dictionary…") {
+                        isShowingDictionarySheet = true
+                    }
+                }
+            } header: {
+                HStack(spacing: 4) {
+                    Text("Dictionary")
+                    InfoTip("Two-tab editor: Vocabulary biases the STT engine toward proper nouns and jargon; Word Replacements rewrites the final transcript. Most users never touch this — leave it alone unless the engine consistently mishears a specific term.")
+                }
+            }
+
             // MARK: - Diagnostics
             Section("Diagnostics") {
                 DiagnosticsSettingsView()
@@ -370,15 +533,24 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
-        .alert("Reset Onboarding", isPresented: $showResetOnboardingAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
-                DispatchQueue.main.async {
-                    hasCompletedOnboarding = false
-                }
+        .padding(.top, 12)
+        .sheet(isPresented: $isShowingDictionarySheet) {
+            // Wrap DictionarySettingsView in a fixed-size NavigationStack so
+            // it gets a title bar with a Done button to dismiss the sheet.
+            // The inner view doesn't ship its own close affordance because
+            // when it lived in the sidebar the navigation chrome did that
+            // job; here in a modal sheet we add it back at the wrapper level.
+            NavigationStack {
+                DictionarySettingsView(whisperPrompt: WhisperPrompt())
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                isShowingDictionarySheet = false
+                            }
+                        }
+                    }
             }
-        } message: {
-            Text("You'll see the introduction screens again the next time you launch the app.")
+            .frame(minWidth: 720, minHeight: 560)
         }
     }
 
@@ -404,53 +576,20 @@ struct SettingsView: View {
         .fixedSize()
     }
 
-    /// Pushes the new default-language choice into every per-context language
-    /// picker, resolving via `LanguageFallbackResolver` so a regional variant
-    /// the context does not expose collapses to the closest available match
-    /// (typically the generic primary subtag).
+    /// Fires after the user picks a new `DefaultAppLanguage`.
     ///
-    /// Touch points:
-    ///   - `SelectedLanguage` (STT): resolved against the active
-    ///     transcription model's supported language list, with
-    ///     `TranscriptionLanguageSupport.validLanguageOrFallback` as a final
-    ///     safety net (handles provider quirks like Apple Native ↔ BCP-47).
-    ///   - `LLMOutputLanguage`: resolved against the picker's hard-coded
-    ///     entries. When the chosen default has no representative there, the
-    ///     sentinel `match` is restored so the LLM mirrors the STT language
-    ///     instead of silently translating into an unrelated locale.
+    /// The downstream pickers (AI Models STT, Enhancement LLM, Power Mode
+    /// profile language) are sentinel-based: surfaces left on
+    /// `LanguageResolver.defaultSentinel` ("default") for STT, `"match"`
+    /// for LLM, or `nil` for Power Mode resolve through Settings at every
+    /// runtime read via `LanguageResolver.effectiveSTTCode(...)` and
+    /// `LocalePackRegistry.outputLanguageCode(sttCode:)`. So this callback
+    /// no longer writes anything — explicit customizations the user made
+    /// in the downstream pickers are preserved. The notification fired by
+    /// `LanguageDefaultPropagator.apply` re-renders any open view that
+    /// displays a resolved label.
     private func propagateDefaultLanguage(_ newDefault: String) {
-        let trimmed = newDefault.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let sttAvailable: [String]
-        if let model = transcriptionModelManager.currentTranscriptionModel {
-            sttAvailable = Array(TranscriptionLanguageSupport.languages(for: model).keys)
-        } else {
-            sttAvailable = []
-        }
-
-        let resolvedSTT = LanguageFallbackResolver.resolve(
-            target: trimmed,
-            available: sttAvailable,
-            fallback: trimmed
-        )
-        // Run through validLanguageOrFallback so provider-specific quirks
-        // (Apple Native's BCP-47, Whisper's region-strip, FluidAudio's
-        // subset) get the final word; without it a literal "pt-BR" would
-        // reach Whisper as-is and be rejected.
-        if let model = transcriptionModelManager.currentTranscriptionModel {
-            selectedLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(resolvedSTT, for: model)
-        } else {
-            selectedLanguage = resolvedSTT
-        }
-
-        if let llmMatch = LanguageFallbackResolver.resolve(target: trimmed, available: Self.llmOutputLanguageCodes) {
-            llmOutputLanguage = llmMatch
-        } else {
-            llmOutputLanguage = LocalePackRegistry.outputLanguageMatchSentinel
-        }
-
-        NotificationCenter.default.post(name: .languageDidChange, object: nil)
+        LanguageDefaultPropagator.apply(newDefault)
     }
 }
 
@@ -531,51 +670,35 @@ struct ExpandableSettingsRow<Content: View>: View {
 // MARK: - Power Mode Section
 
 struct PowerModeSection: View {
-    @ObservedObject private var powerModeManager = PowerModeManager.shared
-    @AppStorage("powerModeUIFlag") private var powerModeUIFlag = false
     @AppStorage("powerModePersistConfig") private var powerModePersistSettings = false
-    @State private var showDisableAlert = false
-    @State private var isExpanded = false
 
     var body: some View {
         Section {
-            ExpandableSettingsRow(
-                isExpanded: $isExpanded,
-                isEnabled: toggleBinding,
-                label: "Power Mode",
-                infoMessage: "Apply custom settings based on active app or website.",
-                infoURL: "https://tryvoiceink.com/docs/power-mode"
-            ) {
-                Toggle(isOn: $powerModePersistSettings) {
-                    HStack(spacing: 4) {
-                        Text("Persist Configured Preferences")
-                        InfoTip("When enabled, Power Mode preferences stay active after you stop recording instead of reverting to your original preferences. They will only change when a different Power Mode activates.")
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                        .foregroundColor(.accentColor)
+                    Text("Profiles run every dictation session")
+                        .font(.system(size: 13, weight: .semibold))
+                    InfoTip("Profiles drive every dictation session. With zero profiles configured the user defaults you set in Settings → Enhancement and AI Models apply. When you add profiles, the runtime picks the first one whose trigger matches the active app or URL; if nothing matches, it falls back to your user defaults. Manage profiles from the Profiles tab in the sidebar.")
+                    Spacer()
+                }
+                Text("Fallback chain: matching profile (Perfis) → user defaults (the Settings you configured in General / Enhancement / AI Models). No profiles? The user defaults stay in effect automatically.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 4)
+
+            Toggle(isOn: $powerModePersistSettings) {
+                HStack(spacing: 4) {
+                    Text("Persist Configured Preferences")
+                    InfoTip("When enabled, profile preferences stay active after you stop recording instead of reverting to your original preferences. They only change when a different profile activates.")
                 }
             }
         } header: {
-            Text("Power Mode")
+            Text("Profiles")
         }
-        .alert("Power Mode Still Active", isPresented: $showDisableAlert) {
-            Button("Got it", role: .cancel) { }
-        } message: {
-            Text("Disable or remove your Power Modes first.")
-        }
-    }
-
-    private var toggleBinding: Binding<Bool> {
-        Binding(
-            get: { powerModeUIFlag },
-            set: { newValue in
-                if newValue {
-                    powerModeUIFlag = true
-                } else if powerModeManager.configurations.allSatisfy({ !$0.isEnabled }) {
-                    powerModeUIFlag = false
-                } else {
-                    showDisableAlert = true
-                }
-            }
-        )
     }
 }
 

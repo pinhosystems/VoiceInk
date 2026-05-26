@@ -242,7 +242,7 @@ struct BrazilianPortuguesePack: LocalePack {
 /// corruption of legitimate text. Anything ambiguous falls through unchanged.
 private enum BrazilianPortugueseNormalizer {
     private static let logger = Logger(
-        subsystem: "com.prakashjoshipax.voiceink",
+        subsystem: "agabo.dev.voiceink",
         category: "BrazilianPortugueseNormalizer"
     )
 

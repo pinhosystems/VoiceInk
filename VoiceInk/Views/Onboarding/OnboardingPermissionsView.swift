@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import AppKit
 import KeyboardShortcuts
+import ScreenCaptureKit
 
 struct OnboardingPermission: Identifiable {
     let id = UUID()
@@ -343,12 +344,17 @@ struct OnboardingPermissionsView: View {
             }
             
         case .screenRecording:
-            // First try to request permission programmatically
+            // CGRequestScreenCaptureAccess alone does not always register
+            // the bundle in System Settings → Privacy & Security → Screen
+            // Recording on macOS Sequoia (15+). Trigger SCShareableContent
+            // so TCC writes a record for this bundle and macOS shows its
+            // native permission alert. The alert has its own "Open System
+            // Settings" button, so we no longer call NSWorkspace.open here
+            // — doing both popped two windows at once (the alert plus the
+            // pane behind it).
             CGRequestScreenCaptureAccess()
-            
-            // Also open system preferences as fallback
-            if let prefpaneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(prefpaneURL)
+            Task.detached(priority: .userInitiated) {
+                _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             }
             
             // Start checking for permission status

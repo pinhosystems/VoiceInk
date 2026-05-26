@@ -119,8 +119,9 @@ class WhisperPrompt: ObservableObject {
     }
     
     func updateTranscriptionPrompt() {
-        // Get the currently selected language from UserDefaults
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "en"
+        // Resolve via LanguageResolver so the "default" sentinel expands
+        // through Settings → Default language.
+        let selectedLanguage = LanguageResolver.effectiveSTTCode(fallback: "en")
         
         // Get the prompt for the selected language (custom if available, otherwise default)
         let basePrompt = getLanguagePrompt(for: selectedLanguage)

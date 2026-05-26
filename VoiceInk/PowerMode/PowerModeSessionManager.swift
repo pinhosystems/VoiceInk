@@ -60,7 +60,7 @@ class PowerModeSessionManager {
                 selectedPromptId: enhancementService.selectedPromptId?.uuidString,
                 selectedAIProvider: enhancementService.getAIService()?.selectedProvider.rawValue,
                 selectedAIModel: enhancementService.getAIService()?.currentModel,
-                selectedLanguage: UserDefaults.standard.string(forKey: "SelectedLanguage"),
+                selectedLanguage: LanguageResolver.rawSTTValue(),
                 transcriptionModelName: stateProvider.currentTranscriptionModel?.name,
                 isTextFormattingEnabled: UserDefaults.standard.bool(forKey: "IsTextFormattingEnabled"),
                 punctuationCleanupMode: punctuationCleanupMode,
@@ -149,24 +149,6 @@ class PowerModeSessionManager {
                 enhancementService.isEnhancementEnabled = config.isAIEnhancementEnabled
 
                 if config.isAIEnhancementEnabled {
-                    if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
-                        // Guard against orphan references: Power Mode
-                        // configs persisted before recent dedup /
-                        // template-promotion migrations may point at a
-                        // CustomPrompt that no longer exists. Setting the
-                        // invalid UUID would make activePrompt resolve to
-                        // nil — silently — and the history row's prompt
-                        // pill would render blank. Validate the lookup
-                        // and fall back to nil (Default) when the prompt
-                        // is gone, so getSystemMessage and enhance() both
-                        // route through the predefined Default.
-                        if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
-                            enhancementService.selectedPromptId = uuid
-                        } else {
-                            enhancementService.selectedPromptId = nil
-                        }
-                    }
-
                     if let aiService = enhancementService.getAIService() {
                         if let providerName = config.selectedAIProvider, let provider = AIProvider(rawValue: providerName) {
                             aiService.selectedProvider = provider
@@ -178,11 +160,49 @@ class PowerModeSessionManager {
                 }
             }
 
-            enhancementService.useScreenCaptureContext = config.useScreenCapture
+            // Prompt selection is decoupled from `customizeLLM`. A profile
+            // can pin a prompt without overriding the AI Enhancement
+            // state / provider / model. When the prompt id is nil the
+            // global selection stays in place.
+            if let promptId = config.selectedPrompt, let uuid = UUID(uuidString: promptId) {
+                // Guard against orphan references: profiles persisted
+                // before recent dedup / template-promotion migrations
+                // may point at a CustomPrompt that no longer exists.
+                // Setting the invalid UUID would make activePrompt
+                // resolve to nil silently and the history row's prompt
+                // pill would render blank. Validate the lookup and
+                // fall back to nil (Default) when the prompt is gone.
+                if enhancementService.allPrompts.contains(where: { $0.id == uuid }) {
+                    enhancementService.selectedPromptId = uuid
+                } else {
+                    enhancementService.selectedPromptId = nil
+                }
+            }
 
-            UserDefaults.standard.set(config.isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
-            PunctuationCleanupMode.setCurrent(config.punctuationCleanupMode)
-            UserDefaults.standard.set(config.lowercaseTranscription, forKey: "LowercaseTranscription")
+            // Context Awareness lives in the AI Enhancement section of the
+            // editor (under the `customizeLLM` gate, inside the
+            // `isAIEnhancementEnabled` branch). When Customize is off the
+            // user can't see or edit it, so applying the persisted value
+            // would silently override the global preference — exactly the
+            // "leaks out of the off section" complaint the user raised.
+            if config.customizeLLM {
+                enhancementService.useScreenCaptureContext = config.useScreenCapture
+            }
+
+            // Transcript formatting fields (Paragraph breaks / Punctuation /
+            // Lowercase output) live inside the Transcription section in the
+            // editor. Earlier copy treated them as "always applied" carve-outs
+            // independent of the Customize toggle, but that conflicts with the
+            // user's mental model: a section with Customize OFF must not touch
+            // any of its fields. Gate them behind `customizeTranscription`
+            // so the toggle is the single source of truth for the whole
+            // section. Header tooltip in PowerModeConfigView was updated in
+            // the same pass to drop the carve-out language.
+            if config.customizeTranscription {
+                UserDefaults.standard.set(config.isTextFormattingEnabled, forKey: "IsTextFormattingEnabled")
+                PunctuationCleanupMode.setCurrent(config.punctuationCleanupMode)
+                UserDefaults.standard.set(config.lowercaseTranscription, forKey: "LowercaseTranscription")
+            }
 
             // Optional per-Power-Mode overrides. When the override is nil the
             // profile leaves the system default untouched — this is the
@@ -295,6 +315,17 @@ class PowerModeSessionManager {
     }
 
     private func applyCompatibleLanguage(_ language: String, preferredModelName: String?) {
+        // Preserve the inherit-from-Settings sentinel verbatim — it is a
+        // valid runtime value (LanguageResolver expands it through
+        // DefaultAppLanguage at every read). Running it through
+        // validLanguageOrFallback would collapse the sentinel into a
+        // concrete code, defeating live inheritance after this write.
+        if language.lowercased() == LanguageResolver.defaultSentinel {
+            UserDefaults.standard.set(language, forKey: "SelectedLanguage")
+            NotificationCenter.default.post(name: .languageDidChange, object: nil)
+            return
+        }
+
         guard let model = model(named: preferredModelName) ?? stateProvider?.currentTranscriptionModel else {
             UserDefaults.standard.set(language, forKey: "SelectedLanguage")
             NotificationCenter.default.post(name: .languageDidChange, object: nil)

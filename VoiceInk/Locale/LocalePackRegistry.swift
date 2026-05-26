@@ -37,6 +37,11 @@ enum LocalePackRegistry {
     /// Effective LLM output language. Returns the STT code when the user has
     /// left the override on `match` (the default); otherwise returns the
     /// explicitly chosen BCP-47 code.
+    ///
+    /// Callers should pass an already-resolved `sttCode` (i.e. the result of
+    /// `LanguageResolver.effectiveSTTCode(...)`) so the chain
+    /// Settings → STT → LLM collapses correctly when both are on their
+    /// respective sentinels (`"default"` for STT, `"match"` here).
     static func outputLanguageCode(sttCode: String?) -> String? {
         let raw = (UserDefaults.standard.string(forKey: outputLanguageKey) ?? outputLanguageMatchSentinel)
             .trimmingCharacters(in: .whitespacesAndNewlines)

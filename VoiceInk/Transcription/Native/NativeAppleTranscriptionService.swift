@@ -9,7 +9,7 @@ import Speech
 /// Transcription service that leverages the new SpeechAnalyzer / SpeechTranscriber API available on macOS 26 (Tahoe).
 /// Falls back with an unsupported-provider error on earlier OS versions so the application can gracefully degrade.
 class NativeAppleTranscriptionService: TranscriptionService {
-    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "NativeAppleTranscriptionService")
+    private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "NativeAppleTranscriptionService")
 
     enum ServiceError: Error, LocalizedError {
         case unsupportedOS
@@ -59,8 +59,14 @@ class NativeAppleTranscriptionService: TranscriptionService {
         let audioFile = try AVAudioFile(forReading: audioURL)
         let audioDuration = Double(audioFile.length) / audioFile.processingFormat.sampleRate
         
-        // Apple Speech stores and consumes actual BCP-47 locale identifiers directly.
-        let selectedLanguage = UserDefaults.standard.string(forKey: "SelectedLanguage") ?? "en-US"
+        // Apple Speech stores and consumes BCP-47 locale identifiers directly.
+        // Resolve through the model-aware path so the inherit-from-Settings
+        // sentinel collapses to a concrete code AND so the resulting code
+        // is one the model actually accepts (e.g. Settings "pt" gets
+        // promoted to "pt-BR" via the Apple-Native curated mapping
+        // instead of being shipped as the raw "pt" base, which Apple
+        // Speech rejects).
+        let selectedLanguage = LanguageResolver.effectiveSTTCode(for: model)
         let locale = Locale(identifier: selectedLanguage)
 
         let supportedLocales = await SpeechTranscriber.supportedLocales

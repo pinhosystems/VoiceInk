@@ -119,8 +119,20 @@ struct ConfigurationRow: View {
     }
     
     private var selectedModel: String? {
-        if let modelName = config.selectedTranscriptionModelName,
-           let model = transcriptionModelManager.allAvailableModels.first(where: { $0.name == modelName }) {
+        // A profile only pins a transcription model when the user
+        // explicitly opted in via the "Customize" toggle. When that's
+        // off, or the pinned name no longer resolves to an available
+        // model, fall back to the current global model so the card
+        // reflects what will actually run instead of a stale snapshot
+        // from when the profile was first created.
+        let resolvedName: String?
+        if config.customizeTranscription, let pinned = config.selectedTranscriptionModelName {
+            resolvedName = pinned
+        } else {
+            resolvedName = transcriptionModelManager.currentTranscriptionModel?.name
+        }
+        if let name = resolvedName,
+           let model = transcriptionModelManager.allAvailableModels.first(where: { $0.name == name }) {
             return model.displayName
         }
         return "Default"
@@ -349,12 +361,10 @@ struct ConfigurationRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Toggle("", isOn: $config.isEnabled)
-                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                    .labelsHidden()
-                    .onChange(of: config.isEnabled) { _, _ in
-                        powerModeManager.updateConfiguration(config)
-                    }
+                // Profiles cannot be disabled. Once saved they stay active —
+                // the only way to take a profile out of rotation is to
+                // delete it from the context menu. The toggle that used to
+                // live here was removed when the disable-flow was retired.
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
@@ -405,7 +415,6 @@ struct ConfigurationRow: View {
         x: 0,
         y: isHovering ? 2 : 1
     )
-    .opacity(config.isEnabled ? 1.0 : 0.55)
     .scaleEffect(isHovering ? 1.005 : 1.0)
     .animation(.easeOut(duration: 0.15), value: isHovering)
 

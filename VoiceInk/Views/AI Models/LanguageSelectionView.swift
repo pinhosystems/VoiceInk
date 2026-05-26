@@ -55,11 +55,24 @@ struct LanguageSelectionView: View {
 
     private func useCompatibleLanguageForCurrentModel() {
         guard let currentModel = transcriptionModelManager.currentTranscriptionModel else { return }
+        // Leave the inherit-from-Settings sentinel untouched. Letting the
+        // validator collapse it to a concrete code would destroy the
+        // sentinel and lock the picker to whatever Settings happens to
+        // hold right now, breaking the live-inheritance contract on every
+        // subsequent Settings change.
+        guard selectedLanguage != LanguageResolver.defaultSentinel else { return }
         updateLanguage(TranscriptionLanguageSupport.validLanguageOrFallback(selectedLanguage, for: currentModel))
     }
 
-    // Get the display name of the current language
+    // Get the display name of the current language. When the user is on
+    // the inherit-from-Settings sentinel, show the resolved language in
+    // parentheses so the menu bar / compact view stays meaningful.
     private func currentLanguageDisplayName() -> String {
+        if selectedLanguage == LanguageResolver.defaultSentinel {
+            let resolved = LanguageResolver.effectiveSTTCode() ?? LanguageResolver.settingsDefaultLanguage()
+            let resolvedLabel = availableLanguagesForCurrentModel()[resolved] ?? resolved
+            return "Default (\(resolvedLabel))"
+        }
         return availableLanguagesForCurrentModel()[selectedLanguage] ?? "Unknown"
     }
 
@@ -127,6 +140,8 @@ struct LanguageSelectionView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Picker("Select Language", selection: selectedLanguageBinding) {
+                                Text("Default (inherit from Settings)")
+                                    .tag(LanguageResolver.defaultSentinel)
                                 ForEach(
                                     availableLanguagesForCurrentModel().sorted(by: {
                                         if $0.key == "auto" { return true }
@@ -146,7 +161,7 @@ struct LanguageSelectionView: View {
                         }
 
                         Text(
-                            "This model supports multiple languages. Select a specific language or auto-detect(if available)"
+                            "This model supports multiple languages. Select a specific language or auto-detect (if available). Changing here overrides Settings → Language for transcription only; it does not update Settings."
                         )
                         .font(.caption)
                         .foregroundColor(.secondary)
