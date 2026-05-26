@@ -58,8 +58,13 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     // when it activates. Defaults to false so brand-new profiles start as
     // "thin overlays" (only the prompt/app routing matters) and the user has
     // to explicitly opt into overriding either pipeline section. The Codable
-    // decode fallback below stays at `true` so configs saved before this
-    // field existed keep their pre-feature behavior (everything customized).
+    // decode fallback below ALSO defaults to false: legacy profiles persisted
+    // before this field existed had a `selectedTranscriptionModelName` baked
+    // in from whatever the global default was at creation time — re-interpreting
+    // that snapshot as an explicit pin makes the profile silently override the
+    // current global model and is the exact bug the customize toggle was added
+    // to solve. Users who actually want a pin can re-enable the toggle in the
+    // editor; the pinned name is preserved in the encoded payload either way.
     var customizeTranscription: Bool = false
     var customizeLLM: Bool = false
 
@@ -92,13 +97,18 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         self.autoSendKey = autoSendKey
         self.selectedAIProvider = selectedAIProvider ?? UserDefaults.standard.string(forKey: "selectedAIProvider")
         self.selectedAIModel = selectedAIModel
-        self.selectedTranscriptionModelName = selectedTranscriptionModelName ?? UserDefaults.standard.string(forKey: "CurrentTranscriptionModel")
-        // Preserve the nil sentinel — it represents "inherit from global
-        // Default App Language" and PowerModeSessionManager.applyConfiguration
-        // skips the language write when this is nil. Auto-filling from
-        // UserDefaults here would silently bake the *current* global value
-        // into the saved profile, breaking the inherit semantics on every
-        // subsequent global-language change.
+        // Preserve the nil sentinel — it represents "inherit from the
+        // current global transcription model." PowerModeSessionManager.
+        // applyConfiguration only writes the model when this is non-nil
+        // AND customizeTranscription is true, so a freshly-created
+        // uncustomized profile must NOT bake whatever the user happens
+        // to have selected globally at creation time. The previous
+        // `?? UserDefaults.standard.string(forKey: "CurrentTranscriptionModel")`
+        // fallback locked the profile to that model forever, even after
+        // the user later switched the global default to something else.
+        self.selectedTranscriptionModelName = selectedTranscriptionModelName
+        // Same rule for language — see PowerModeSessionManager comment
+        // above, the nil sentinel means "inherit from global default."
         self.selectedLanguage = selectedLanguage
         self.isTextFormattingEnabled = isTextFormattingEnabled
         self.punctuationCleanupMode = punctuationCleanupMode
@@ -154,8 +164,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         whisperPromptDomainOverride = try container.decodeIfPresent(String.self, forKey: .whisperPromptDomainOverride)
         removeFillerWordsOverride = try container.decodeIfPresent(Bool.self, forKey: .removeFillerWordsOverride)
         appendTrailingSpaceOverride = try container.decodeIfPresent(Bool.self, forKey: .appendTrailingSpaceOverride)
-        customizeTranscription = try container.decodeIfPresent(Bool.self, forKey: .customizeTranscription) ?? true
-        customizeLLM = try container.decodeIfPresent(Bool.self, forKey: .customizeLLM) ?? true
+        customizeTranscription = try container.decodeIfPresent(Bool.self, forKey: .customizeTranscription) ?? false
+        customizeLLM = try container.decodeIfPresent(Bool.self, forKey: .customizeLLM) ?? false
 
         if let newModelName = try container.decodeIfPresent(String.self, forKey: .selectedTranscriptionModelName) {
             selectedTranscriptionModelName = newModelName

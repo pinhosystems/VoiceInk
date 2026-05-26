@@ -119,8 +119,20 @@ struct ConfigurationRow: View {
     }
     
     private var selectedModel: String? {
-        if let modelName = config.selectedTranscriptionModelName,
-           let model = transcriptionModelManager.allAvailableModels.first(where: { $0.name == modelName }) {
+        // A profile only pins a transcription model when the user
+        // explicitly opted in via the "Customize" toggle. When that's
+        // off, or the pinned name no longer resolves to an available
+        // model, fall back to the current global model so the card
+        // reflects what will actually run instead of a stale snapshot
+        // from when the profile was first created.
+        let resolvedName: String?
+        if config.customizeTranscription, let pinned = config.selectedTranscriptionModelName {
+            resolvedName = pinned
+        } else {
+            resolvedName = transcriptionModelManager.currentTranscriptionModel?.name
+        }
+        if let name = resolvedName,
+           let model = transcriptionModelManager.allAvailableModels.first(where: { $0.name == name }) {
             return model.displayName
         }
         return "Default"
