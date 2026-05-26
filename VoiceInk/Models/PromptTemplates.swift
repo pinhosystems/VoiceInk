@@ -52,14 +52,9 @@ enum PromptTemplates {
     /// rotating an ID forces every user-cloned prompt to lose its link.
     enum TemplateID {
         static let systemDefault   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000001")!
-        static let chat            = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000002")!
-        static let email           = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000003")!
-        static let rewrite         = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000004")!
-        static let codeComment     = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000010")!
         static let commitMessage   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000011")!
         static let prDescription   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000012")!
         static let codeReview      = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000013")!
-        static let taskPrompt      = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000020")!
     }
 
     static func template(withID id: UUID) -> TemplatePrompt? {
@@ -86,12 +81,6 @@ enum PromptTemplates {
                 description: "Default cleanup",
                 category: .writing
             ),
-
-            // Rewrite, Email, Chat, Code Comment were promoted to
-            // PredefinedPrompts — they ship to every install and the
-            // PromptTemplates entries here would just spawn duplicates.
-            // TemplateID UUIDs are kept on the enum for any external
-            // reference that survived the migration.
 
             // MARK: - Coding (output stays inside an editor)
             TemplatePrompt(
@@ -153,10 +142,6 @@ enum PromptTemplates {
                 description: "Concise markdown review feedback",
                 category: .coding
             ),
-
-            // Task Prompt was promoted out of the clonable templates and
-            // into PredefinedPrompts. The TemplateID.taskPrompt UUID is
-            // kept for back-compat with older Power Mode preset entries.
         ]
     }
 }

@@ -134,13 +134,12 @@ enum PowerModePresets {
                 .init(bundleID: "io.alacritty",                      displayName: "Alacritty"),
             ],
             suggestedURLs: [],
-            // Most dictation inside an IDE or terminal in 2026 isn't
-            // ditando-um-comentário — it's instructing Claude Code,
+            // Most dictation inside an IDE or terminal in 2026 isn't a
+            // dictated source comment — it's instructing Claude Code,
             // Cursor chat, Copilot Chat, or pasting into an AI sidebar.
             // Default to Task Prompt so the brief comes out clean for
-            // an agent; users who dictate plain inline comments can
-            // swap to Code Comment manually or via a per-profile
-            // override.
+            // an agent; users who want a different style can override
+            // per profile.
             promptTemplateID: PredefinedPrompts.taskPromptId,
             isAIEnhancementEnabled: true,
             useScreenCapture: false,

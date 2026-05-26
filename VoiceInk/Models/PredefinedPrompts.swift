@@ -12,11 +12,11 @@ enum PredefinedPrompts {
     static let rewritePromptId     = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
     static let emailPromptId       = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
     static let chatPromptId        = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
-    static let codeCommentPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000007")!
+    // 00000000-...-0007 was Code Comment — removed; the slot is kept
+    // unused as a tombstone so future predefined IDs don't reuse it.
     // 00000000-...-0008 was Task Prompt (PT-BR) — replaced by the
     // runtime TechTermSalvage block injected by AIEnhancementService
-    // based on the user's selected STT language. Kept here as a
-    // tombstone so future predefined IDs don't accidentally reuse it.
+    // based on the user's selected STT language. Same tombstone reason.
 
     static var all: [CustomPrompt] {
         // Always return the latest predefined prompts from source code
@@ -53,26 +53,35 @@ enum PredefinedPrompts {
                 id: taskPromptId,
                 title: "Task Prompt",
                 promptText: """
-                Convert <TRANSCRIPT> into a clear, structured task brief for an AI coding agent (Claude Code, Cursor, Copilot Chat).
+                Clean up <TRANSCRIPT> so it reads as a task brief for an AI coding agent (Claude Code, Cursor, Copilot Chat). The output has two parts: the user's words in flowing prose, then an actionable task summary below.
 
-                Language: write the brief in the same language as the audio (see <AUDIO_LANGUAGE>). When the audio language is not English but the user mixed in English tech jargon, follow the <TECH_TERM_SALVAGE> table to restore canonical English spelling for those terms — never translate the salvaged terms back.
+                Language: write the result in the same language as the audio (see <AUDIO_LANGUAGE>). When the audio language is not English but the user mixed in English tech jargon, follow the <TECH_TERM_SALVAGE> table to restore canonical English spelling for those terms — never translate the salvaged terms back.
 
-                PRESERVE EVERYTHING THE USER ASKED FOR:
-                - If the user raised TWO or THREE distinct requests, the brief MUST contain all of them — never collapse multiple goals into one.
-                - Render every distinct request as a separate item: bullet, numbered step, or its own "Task:" line.
-                - Preserve every constraint, qualifier, edge case, and clarifying detail the user mentioned. Trim disfluencies (uh, um, restate-corrections, tangents), not substance.
+                SECTION 1 — Prose (the user's brief, kept close to original):
+                - Drop only disfluencies (uh, um, hmm, verbatim word-by-word repetitions, mid-sentence self-corrections like "no wait, I mean…"). Resolve the correction in place.
+                - Keep the user's wording, examples, qualifiers, hedges, and asides. They carry meaning.
+                - Keep questions as questions ("Can we…?", "Should this…?", "Por que…?"). Do not flip them into imperative commands.
+                - Keep statements as statements when the user is describing context or reporting state. Do not invent action verbs the user did not use.
+                - Mixed turns are normal — context sentences, questions, and tasks coexist in the same brief.
+                - Preserve every distinct point. If the user raised two or three things, all of them appear in the same order.
+                - Preserve file paths, function names, library names, commands, version numbers, and other identifiers EXACTLY as spoken.
+                - Flowing prose by default. No imposed labels. No marketing language. No padding. No "Please" / "Could you". No artificial summaries inside this section.
 
-                Format:
-                - Imperative voice. Specific. No hedging.
-                - Preserve file paths, function names, library names, commands EXACTLY as spoken.
-                - Preserve numeric constraints (timeouts, limits, versions, line numbers).
-                - When the user gives context AND a goal, separate them: brief context paragraph, then "Task:" line(s), then constraints.
-                - Multiple distinct asks → numbered list under one "Tasks:" header, never merged into prose.
+                SECTION 2 — Tasks (your concise actionable summary):
+                - After the prose, add a blank line and then the header "Tasks:" (or the localized equivalent — "Tasks:", "Tarefas:", "Tareas:", etc., matching <AUDIO_LANGUAGE>).
+                - Under the header, list the actionable items as short imperative bullets, one per line, starting with "- ".
+                - Each bullet is a single concrete action ("Add X", "Fix Y", "Investigate Z"). Group obviously related sub-steps under one bullet rather than fragmenting.
+                - Skip questions, context, and reported state — they belong only in the prose. The Tasks list is for things the agent is being asked to DO.
+                - If the user raised zero actionable items (pure questions, pure context dump), omit Section 2 entirely — no header, no empty list.
 
-                Do NOT write code. Output the brief only — no preamble, no closing, no markdown fences.
+                SUPPRESSION COMMAND:
+                - The user may suppress Section 2 by speaking a control phrase at the very start or end of the audio. Recognize, case-insensitive, any of: "no tasks", "skip tasks", "no summary", "skip summary", "sem tasks", "sem resumo", "pular tasks", "só o texto", "apenas texto", "only text", "only prose".
+                - When detected, strip the control phrase from the prose AND omit Section 2 (no header, no bullets). Output the cleaned prose only.
+
+                Do NOT write code. Do NOT add anything the user did not say (Tasks bullets are a summary of what they DID say, not invented work). Output the cleaned brief only — no preamble, no closing, no markdown fences.
                 """,
                 icon: "brain.head.profile",
-                description: "Clean task brief for Claude Code, Cursor, Copilot Chat",
+                description: "Dictated brief in the user's words, followed by a concise task summary (suppressible by voice)",
                 isPredefined: true,
                 useSystemInstructions: false,
                 vocabularyDomains: [.userVocabulary, .technical],
@@ -122,30 +131,6 @@ enum PredefinedPrompts {
                 isPredefined: true,
                 useSystemInstructions: true,
                 category: .chat
-            ),
-
-            CustomPrompt(
-                id: codeCommentPromptId,
-                title: "Code Comment",
-                promptText: """
-                Rewrite <TRANSCRIPT> as an inline code comment.
-
-                Rules:
-                - One or two lines. Concise. No prose padding.
-                - Explain *why*, not what the code obviously does.
-                - Imperative or declarative tone, not first-person.
-                - No leading `//` or `#` — the editor adds those.
-                - Preserve identifiers, file paths, numeric values, and every distinct rationale the user gave exactly — never drop a reason.
-                - When the audio is non-English and the user mixed English tech jargon into it, follow the <TECH_TERM_SALVAGE> table to restore canonical English spelling for those terms.
-
-                Output only the comment text.
-                """,
-                icon: "text.bubble.fill",
-                description: "Short inline code comment",
-                isPredefined: true,
-                useSystemInstructions: true,
-                vocabularyDomains: [.userVocabulary, .technical],
-                category: .coding
             ),
         ]
     }
