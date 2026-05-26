@@ -381,7 +381,7 @@ struct WordReplacementInfoPopover: View {
                         Text("Replacement:")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("Open Voice")
+                        Text("VoiceInk")
                             .font(.callout)
                     }
                 }

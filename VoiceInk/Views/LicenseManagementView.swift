@@ -48,7 +48,7 @@ struct LicenseManagementView: View {
             AppIconView()
 
             VStack(spacing: 8) {
-                Text("Open Voice")
+                Text("VoiceInk")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundColor(.primary)
 

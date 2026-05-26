@@ -212,7 +212,7 @@ struct ContentView: View {
                                 .cornerRadius(8)
                         }
 
-                        Text("Open Voice")
+                        Text("VoiceInk")
                             .font(.system(size: 14, weight: .semibold))
 
                         if case .licensed = licenseViewModel.licenseState {
@@ -247,7 +247,7 @@ struct ContentView: View {
                 // to Setup right above it.
                 aboutFooter
             }
-            .navigationTitle("Open Voice")
+            .navigationTitle("VoiceInk")
             .navigationSplitViewColumnWidth(210)
         } detail: {
             if let selectedView = selectedView {
@@ -296,6 +296,8 @@ struct ContentView: View {
                     selectedView = .powerMode
                 case "Audio Input":
                     selectedView = .audioInput
+                case "Dictionary":
+                    selectedView = .dictionary
                 default:
                     break
                 }
