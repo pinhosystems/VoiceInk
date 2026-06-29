@@ -75,7 +75,7 @@ struct MenuBarView: View {
                 }
             } label: {
                 HStack {
-                    Text("Profile: \(enhancementService.activePrompt?.title ?? "None")")
+                    Text("Prompt: \(enhancementService.activePrompt?.title ?? "None")")
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 10))
                 }
@@ -161,7 +161,7 @@ struct MenuBarView: View {
                 }
             }
 
-            Menu("Additional") {
+            Menu("Context Sources") {
                 Button {
                     enhancementService.useSelectedTextContext.toggle()
                     menuRefreshTrigger.toggle()
@@ -193,7 +193,7 @@ struct MenuBarView: View {
                     menuRefreshTrigger.toggle()
                 } label: {
                     HStack {
-                        Text("Context Awareness")
+                        Text("Screen Context")
                         Spacer()
                         if enhancementService.useScreenCaptureContext {
                             Image(systemName: "checkmark")
