@@ -1,6 +1,6 @@
 <div align="center">
   <img src="VoiceInk/Assets.xcassets/AppIcon.appiconset/256-mac.png" width="180" height="180" />
-  <h1>Open Voice</h1>
+  <h1>VoiceInk</h1>
   <p>Local-first voice-to-text for macOS with multilingual LLM enhancement</p>
 
   [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -9,7 +9,7 @@
 
 ---
 
-Open Voice is a local-first dictation app for macOS. Speech goes through your choice of on-device or cloud STT, the LLM enhancement layer cleans and reformats the transcript for the active context, and a Power Mode picks the right model + prompt automatically based on the app or website you're using.
+VoiceInk is a local-first dictation app for macOS. Speech goes through your choice of on-device or cloud STT, the LLM enhancement layer cleans and reformats the transcript for the active context, and a Power Mode picks the right model + prompt automatically based on the app or website you're using.
 
 The fork is free, does not sell licenses, and does not talk to any commerce backend. It exists to explore multilingual dictation (pt-BR first), a richer multi-provider pipeline, and an opinionated set of Power Mode presets.
 
@@ -68,6 +68,6 @@ Licensed under [GPL v3](LICENSE). Modifications and additions in this fork are d
 
 <div align="center">
   <sub>
-    Open Voice is a personal fork of <a href="https://github.com/Beingpax/VoiceInk">Beingpax/VoiceInk</a> by Prakash Joshi Pax. The upstream project is the load-bearing foundation this fork builds on — full credit for the original architecture, design judgment, and feature set belongs to its author. If this fork is useful to you and you can spare it, please consider supporting the original at <a href="https://tryvoiceink.com">tryvoiceink.com</a>.
+    VoiceInk is a personal fork of <a href="https://github.com/Beingpax/VoiceInk">Beingpax/VoiceInk</a> by Prakash Joshi Pax. The upstream project is the load-bearing foundation this fork builds on — full credit for the original architecture, design judgment, and feature set belongs to its author. If this fork is useful to you and you can spare it, please consider supporting the original at <a href="https://tryvoiceink.com">tryvoiceink.com</a>.
   </sub>
 </div>

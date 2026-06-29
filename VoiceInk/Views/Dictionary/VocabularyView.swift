@@ -50,12 +50,10 @@ struct VocabularyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            DictionaryPipelineStripView(stage: .preTranscription)
-
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Label {
-                        Text("Biases the speech recognizer toward these words BEFORE the transcript exists. Cloud STT (Deepgram, Soniox, xAI, AssemblyAI, Speechmatics) consumes them as keyterm; local Whisper uses them as prompt seed. Also injected into the LLM enhancement prompt so the model never sees a wrong spelling.")
+                        Text("Biases the speech recognizer toward these words before the transcript exists, and seeds the LLM enhancement — so a wrong spelling never reaches the output.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -22,7 +22,6 @@ struct WordReplacementView: View {
     @State private var sortMode: SortMode = .originalAsc
     @State private var originalWord = ""
     @State private var replacementWord = ""
-    @State private var showInfoPopover = false
 
     @State private var showingTemplateSheet = false
     @State private var showingClearConfirmation = false
@@ -67,8 +66,6 @@ struct WordReplacementView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            DictionaryPipelineStripView(stage: .postPaste)
-
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Label {
@@ -77,14 +74,8 @@ struct WordReplacementView: View {
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } icon: {
-                        Button(action: { showInfoPopover.toggle() }) {
-                            Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-                        .popover(isPresented: $showInfoPopover) {
-                            WordReplacementInfoPopover()
-                        }
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
                     }
 
                     Text("Use it for: text expansion (\"my email\" → support@…), boilerplate phrases, chat-style abbreviations you actually dictate aloud. If the engine MISHEARS a word, fix it in Vocabulary instead (Vocabulary fires before transcription; Word Replacement fires after).")
@@ -309,90 +300,6 @@ struct WordReplacementView: View {
             alertMessage = "Failed to clear word replacements."
         }
         showAlert = true
-    }
-}
-
-struct WordReplacementInfoPopover: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("How to use Word Replacements")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Separate multiple originals with commas:")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                Text("Voicing, Voice ink, Voiceing")
-                    .font(.callout)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.textBackgroundColor))
-                    .cornerRadius(6)
-            }
-
-            Divider()
-
-            Text("Examples")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            VStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Original:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("my website link")
-                            .font(.callout)
-                    }
-
-                    Image(systemName: "arrow.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Replacement:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("https://tryvoiceink.com")
-                            .font(.callout)
-                    }
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.textBackgroundColor))
-                .cornerRadius(6)
-
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Original:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("Voicing, Voice ink")
-                            .font(.callout)
-                    }
-
-                    Image(systemName: "arrow.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Replacement:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("VoiceInk")
-                            .font(.callout)
-                    }
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.textBackgroundColor))
-                .cornerRadius(6)
-            }
-        }
-        .padding()
-        .frame(width: 380)
     }
 }
 

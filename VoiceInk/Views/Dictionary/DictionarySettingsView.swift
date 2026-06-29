@@ -35,12 +35,17 @@ struct DictionarySettingsView: View {
     }
 
     private var heroSection: some View {
+        // Align the header with the body's content inset (horizontal 32) and
+        // give it top breathing room from the sheet's title bar; otherwise it
+        // sits flush against the top-left corner.
         CompactHeroSection(
             icon: "brain.filled.head.profile",
             title: "Dictionary",
             description: "Teach VoiceInk new words so the engine recognizes them, and rewrite text after it's transcribed.",
             maxDescriptionWidth: 520
         )
+        .padding(.horizontal, 32)
+        .padding(.top, 24)
     }
 
     private var mainContent: some View {

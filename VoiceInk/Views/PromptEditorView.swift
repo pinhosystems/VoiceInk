@@ -28,7 +28,12 @@ struct PromptEditorView: View {
     @State private var triggerWords: [String]
     @State private var useSystemInstructions: Bool
     @State private var showingIconPicker = false
-    
+    // Dictionary is a modal-only surface (no longer a routable sidebar
+    // destination), so the jump-link below opens it as a self-contained
+    // sheet instead of posting `.navigateToDestination`, which clamps to
+    // sidebar rows and was a no-op here. Mirrors Settings → Advanced.
+    @State private var isShowingDictionarySheet = false
+
     private var isEditingPredefinedPrompt: Bool {
         if case .edit(let prompt) = mode {
             return prompt.isPredefined
@@ -128,6 +133,22 @@ struct PromptEditorView: View {
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
+        .sheet(isPresented: $isShowingDictionarySheet) {
+            // Same modal pattern as Settings → Advanced: wrap the editor in
+            // a NavigationStack and add a Done button, since the inner view
+            // ships no close affordance of its own.
+            NavigationStack {
+                DictionarySettingsView(whisperPrompt: WhisperPrompt())
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                isShowingDictionarySheet = false
+                            }
+                        }
+                    }
+            }
+            .frame(minWidth: 720, minHeight: 560)
+        }
     }
 
     // MARK: - Predefined Prompt Form
@@ -232,18 +253,14 @@ struct PromptEditorView: View {
                             }
                         }
 
-                        Text("These domains feed the STT engine as keyterm and the LLM enhancement as context whenever this prompt is active. Add or remove entries from the Dictionary tab.")
+                        Text("These domains bias the STT engine and the LLM enhancement while this prompt is active.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 4)
 
                         Button {
-                            NotificationCenter.default.post(
-                                name: .navigateToDestination,
-                                object: nil,
-                                userInfo: ["destination": "Dictionary"]
-                            )
+                            isShowingDictionarySheet = true
                         } label: {
                             Label("Open Dictionary", systemImage: "arrow.up.right.square")
                                 .font(.caption)
@@ -252,10 +269,7 @@ struct PromptEditorView: View {
                         .controlSize(.small)
                     }
                 } header: {
-                    HStack(spacing: 4) {
-                        Text("Vocabulary Domains")
-                        InfoTip("The active prompt's vocabulary domains drive which dictionary entries the STT and LLM see. Editing the list itself is not yet supported from this sheet — see the Dictionary tab to manage the underlying terms.")
-                    }
+                    Text("Vocabulary Domains")
                 }
             }
 

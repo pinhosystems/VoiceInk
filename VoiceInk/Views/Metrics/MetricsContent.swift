@@ -101,10 +101,7 @@ struct MetricsContent: View {
                         VStack(spacing: 24) {
                             heroSection
                             metricsSection
-                            HStack(alignment: .top, spacing: 18) {
-                                HelpAndResourcesSection()
-                                DashboardPromotionsSection(licenseState: licenseState)
-                            }
+                            HelpAndResourcesSection()
 
                             Spacer(minLength: 20)
 
@@ -254,7 +251,7 @@ struct MetricsContent: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.08), radius: 30, x: 0, y: 16)
+        .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 4)
     }
     
     private var metricsSection: some View {

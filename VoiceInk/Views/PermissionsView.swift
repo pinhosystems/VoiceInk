@@ -160,18 +160,6 @@ struct PermissionCard: View {
                     }
                     .buttonStyle(.plain)
                     .contentShape(Rectangle())
-                    
-                    if isGranted {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(.green)
-                            .symbolRenderingMode(.hierarchical)
-                    } else {
-                        Image(systemName: "xmark.seal.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(.orange)
-                            .symbolRenderingMode(.hierarchical)
-                    }
                 }
             }
             
@@ -186,13 +174,7 @@ struct PermissionCard: View {
                     .foregroundColor(.white)
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .background(Color.accentColor)
                     .cornerRadius(10)
                 }
                 .buttonStyle(.plain)
@@ -201,7 +183,6 @@ struct PermissionCard: View {
         .padding()
         .background(CardBackground(isSelected: false))
         .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
     }
 }
 

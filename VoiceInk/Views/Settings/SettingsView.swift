@@ -36,6 +36,7 @@ struct SettingsView: View {
     // of that clamping. A self-contained sheet on SettingsView is the right
     // affordance here — the workflow is "open, edit, close".
     @State private var isShowingDictionarySheet = false
+    @State private var isShowingAudioInputSheet = false
 
     // Expansion states - all collapsed by default
     @State private var isCustomCancelExpanded = false
@@ -189,7 +190,7 @@ struct SettingsView: View {
                     propagateDefaultLanguage(newValue)
                 }
 
-                Text("Changing this updates every per-context picker that is still on its inherit-from-Settings option (AI Models on \"Default\", Enhancement on \"Match transcription language\", Power Mode on \"Inherit from Settings\"). Explicit overrides you set in those screens are preserved and never overwritten by changes here.")
+                Text("Updates every per-context picker still set to inherit from Settings. Explicit overrides you set elsewhere are preserved.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -351,11 +352,7 @@ struct SettingsView: View {
             Section {
                 LabeledContent("Microphone & Input Mode") {
                     Button("Open Audio Input…") {
-                        NotificationCenter.default.post(
-                            name: .navigateToDestination,
-                            object: nil,
-                            userInfo: ["destination": "Audio Input"]
-                        )
+                        isShowingAudioInputSheet = true
                     }
                 }
             } header: {
@@ -431,6 +428,22 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Color(NSColor.controlBackgroundColor))
         .padding(.top, 12)
+        .sheet(isPresented: $isShowingAudioInputSheet) {
+            // Same modal pattern as Dictionary: AudioInputSettingsView ships
+            // no close affordance of its own, so wrap it in a NavigationStack
+            // and add a Done button at the wrapper level to dismiss the sheet.
+            NavigationStack {
+                AudioInputSettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                isShowingAudioInputSheet = false
+                            }
+                        }
+                    }
+            }
+            .frame(minWidth: 720, minHeight: 560)
+        }
     }
 
     // MARK: - Power Mode tab
