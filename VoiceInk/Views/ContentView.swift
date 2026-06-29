@@ -113,7 +113,15 @@ struct ContentView: View {
     @EnvironmentObject private var whisperModelManager: WhisperModelManager
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject private var hotkeyManager: HotkeyManager
-    @State private var selectedView: ViewType? = .metrics
+    // `sidebarSelection` is the List's selection binding. NavigationSplitView
+    // clamps it to values that exist as a sidebar row, so it only ever holds
+    // a routable sidebar item (or nil while a hidden destination is showing).
+    // `activeView` is the detail pane's source of truth and is free of that
+    // clamp, so programmatic navigation (file transcription, About, deep
+    // links) can reach destinations deliberately kept out of the sidebar.
+    // The two stay in sync via the onChange handlers on the split view below.
+    @State private var sidebarSelection: ViewType? = .metrics
+    @State private var activeView: ViewType = .metrics
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     @StateObject private var licenseViewModel = LicenseViewModel()
 
@@ -164,6 +172,13 @@ struct ContentView: View {
         return true
     }
 
+    /// Whether a destination is present as a row in the sidebar. Used to keep
+    /// the sidebar highlight in sync with programmatic navigation: hidden
+    /// destinations (file transcription, About) clear the row selection.
+    private func isSidebarItem(_ viewType: ViewType) -> Bool {
+        SidebarSection.allSections.contains { $0.items.contains(viewType) }
+    }
+
     /// Bottom-anchored About entry. Lives outside the List via
     /// `safeAreaInset(edge:.bottom)` so it occupies the sidebar floor as a
     /// dedicated footer band — a macOS-native pattern (Finder sidebar, Mail
@@ -176,13 +191,13 @@ struct ContentView: View {
         AboutFooterRow(
             target: SidebarSection.footerItem,
             appVersion: appVersion,
-            isSelected: selectedView == SidebarSection.footerItem,
+            isSelected: activeView == SidebarSection.footerItem,
             isPro: {
                 if case .licensed = licenseViewModel.licenseState { return true }
                 return false
             }()
         ) {
-            selectedView = SidebarSection.footerItem
+            activeView = SidebarSection.footerItem
         }
     }
 
@@ -200,7 +215,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedView) {
+            List(selection: $sidebarSelection) {
                 Section {
                     // App Header
                     HStack(spacing: 6) {
@@ -250,18 +265,24 @@ struct ContentView: View {
             .navigationTitle("VoiceInk")
             .navigationSplitViewColumnWidth(210)
         } detail: {
-            if let selectedView = selectedView {
-                detailView(for: selectedView)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .navigationTitle(selectedView.rawValue)
-            } else {
-                Text("Select a view")
-                    .foregroundColor(.secondary)
-            }
+            detailView(for: activeView)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle(activeView.rawValue)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(width: 950)
         .frame(minHeight: 730)
+        .onChange(of: sidebarSelection) { _, newValue in
+            // User tapped a sidebar row — drive the detail pane from it.
+            if let newValue { activeView = newValue }
+        }
+        .onChange(of: activeView) { _, newValue in
+            // Mirror programmatic navigation back onto the sidebar highlight:
+            // select the matching row, or clear it when the active view is a
+            // destination that has no sidebar row (file transcription, About).
+            let desired: ViewType? = isSidebarItem(newValue) ? newValue : nil
+            if sidebarSelection != desired { sidebarSelection = desired }
+        }
         .onAppear {
             logger.notice("ContentView appeared")
         }
@@ -273,31 +294,31 @@ struct ContentView: View {
                 logger.notice("navigateToDestination received: \(destination, privacy: .public)")
                 switch destination {
                 case "Settings":
-                    selectedView = .settings
+                    activeView = .settings
                 case "Providers":
-                    selectedView = .providers
+                    activeView = .providers
                 case "AI Models":
-                    selectedView = .models
+                    activeView = .models
                 case "VoiceInk Pro":
-                    selectedView = .license
+                    activeView = .license
                 case "History":
-                    selectedView = .history
+                    activeView = .history
                 case "Permissions":
-                    selectedView = .permissions
+                    activeView = .permissions
                 case "Enhancement":
-                    selectedView = .enhancement
+                    activeView = .enhancement
                 // Accept the current label plus every legacy key — the
                 // sidebar has been through "Transcribe Audio" →
                 // "Transcribe File" → "file" and notifications stored
                 // before each rename should still route correctly.
                 case "File", "file", "Transcribe File", "Transcribe Audio":
-                    selectedView = .transcribeAudio
+                    activeView = .transcribeAudio
                 case "Profiles", "Power Mode":
-                    selectedView = .powerMode
+                    activeView = .powerMode
                 case "Audio Input":
-                    selectedView = .audioInput
+                    activeView = .audioInput
                 case "Dictionary":
-                    selectedView = .dictionary
+                    activeView = .dictionary
                 default:
                     break
                 }
