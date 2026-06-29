@@ -77,19 +77,26 @@ struct ProviderCardView: View {
         }
     }
 
+    // Positive-only status: a configured provider earns a calm green badge;
+    // an unconfigured one shows nothing rather than nagging with orange
+    // "Needs setup" on every fresh card. Discovery of what still needs a key
+    // lives in the page-level "Needs setup" filter chip and the count header.
+    @ViewBuilder
     private var statusPill: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(isConfigured ? Color.green : Color.orange)
-                .frame(width: 8, height: 8)
-            Text(isConfigured ? "Configured" : "Needs setup")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+        if isConfigured {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+                Text("Configured")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.green.opacity(0.12))
+            .cornerRadius(10)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background((isConfigured ? Color.green : Color.orange).opacity(0.12))
-        .cornerRadius(10)
     }
 
     private var chevron: some View {
