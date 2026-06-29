@@ -231,7 +231,7 @@ struct OnboardingPermissionsView: View {
                             if !permissionStates[currentPermissionIndex] && 
                                permissions[currentPermissionIndex].type != .keyboardShortcut &&
                                permissions[currentPermissionIndex].type != .audioDeviceSelection {
-                                SkipButton(text: "Skip for now") {
+                                SkipButton(text: "Skip — grant later in Settings") {
                                     moveToNext()
                                 }
                             }
