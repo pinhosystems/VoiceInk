@@ -187,7 +187,7 @@ struct PowerModeView: View {
                                                 Text("Start from a preset")
                                                     .font(.system(size: 16, weight: .semibold))
                                                     .foregroundColor(.primary)
-                                                Text("Each card creates a new profile prefilled with apps, prompt, and behavior for a common context. Apps you don't have installed are filtered out. Click a card to open the editor and save it.")
+                                                Text("Each card creates a profile prefilled for a common context. Click one to open the editor and save.")
                                                     .font(.system(size: 12))
                                                     .foregroundColor(.secondary)
                                                     .lineSpacing(2)
@@ -325,7 +325,7 @@ struct PowerModeView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Profiles are always on — no profiles yet")
                     .font(.system(size: 14, weight: .semibold))
-                Text("Profiles run every dictation session. Without profiles, your global Settings (language, transcription model, prompt, LLM provider) apply. Add a profile to override those globally-defined defaults whenever you activate a specific app or visit a specific URL — the fallback chain is profile → user defaults.")
+                Text("Profiles run every dictation session. Without one, your global Settings apply. Add a profile to override them for a specific app or website.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .lineSpacing(2)

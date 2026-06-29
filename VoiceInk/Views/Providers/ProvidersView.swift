@@ -77,13 +77,9 @@ struct ProvidersView: View {
             Image(systemName: "info.circle.fill")
                 .foregroundColor(.accentColor)
                 .font(.system(size: 14, weight: .semibold))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("One place to manage every backend VoiceInk can talk to.")
-                    .font(.system(size: 13, weight: .medium))
-                Text("Pick the active STT model in AI Models, the active LLM in Enhancement. Both only show providers configured here.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
+            Text("Pick the active STT model in AI Models, the active LLM in Enhancement — both only list providers configured here.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
