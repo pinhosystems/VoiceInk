@@ -32,11 +32,16 @@ struct AudioInputSettingsView: View {
     }
     
     private var heroSection: some View {
+        // Align the header with the body's content inset (horizontal 32) and
+        // give it top breathing room from the sheet's title bar; otherwise it
+        // sits flush against the top-left corner.
         CompactHeroSection(
             icon: "waveform",
             title: "Audio Input",
             description: "Configure your microphone preferences"
         )
+        .padding(.horizontal, 32)
+        .padding(.top, 24)
     }
     
     private var inputModeSection: some View {
