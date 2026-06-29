@@ -6,24 +6,21 @@ struct CompactHeroSection: View {
     let description: String
     var maxDescriptionWidth: CGFloat? = nil
 
+    // Slimmed to a plain left-aligned title + subtitle. The decorative icon
+    // and centered splash layout were preamble weight on task-focused
+    // screens; the screen's own title carries identity. `icon` is retained in
+    // the signature so call sites stay unchanged.
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 28))
-                .foregroundStyle(.blue)
-                .symbolRenderingMode(.hierarchical)
-
-            VStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 22, weight: .bold))
-                Text(description)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: maxDescriptionWidth)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 17, weight: .semibold))
+            Text(description)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: maxDescriptionWidth, alignment: .leading)
         }
-        .padding(.vertical, 20)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 }
