@@ -1,6 +1,21 @@
 # Agentic Mode Plan (2026-08-21)
 
-> **Status update (same day):** Phase 1 implemented with **AgentRunKit 5.5.0**
+> **v2 redesign (same day):** the router-before-pipeline design below was
+> replaced after user testing showed a mismatch. The user's mental model:
+> **the agent IS the processor** — it replaces the enhancement stage and
+> produces the final text itself. `AgenticProcessor` (AgentRunKit loop, the
+> active prompt's raw rules + language/locale/salvage/context assembly in
+> its system prompt) handles three cases: (1) plain dictation → clean per
+> active prompt rules; (2) generation request ("escreve um email formal
+> pedindo...") → produce the finished artifact; (3) format directive +
+> content → format as instructed. Tools are sticky-only (select_prompt /
+> activate_profile / set_output_language for the session, behind the
+> allow-list); delivery is always paste-at-cursor. Trigger words run only
+> in classic mode; agentic failure falls back to classic enhancement with
+> the error logged. Same latency profile as before (one LLM call replaces
+> one LLM call).
+
+> **v1 note:** Phase 1 originally implemented with **AgentRunKit 5.5.0**
 > (github.com/Tom-Ryder/AgentRunKit, MIT) as the agent-loop/tooling library —
 > the user asked for a standardized, provider-agnostic lib instead of a
 > hand-rolled loop. Deployment target bumped 14.4 → 15.0 (AgentRunKit

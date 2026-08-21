@@ -1,15 +1,12 @@
 import SwiftUI
 
-/// Settings for the agentic router: natural-language meta-directives spoken
-/// mid-dictation ("isso aqui é um email formal") reconfigure the pipeline.
-/// See AgenticRouterService.
+/// Settings for Agentic Mode: the agent replaces the enhancement stage,
+/// understanding intent and producing the final text. See AgenticProcessor.
 struct AgenticModeSection: View {
     @AppStorage(AgenticSettings.enabledKey) private var isEnabled = false
     @AppStorage(AgenticSettings.routerModelKey) private var routerModel = ""
     @AppStorage(AgenticSettings.allowPromptKey) private var allowPrompt = true
     @AppStorage(AgenticSettings.allowProfileKey) private var allowProfile = true
-    @AppStorage(AgenticSettings.allowDeliveryKey) private var allowDelivery = true
-    @AppStorage(AgenticSettings.allowAutosendKey) private var allowAutosend = true
     @AppStorage(AgenticSettings.allowOutputLanguageKey) private var allowOutputLanguage = true
 
     var body: some View {
@@ -17,27 +14,25 @@ struct AgenticModeSection: View {
             Toggle(isOn: $isEnabled) {
                 HStack(spacing: 4) {
                     Text("Enable Agentic Mode")
-                    InfoTip("An LLM agent reads each dictation for spoken meta-instructions — \"isso aqui é um email formal\", \"only copy, don't paste\", \"a partir de agora modo código\" — applies them, and strips them from the text. When it finds none, the dictation behaves exactly as usual. Adds one small LLM call per dictation.")
+                    InfoTip("Replaces the enhancement stage with an agent that understands intent: plain dictation is cleaned per the active prompt's rules, and requests like \"escreve um email formal pedindo...\" produce the finished artifact directly. Sticky voice commands (\"a partir de agora modo código\") switch prompt, profile, or output language for the session. Requires Enhancement ON; falls back to classic enhancement on failure.")
                 }
             }
             .toggleStyle(.switch)
 
             if isEnabled {
-                TextField("Router model", text: $routerModel, prompt: Text("Same as enhancement model"))
+                TextField("Agent model", text: $routerModel, prompt: Text("Same as enhancement model"))
                     .textFieldStyle(.roundedBorder)
 
-                Text("Runs on the current AI provider. Pick a small, fast model here to keep the extra latency low; leave empty to reuse the enhancement model.")
+                Text("Runs on the current AI provider. The agent writes the final text, so pick a model you trust for writing; leave empty to reuse the enhancement model.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("The agent may change:")
+                    Text("Sticky voice commands may change:")
                         .font(.system(size: 12, weight: .semibold))
                     Toggle("Prompt", isOn: $allowPrompt)
-                    Toggle("Profile (session-wide)", isOn: $allowProfile)
-                    Toggle("Delivery (paste vs clipboard only)", isOn: $allowDelivery)
-                    Toggle("Auto-send key", isOn: $allowAutosend)
+                    Toggle("Profile", isOn: $allowProfile)
                     Toggle("Output language", isOn: $allowOutputLanguage)
                 }
                 .toggleStyle(.checkbox)

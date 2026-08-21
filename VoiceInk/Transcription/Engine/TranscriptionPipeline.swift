@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import AVFoundation
 import SwiftData
 import os
@@ -52,11 +51,6 @@ class TranscriptionPipeline {
         var finalPastedText: String?
         var promptDetectionResult: PromptDetectionService.PromptDetectionResult?
         var didInsertSessionMetric = false
-        var agenticDecision: AgenticDecision?
-        var agenticOriginalPromptId: UUID?
-        var agenticOriginalEnhancementEnabled: Bool?
-        var agenticPrevOutputLanguage: String?
-        var agenticDidSetOutputLanguage = false
 
         do {
             let transcriptionStart = Date()
@@ -119,45 +113,9 @@ class TranscriptionPipeline {
                 error: nil
             ))
 
-            // Agentic router: interprets spoken meta-directives ("isso aqui
-            // é um email formal") and reconfigures the run. When it acts,
-            // deterministic trigger-word detection is skipped; when it
-            // abstains or fails, the pipeline behaves exactly as before.
-            if let enhancementService, enhancementService.isConfigured,
-               AgenticSettings.isEnabled,
-               let aiService = enhancementService.getAIService() {
-                let outcome = await AgenticRouterService.route(
-                    text: text,
-                    enhancementService: enhancementService,
-                    aiService: aiService
-                )
-                apiLog.steps.append(outcome.logStep)
-                let decision = outcome.decision
-                if decision.hasActions {
-                    agenticDecision = decision
-                    if let promptId = decision.promptId {
-                        agenticOriginalPromptId = enhancementService.selectedPromptId
-                        agenticOriginalEnhancementEnabled = enhancementService.isEnhancementEnabled
-                        enhancementService.selectedPromptId = promptId
-                        enhancementService.isEnhancementEnabled = true
-                    }
-                    if decision.clearProfile {
-                        PowerModeManager.shared.setActiveConfiguration(nil)
-                        await PowerModeSessionManager.shared.endSession()
-                    } else if let profileId = decision.profileId,
-                              let config = PowerModeManager.shared.getConfiguration(with: profileId) {
-                        PowerModeManager.shared.setActiveConfiguration(config)
-                        await PowerModeSessionManager.shared.beginSession(with: config)
-                    }
-                    if let language = decision.outputLanguage {
-                        agenticPrevOutputLanguage = UserDefaults.standard.string(forKey: LocalePackRegistry.outputLanguageKey)
-                        agenticDidSetOutputLanguage = true
-                        UserDefaults.standard.set(language, forKey: LocalePackRegistry.outputLanguageKey)
-                    }
-                }
-            }
-
-            if agenticDecision == nil, let enhancementService, enhancementService.isConfigured {
+            // Trigger-word detection only runs in classic mode — the agentic
+            // processor understands directives natively.
+            if !AgenticSettings.isEnabled, let enhancementService, enhancementService.isConfigured {
                 let detectionResult = await promptDetectionService.analyzeText(text, with: enhancementService)
                 promptDetectionResult = detectionResult
                 await promptDetectionService.applyDetectionResult(detectionResult, to: enhancementService)
@@ -166,7 +124,7 @@ class TranscriptionPipeline {
             let isSkipShortEnhancementEnabled = UserDefaults.standard.bool(forKey: "SkipShortEnhancement")
             let savedThreshold = UserDefaults.standard.integer(forKey: "ShortEnhancementWordThreshold")
             let shortEnhancementWordThreshold = savedThreshold > 0 ? savedThreshold : 3
-            let shouldSkipEnhancement = isSkipShortEnhancementEnabled && WordCounter.count(in: text) <= shortEnhancementWordThreshold && !(promptDetectionResult?.shouldEnableAI == true) && agenticDecision?.promptId == nil
+            let shouldSkipEnhancement = isSkipShortEnhancementEnabled && WordCounter.count(in: text) <= shortEnhancementWordThreshold && !(promptDetectionResult?.shouldEnableAI == true)
 
             if let enhancementService,
                enhancementService.isEnhancementEnabled,
@@ -175,32 +133,59 @@ class TranscriptionPipeline {
                 if shouldCancel() { await onCleanup(); return }
 
                 onStateChange(.enhancing)
-                let textForAI = agenticDecision?.cleanedText ?? promptDetectionResult?.processedText ?? text
+                let textForAI = promptDetectionResult?.processedText ?? text
 
-                do {
-                    let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(textForAI)
-                    transcription.enhancedText = enhancedText
-                    transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
-                    transcription.promptName = promptName
-                    transcription.enhancementDuration = enhancementDuration
-                    if let llmStep = enhancementService.lastLLMCallStep {
-                        apiLog.steps.append(llmStep)
+                // Agentic Mode v2: the agent IS the enhancement stage. It
+                // cleans plain dictation per the active prompt's rules or
+                // generates a requested artifact outright; failure falls
+                // back to classic enhancement below.
+                var agenticHandled = false
+                if AgenticSettings.isEnabled, let aiService = enhancementService.getAIService() {
+                    let outcome = await AgenticProcessor.process(
+                        text: textForAI,
+                        enhancementService: enhancementService,
+                        aiService: aiService
+                    )
+                    switch outcome {
+                    case .processed(let finalText, let modelName, let durationMs, let logStep):
+                        transcription.enhancedText = finalText
+                        transcription.aiEnhancementModelName = modelName
+                        transcription.promptName = "Agentic"
+                        transcription.enhancementDuration = Double(durationMs) / 1000.0
+                        apiLog.steps.append(logStep)
+                        finalPastedText = finalText
+                        agenticHandled = true
+                    case .failed(let logStep):
+                        apiLog.steps.append(logStep)
                     }
-                    finalPastedText = enhancedText
-                } catch {
-                    let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                    transcription.enhancedText = "Enhancement failed: \(errorDescription)"
-                    if let llmStep = enhancementService.lastLLMCallStep {
-                        apiLog.steps.append(llmStep)
+                }
+
+                if !agenticHandled {
+                    do {
+                        let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(textForAI)
+                        transcription.enhancedText = enhancedText
+                        transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
+                        transcription.promptName = promptName
+                        transcription.enhancementDuration = enhancementDuration
+                        if let llmStep = enhancementService.lastLLMCallStep {
+                            apiLog.steps.append(llmStep)
+                        }
+                        finalPastedText = enhancedText
+                    } catch {
+                        let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        transcription.enhancedText = "Enhancement failed: \(errorDescription)"
+                        if let llmStep = enhancementService.lastLLMCallStep {
+                            apiLog.steps.append(llmStep)
+                        }
+                        let shortReason = String(errorDescription.prefix(80))
+                        await MainActor.run {
+                            NotificationManager.shared.showNotification(
+                                title: "Enhancement failed: \(shortReason)",
+                                type: .warning
+                            )
+                        }
+                        if shouldCancel() { await onCleanup(); return }
                     }
-                    let shortReason = String(errorDescription.prefix(80))
-                    await MainActor.run {
-                        NotificationManager.shared.showNotification(
-                            title: "Enhancement failed: \(shortReason)",
-                            type: .warning
-                        )
-                    }
-                    if shouldCancel() { await onCleanup(); return }
                 }
             }
 
@@ -277,25 +262,6 @@ class TranscriptionPipeline {
                result.shouldEnableAI {
                 await promptDetectionService.restoreOriginalSettings(result, to: enhancementService)
             }
-            // Agentic restore mirrors trigger-word restore. Profile changes
-            // are session-scoped by design and never reverted here.
-            if let decision = agenticDecision, decision.scope == .thisDictation {
-                if decision.promptId != nil, let enhancementService {
-                    if let original = agenticOriginalPromptId {
-                        enhancementService.selectedPromptId = original
-                    }
-                    if let originalEnabled = agenticOriginalEnhancementEnabled {
-                        enhancementService.isEnhancementEnabled = originalEnabled
-                    }
-                }
-                if agenticDidSetOutputLanguage {
-                    if let previous = agenticPrevOutputLanguage {
-                        UserDefaults.standard.set(previous, forKey: LocalePackRegistry.outputLanguageKey)
-                    } else {
-                        UserDefaults.standard.removeObject(forKey: LocalePackRegistry.outputLanguageKey)
-                    }
-                }
-            }
         }
 
         if shouldCancel() {
@@ -308,19 +274,12 @@ class TranscriptionPipeline {
            transcription.transcriptionStatus == TranscriptionStatus.completed.rawValue {
             let appendSpace = UserDefaults.standard.bool(forKey: "AppendTrailingSpace")
             let pastedText = textToPaste + (appendSpace ? " " : "")
-            let delivery = agenticDecision?.delivery ?? .paste
-            if delivery == .clipboardOnly {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(pastedText, forType: .string)
-            } else {
-                CursorPaster.startPasteAtCursor(pastedText)
-            }
-            let autoSendKey = agenticDecision?.autoSend ?? PowerModeManager.shared.currentActiveConfiguration?.autoSendKey
+            CursorPaster.startPasteAtCursor(pastedText)
+            let autoSendKey = PowerModeManager.shared.currentActiveConfiguration?.autoSendKey
             SoundManager.shared.playStopSound()
             await restorePromptDetectionSettingsIfNeeded()
 
-            if delivery == .paste, let autoSendKey, autoSendKey.isEnabled {
+            if let autoSendKey, autoSendKey.isEnabled {
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     CursorPaster.performAutoSend(autoSendKey)

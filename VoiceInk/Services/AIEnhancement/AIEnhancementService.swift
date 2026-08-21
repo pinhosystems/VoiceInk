@@ -197,10 +197,10 @@ class AIEnhancementService: ObservableObject {
         lastRequestTime = Date()
     }
 
-    private func getSystemMessage(
-        for mode: EnhancementPrompt,
-        overridePrompt: CustomPrompt? = nil
-    ) async -> String {
+    /// Assembles the context sections (selected text, clipboard, screen,
+    /// vocabulary) plus the presence flags. Shared by the classic
+    /// enhancement system message and the agentic processor.
+    func buildContextAssembly() async -> (contextSection: String, flags: AIPrompts.ContextFlags) {
         let selectedTextContext: String
         if useSelectedTextContext, AXIsProcessTrusted(),
            let selectedText = await SelectedTextService.fetchSelectedText(),
@@ -257,8 +257,6 @@ class AIEnhancementService: ObservableObject {
             ""
         }
 
-        let finalContextSection = allContextSections + customVocabularySection
-
         // Drive the system-instructions wrapper from the *actual* presence of
         // each block, not just the user's toggles. A toggle that is on but
         // produces no content (e.g. an empty clipboard) leaves its tag out
@@ -270,6 +268,14 @@ class AIEnhancementService: ObservableObject {
             hasSelectedText: !selectedTextContext.isEmpty,
             hasVocabulary: !customVocabulary.isEmpty
         )
+        return (allContextSections + customVocabularySection, flags)
+    }
+
+    private func getSystemMessage(
+        for mode: EnhancementPrompt,
+        overridePrompt: CustomPrompt? = nil
+    ) async -> String {
+        let (finalContextSection, flags) = await buildContextAssembly()
 
         // Audio language hint — the BCP-47 code the STT engine was
         // configured with. Prepended to every variant of the system
@@ -331,6 +337,45 @@ class AIEnhancementService: ObservableObject {
             promptBody = defaultPrompt.finalPromptText(flags: flags, pack: activePack)
         }
         return languageBlock + salvageBlock + promptBody + finalContextSection
+    }
+
+    /// Building blocks for the agentic processor's system prompt: the same
+    /// language / locale / salvage / context assembly as the classic system
+    /// message, but with the active prompt's raw body separated out and the
+    /// anti-command wrapper omitted — the agent defines its own contract for
+    /// when the transcript is data vs. an instruction.
+    struct AgenticComponents {
+        let languageBlock: String
+        let localeRules: String
+        let salvageBlock: String
+        let activePromptTitle: String
+        let activePromptRules: String
+        let contextSection: String
+    }
+
+    func agenticSystemComponents() async -> AgenticComponents {
+        let (contextSection, flags) = await buildContextAssembly()
+        let sttCode = LanguageResolver.effectiveSTTCode()
+        let outputCode = LocalePackRegistry.outputLanguageCode(sttCode: sttCode)
+        let pack = LocalePackRegistry.pack(for: outputCode)
+
+        let rules: String
+        if let active = activePrompt {
+            rules = active.id == PredefinedPrompts.assistantPromptId
+                ? AIPrompts.assistantMode(flags: flags, pack: pack)
+                : active.promptText
+        } else {
+            rules = PredefinedPrompts.createDefaultPrompts().first?.promptText ?? ""
+        }
+
+        return AgenticComponents(
+            languageBlock: AIPrompts.audioLanguageBlock(sttCode: sttCode, outputCode: outputCode),
+            localeRules: AIPrompts.localeRulesBlock(pack: pack),
+            salvageBlock: TechTermSalvage.block(forLanguageCode: sttCode) ?? "",
+            activePromptTitle: activePrompt?.title ?? "Default",
+            activePromptRules: rules,
+            contextSection: contextSection
+        )
     }
 
     private func makeRequest(
