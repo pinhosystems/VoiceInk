@@ -12,10 +12,16 @@ struct MenuBarView: View {
     @EnvironmentObject var enhancementService: AIEnhancementService
     @EnvironmentObject var aiService: AIService
     @ObservedObject var audioDeviceManager = AudioDeviceManager.shared
+    @ObservedObject var powerModeManager = PowerModeManager.shared
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var menuRefreshTrigger = false
     @State private var isHovered = false
-    
+
+    private var currentAudioDeviceName: String {
+        let currentId = audioDeviceManager.getCurrentDevice()
+        return audioDeviceManager.availableDevices.first { $0.id == currentId }?.name ?? "Default"
+    }
+
     var body: some View {
         VStack {
             Button("Toggle Recorder") {
@@ -52,9 +58,37 @@ struct MenuBarView: View {
                         .font(.system(size: 10))
                 }
             }
-            
+
+            LanguageSelectionView(transcriptionModelManager: transcriptionModelManager, displayMode: .menuItem, whisperPrompt: whisperModelManager.whisperPrompt)
+
+            Menu {
+                ForEach(audioDeviceManager.availableDevices, id: \.id) { device in
+                    Button {
+                        audioDeviceManager.selectDeviceAndSwitchToCustomMode(id: device.id)
+                    } label: {
+                        HStack {
+                            Text(device.name)
+                            if audioDeviceManager.getCurrentDevice() == device.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                if audioDeviceManager.availableDevices.isEmpty {
+                    Text("No devices available")
+                        .foregroundColor(.secondary)
+                }
+            } label: {
+                HStack {
+                    Text("Audio Input: \(currentAudioDeviceName)")
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10))
+                }
+            }
+
             Divider()
-            
+
             Toggle("LLM Enhancement", isOn: $enhancementService.isEnhancementEnabled)
 
             Menu {
@@ -133,34 +167,6 @@ struct MenuBarView: View {
                 }
             }
             
-            LanguageSelectionView(transcriptionModelManager: transcriptionModelManager, displayMode: .menuItem, whisperPrompt: whisperModelManager.whisperPrompt)
-
-            Menu {
-                ForEach(audioDeviceManager.availableDevices, id: \.id) { device in
-                    Button {
-                        audioDeviceManager.selectDeviceAndSwitchToCustomMode(id: device.id)
-                    } label: {
-                        HStack {
-                            Text(device.name)
-                            if audioDeviceManager.getCurrentDevice() == device.id {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-
-                if audioDeviceManager.availableDevices.isEmpty {
-                    Text("No devices available")
-                        .foregroundColor(.secondary)
-                }
-            } label: {
-                HStack {
-                    Text("Audio Input")
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10))
-                }
-            }
-
             Menu("Context Sources") {
                 Button {
                     enhancementService.useSelectedTextContext.toggle()
@@ -202,7 +208,51 @@ struct MenuBarView: View {
                 }
             }
             .id("additional-menu-\(menuRefreshTrigger)")
-            
+
+            Divider()
+
+            Menu {
+                Button {
+                    powerModeManager.setActiveConfiguration(nil)
+                    Task { await PowerModeSessionManager.shared.endSession() }
+                } label: {
+                    HStack {
+                        Text("None")
+                        if powerModeManager.activeConfiguration == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                Divider()
+
+                ForEach(powerModeManager.configurations.filter { $0.isEnabled }) { config in
+                    Button {
+                        powerModeManager.setActiveConfiguration(config)
+                        Task { await PowerModeSessionManager.shared.beginSession(with: config) }
+                    } label: {
+                        HStack {
+                            Text("\(config.emoji) \(config.name)")
+                            if powerModeManager.activeConfiguration?.id == config.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Manage Profiles") {
+                    menuBarManager.openMainWindowAndNavigate(to: "Profiles")
+                }
+            } label: {
+                HStack {
+                    Text("Profile: \(powerModeManager.activeConfiguration.map { "\($0.emoji) \($0.name)" } ?? "None")")
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10))
+                }
+            }
+
             Divider()
 
             Button("Retry Last Transcription") {
@@ -223,7 +273,9 @@ struct MenuBarView: View {
                 menuBarManager.openHistoryWindow()
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
-            
+
+            Divider()
+
             Button("Settings") {
                 menuBarManager.openMainWindowAndNavigate(to: "Settings")
             }
