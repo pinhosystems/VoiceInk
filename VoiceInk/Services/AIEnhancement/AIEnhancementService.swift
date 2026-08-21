@@ -739,9 +739,19 @@ class AIEnhancementService: ObservableObject {
             )
         }
 
+        // One-time seeding of default trigger words: the upsert below
+        // deliberately preserves user-edited triggerWords, so entries
+        // persisted before defaults existed would stay empty forever.
+        // Runs once; a user who later clears a trigger list keeps it clear.
+        let triggerSeedKey = "PredefinedTriggerWordsSeeded.v1"
+        let shouldSeedTriggers = !UserDefaults.standard.bool(forKey: triggerSeedKey)
+
         for template in predefinedTemplates {
             if let existingIndex = customPrompts.firstIndex(where: { $0.id == template.id }) {
                 var updatedPrompt = customPrompts[existingIndex]
+                let preservedTriggers = updatedPrompt.triggerWords.isEmpty && shouldSeedTriggers
+                    ? template.triggerWords
+                    : updatedPrompt.triggerWords
                 updatedPrompt = CustomPrompt(
                     id: updatedPrompt.id,
                     title: template.title,
@@ -750,14 +760,18 @@ class AIEnhancementService: ObservableObject {
                     icon: template.icon,
                     description: template.description,
                     isPredefined: true,
-                    triggerWords: updatedPrompt.triggerWords,
+                    triggerWords: preservedTriggers,
                     useSystemInstructions: template.useSystemInstructions,
-                    vocabularyDomains: template.vocabularyDomains
+                    vocabularyDomains: template.vocabularyDomains,
+                    category: template.category
                 )
                 customPrompts[existingIndex] = updatedPrompt
             } else {
                 customPrompts.append(template)
             }
+        }
+        if shouldSeedTriggers {
+            UserDefaults.standard.set(true, forKey: triggerSeedKey)
         }
     }
 }

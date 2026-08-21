@@ -14,6 +14,7 @@ extension PromptIcon {
         "bubble.left.and.bubble.right.fill",
         "message.fill",
         "envelope.fill",
+        "envelope.open.fill",
         
         // Professional
         "person.2.fill",
@@ -43,6 +44,7 @@ extension PromptIcon {
         "clock.fill",
         "calendar",
         "list.bullet",
+        "checklist",
         "checkmark.circle.fill",
         "timer",
         "hourglass",

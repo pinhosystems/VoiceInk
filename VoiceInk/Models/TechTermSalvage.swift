@@ -8,10 +8,10 @@ import Foundation
 /// explicitly.
 ///
 /// The block this enum produces is injected by `AIEnhancementService`
-/// at runtime, based on the user's configured STT language. Only
-/// prompts in the `coding` or `dev_ai` categories receive it — non-tech
-/// prompts (Chat, Email, Rewrite) don't need the verbose salvage table
-/// and would just burn tokens.
+/// at runtime, based on the user's configured STT language. Every
+/// prompt on a non-English locale receives it — tech jargon shows up
+/// in emails and chat messages too, and the per-category gate proved
+/// more confusing than the tokens it saved.
 ///
 /// To add a new locale: append a case to `block(forLanguageCode:)` and
 /// hand-curate a salvage table from observed STT failures. Patterns

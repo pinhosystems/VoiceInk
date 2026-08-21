@@ -21,18 +21,22 @@ class PromptDetectionService {
         let originalEnhancementState = enhancementService.isEnhancementEnabled
         let originalPromptId = enhancementService.selectedPromptId
 
-		for prompt in enhancementService.allPrompts {
-            if !prompt.triggerWords.isEmpty {
-				if let (detectedWord, processedText) = detectAndStripTriggerWord(from: text, triggerWords: prompt.triggerWords) {
-                    return PromptDetectionResult(
-                        shouldEnableAI: true,
-                        selectedPromptId: prompt.id,
-                        processedText: processedText,
-                        detectedTriggerWord: detectedWord,
-                        originalEnhancementState: originalEnhancementState,
-                        originalPromptId: originalPromptId
-                    )
-                }
+        // Try triggers longest-first across ALL prompts. Iterating per
+        // prompt would let a short trigger on an earlier prompt ("email")
+        // shadow a longer one on a later prompt ("email casual").
+        let pairs = enhancementService.allPrompts
+            .flatMap { prompt in prompt.triggerWords.map { (prompt: prompt, trigger: $0) } }
+            .sorted { $0.trigger.count > $1.trigger.count }
+        for pair in pairs {
+            if let (detectedWord, processedText) = detectAndStripTriggerWord(from: text, triggerWords: [pair.trigger]) {
+                return PromptDetectionResult(
+                    shouldEnableAI: true,
+                    selectedPromptId: pair.prompt.id,
+                    processedText: processedText,
+                    detectedTriggerWord: detectedWord,
+                    originalEnhancementState: originalEnhancementState,
+                    originalPromptId: originalPromptId
+                )
             }
         }
 
