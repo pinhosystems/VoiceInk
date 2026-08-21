@@ -104,7 +104,7 @@ struct AddIconButton: View {
 struct ConfigurationRow: View {
     @Binding var config: PowerModeConfig
     let isEditing: Bool
-    let powerModeManager: PowerModeManager
+    @ObservedObject var powerModeManager: PowerModeManager
     let onEditConfig: (PowerModeConfig) -> Void
     @EnvironmentObject var enhancementService: AIEnhancementService
     @EnvironmentObject var transcriptionModelManager: TranscriptionModelManager
@@ -355,6 +355,20 @@ struct ConfigurationRow: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.accentColor.opacity(0.10)))
                         }
+
+                        if isActive {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 5, height: 5)
+                                Text("Active")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.green.opacity(0.10)))
+                        }
                     }
 
                     triggersStrip
@@ -456,6 +470,10 @@ struct ConfigurationRow: View {
     
     private var isSelected: Bool {
         return isEditing
+    }
+
+    private var isActive: Bool {
+        return powerModeManager.activeConfiguration?.id == config.id
     }
 }
 
