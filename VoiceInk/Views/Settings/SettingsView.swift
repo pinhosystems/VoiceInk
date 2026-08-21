@@ -43,6 +43,7 @@ struct SettingsView: View {
     @State private var isMiddleClickExpanded = false
     @State private var isSoundFeedbackExpanded = false
     @State private var isMuteSystemExpanded = false
+    @State private var isPauseMediaExpanded = false
     @State private var isRestoreClipboardExpanded = false
 
     @AppStorage("DefaultAppLanguage") private var defaultAppLanguage: String = "en"
@@ -388,6 +389,23 @@ struct SettingsView: View {
                     }
                 }
 
+                // Pause Media
+                ExpandableSettingsRow(
+                    isExpanded: $isPauseMediaExpanded,
+                    isEnabled: $playbackController.isPauseMediaEnabled,
+                    label: "Pause Media While Recording",
+                    infoMessage: "Pauses playing media when recording starts and resumes when done."
+                ) {
+                    Picker("Resume Delay", selection: $mediaController.audioResumptionDelay) {
+                        Text("0s").tag(0.0)
+                        Text("1s").tag(1.0)
+                        Text("2s").tag(2.0)
+                        Text("3s").tag(3.0)
+                        Text("4s").tag(4.0)
+                        Text("5s").tag(5.0)
+                    }
+                }
+
                 // Restore Clipboard
                 ExpandableSettingsRow(
                     isExpanded: $isRestoreClipboardExpanded,
@@ -518,12 +536,10 @@ struct SettingsView: View {
         .padding(.top, 12)
     }
 
-    // MARK: - Advanced tab — Experimental + Diagnostics
+    // MARK: - Advanced tab — Dictionary + Diagnostics
 
     private var advancedTab: some View {
         Form {
-            ExperimentalSection()
-
             // MARK: - Dictionary (secondary)
             Section {
                 LabeledContent("Vocabulary & Word Replacements") {
@@ -711,36 +727,6 @@ struct PowerModeSection: View {
             }
         } header: {
             Text("Profiles")
-        }
-    }
-}
-
-// MARK: - Experimental Section
-
-struct ExperimentalSection: View {
-    @ObservedObject private var playbackController = PlaybackController.shared
-    @ObservedObject private var mediaController = MediaController.shared
-    @State private var isPauseMediaExpanded = false
-
-    var body: some View {
-        Section {
-            ExpandableSettingsRow(
-                isExpanded: $isPauseMediaExpanded,
-                isEnabled: $playbackController.isPauseMediaEnabled,
-                label: "Pause Media While Recording",
-                infoMessage: "Pauses playing media when recording starts and resumes when done."
-            ) {
-                Picker("Resume Delay", selection: $mediaController.audioResumptionDelay) {
-                    Text("0s").tag(0.0)
-                    Text("1s").tag(1.0)
-                    Text("2s").tag(2.0)
-                    Text("3s").tag(3.0)
-                    Text("4s").tag(4.0)
-                    Text("5s").tag(5.0)
-                }
-            }
-        } header: {
-            Text("Experimental")
         }
     }
 }
