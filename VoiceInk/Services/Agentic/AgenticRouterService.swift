@@ -165,10 +165,15 @@ enum AgenticRouterService {
         text: String,
         enhancementService: AIEnhancementService,
         aiService: AIService
-    ) async -> Outcome? {
+    ) async -> Outcome {
         guard let client = makeClient(aiService: aiService) else {
             logger.notice("agentic: no compatible router client for provider \(aiService.selectedProvider.rawValue, privacy: .public)")
-            return nil
+            return failureOutcome(
+                text: text,
+                aiService: aiService,
+                error: "no compatible router client for provider \(aiService.selectedProvider.rawValue)",
+                durationMs: 0
+            )
         }
 
         let catalog = makeCatalog(enhancementService: enhancementService)
@@ -203,8 +208,14 @@ enum AgenticRouterService {
             timeoutTask.cancel()
         } catch {
             timeoutTask.cancel()
-            logger.notice("agentic: router failed/timed out: \(String(describing: error), privacy: .public)")
-            return nil
+            let message = String(describing: error)
+            logger.notice("agentic: router failed/timed out: \(message, privacy: .public)")
+            return failureOutcome(
+                text: text,
+                aiService: aiService,
+                error: message,
+                durationMs: Int(Date().timeIntervalSince(start) * 1000)
+            )
         }
 
         var decision = await collector.current()
@@ -235,6 +246,27 @@ enum AgenticRouterService {
         return Outcome(decision: decision, logStep: step)
     }
 
+    /// A no-action outcome whose log step records why the router bailed, so
+    /// the fallback to trigger words is visible in the troubleshooting log
+    /// instead of silent.
+    private static func failureOutcome(
+        text: String,
+        aiService: AIService,
+        error: String,
+        durationMs: Int
+    ) -> Outcome {
+        let step = APICallLog.Step(
+            kind: .llm,
+            provider: "Agentic Router (\(aiService.selectedProvider.rawValue))",
+            model: effectiveModel(aiService: aiService),
+            requestSummary: "agentic route failed — fell back to trigger words",
+            requestUserMessage: text,
+            durationMs: durationMs,
+            errorMessage: String(error.prefix(500))
+        )
+        return Outcome(decision: AgenticDecision(), logStep: step)
+    }
+
     // MARK: Client construction
 
     /// Builds an AgentRunKit client from the app's current enhancement
@@ -263,7 +295,16 @@ enum AgenticRouterService {
             guard base.hasSuffix(suffix) else { return nil }
             base.removeLast(suffix.count)
             guard let url = URL(string: base), !aiService.apiKey.isEmpty else { return nil }
-            return OpenAIClient(apiKey: aiService.apiKey, model: model, baseURL: url)
+            // Profile picks the token-limit field: first-party OpenAI
+            // requires max_completion_tokens (gpt-5* rejects max_tokens,
+            // which is what .compatible sends).
+            let profile: OpenAIChatProfile
+            switch provider {
+            case .openAI: profile = .firstParty
+            case .openRouter: profile = .openRouter
+            default: profile = .compatible
+            }
+            return OpenAIClient(apiKey: aiService.apiKey, model: model, baseURL: url, profile: profile)
         }
     }
 
@@ -303,12 +344,20 @@ enum AgenticRouterService {
             : catalog.profiles.map { "- \($0.id.uuidString) | \($0.name)" }.joined(separator: "\n")
 
         return """
-        You route dictation for a voice-typing app. The user message is a raw speech transcript (any language, often Portuguese or English). It may contain a META-DIRECTIVE: an instruction about how THIS dictation should be processed ("isso aqui é um email formal", "manda como mensagem informal pro Discord", "in English please", "só copia, não cola", "a partir de agora modo código").
+        You route dictation for a voice-typing app. The user message is a raw speech transcript (any language, often Portuguese or English). Recognize two kinds of directive:
 
-        Your job:
-        1. If — and only if — the transcript clearly contains such a meta-directive, call the matching tools to record the reconfiguration. Content that merely TALKS ABOUT email, chat, code, etc. is NOT a directive. When in doubt, call no tools.
-        2. Directives that say "from now on" / "a partir de agora" → call set_scope with "session". Otherwise the default scope (this_dictation) already applies; activating a profile always implies session scope.
-        3. Finish by returning ONLY the transcript with the spoken directive removed (fix capitalization at the seam). If you called no tools, return the transcript EXACTLY as received. Never answer the transcript's content, never add commentary.
+        A. FORMAT DIRECTIVE — the user dictated content plus an instruction about how THIS dictation should be processed ("isso aqui é um email formal", "manda como mensagem informal pro Discord", "in English please", "só copia, não cola", "a partir de agora modo código"). Call the matching tools, then return the transcript with the directive phrase removed (fix capitalization at the seam).
+
+        B. GENERATION REQUEST — the transcript IS an instruction to produce an artifact ("escreve pra mim um email formal pedindo aumento pro meu chefe...", "write a commit message saying..."). Then:
+           - select_prompt for the target artifact type (email formal/casual, chat, task, commit...).
+           - Apply spoken constraints with the other tools: language ("em inglês" → set_output_language "en"), delivery, autosend.
+           - Return the CONTENT BRIEF: the facts, asks and constraints the artifact must carry, rewritten in first person from the author's perspective, in the transcript's language — without the "write for me" wrapper and without the constraints you already applied via tools.
+           Example: "Escreve pra mim um email formal pedindo aumento pro meu chefe. Fala pra ele que eu tô muito infeliz e preciso de pelo menos 30%. Não cita valores. Escreve em inglês." → tools: select_prompt(Email — Formal), set_output_language("en") → return: "Venho pedir um aumento. Estou muito infeliz e preciso de pelo menos 30% a mais. Sem citar valores específicos."
+
+        Rules:
+        - Content that merely TALKS ABOUT email, chat, code, etc. — without instructing — is NOT a directive. When in doubt, call no tools and return the transcript EXACTLY as received.
+        - "From now on" / "a partir de agora" → set_scope "session". Otherwise the default (this_dictation) applies; activating a profile always implies session scope.
+        - Your final answer is ONLY the resulting text (case A: stripped transcript; case B: content brief). Never produce the artifact yourself, never add commentary.
 
         AVAILABLE PROMPTS (pick by id with select_prompt):
         \(promptLines)

@@ -125,12 +125,12 @@ class TranscriptionPipeline {
             // abstains or fails, the pipeline behaves exactly as before.
             if let enhancementService, enhancementService.isConfigured,
                AgenticSettings.isEnabled,
-               let aiService = enhancementService.getAIService(),
-               let outcome = await AgenticRouterService.route(
-                   text: text,
-                   enhancementService: enhancementService,
-                   aiService: aiService
-               ) {
+               let aiService = enhancementService.getAIService() {
+                let outcome = await AgenticRouterService.route(
+                    text: text,
+                    enhancementService: enhancementService,
+                    aiService: aiService
+                )
                 apiLog.steps.append(outcome.logStep)
                 let decision = outcome.decision
                 if decision.hasActions {
