@@ -71,7 +71,6 @@ private enum DashboardMetricsLoader {
 struct MetricsContent: View {
     private let logger = Logger(subsystem: "agabo.dev.voiceink", category: "MetricsContent")
     let modelContext: ModelContext
-    let licenseState: LicenseViewModel.LicenseState
 
     @State private var totalCount: Int = 0
     @State private var totalWords: Int = 0
@@ -80,9 +79,8 @@ struct MetricsContent: View {
     @State private var metricsTask: Task<Void, Never>?
     @State private var isModelStatsPanelPresented = false
 
-    init(modelContext: ModelContext, licenseState: LicenseViewModel.LicenseState) {
+    init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        self.licenseState = licenseState
 
         let cachedSummary = DashboardMetricsCache.shared.currentSummary()
         _totalCount = State(initialValue: cachedSummary?.totalCount ?? 0)
