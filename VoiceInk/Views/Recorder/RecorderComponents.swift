@@ -223,9 +223,9 @@ struct RecorderPowerModeButton: View {
 
     var body: some View {
         RecorderToggleButton(
-            isEnabled: !powerModeManager.enabledConfigurations.isEmpty,
-            icon: powerModeManager.enabledConfigurations.isEmpty ? "✨" : (powerModeManager.currentActiveConfiguration?.emoji ?? "✨"),
-            disabled: powerModeManager.enabledConfigurations.isEmpty
+            isEnabled: !powerModeManager.configurations.isEmpty,
+            icon: powerModeManager.configurations.isEmpty ? "✨" : (powerModeManager.currentActiveConfiguration?.emoji ?? "✨"),
+            disabled: powerModeManager.configurations.isEmpty
         ) {
             activePopover = activePopover == .power ? .none : .power
         }

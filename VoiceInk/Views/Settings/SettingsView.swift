@@ -92,7 +92,7 @@ struct SettingsView: View {
     ]
 
     private enum SettingsTab: String, CaseIterable, Identifiable {
-        case general, shortcuts, recording, powerMode, data, advanced
+        case general, shortcuts, recording, data, advanced
 
         var id: String { rawValue }
 
@@ -101,7 +101,6 @@ struct SettingsView: View {
             case .general: return "General"
             case .shortcuts: return "Shortcuts"
             case .recording: return "Recording"
-            case .powerMode: return "Profiles"
             case .data: return "Data"
             case .advanced: return "Advanced"
             }
@@ -112,7 +111,6 @@ struct SettingsView: View {
             case .general: return "gear"
             case .shortcuts: return "keyboard"
             case .recording: return "mic.fill"
-            case .powerMode: return "bolt.fill"
             case .data: return "folder.fill"
             case .advanced: return "wrench.and.screwdriver.fill"
             }
@@ -140,10 +138,6 @@ struct SettingsView: View {
                 recordingTab
                     .tabItem { Label(SettingsTab.recording.label, systemImage: SettingsTab.recording.icon) }
                     .tag(SettingsTab.recording)
-
-                powerModeTab
-                    .tabItem { Label(SettingsTab.powerMode.label, systemImage: SettingsTab.powerMode.icon) }
-                    .tag(SettingsTab.powerMode)
 
                 dataTab
                     .tabItem { Label(SettingsTab.data.label, systemImage: SettingsTab.data.icon) }
@@ -464,18 +458,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Power Mode tab
-
-    private var powerModeTab: some View {
-        Form {
-            PowerModeSection()
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(Color(NSColor.controlBackgroundColor))
-        .padding(.top, 12)
-    }
-
     // MARK: - Data tab — Privacy + Backup
 
     private var dataTab: some View {
@@ -692,41 +674,6 @@ struct ExpandableSettingsRow<Content: View>: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isHandlingToggleChange = false
             }
-        }
-    }
-}
-
-// MARK: - Power Mode Section
-
-struct PowerModeSection: View {
-    @AppStorage("powerModePersistConfig") private var powerModePersistSettings = false
-
-    var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "bolt.fill")
-                        .foregroundColor(.accentColor)
-                    Text("Profiles run every dictation session")
-                        .font(.system(size: 13, weight: .semibold))
-                    InfoTip("Profiles drive every dictation session. With zero profiles configured the user defaults you set in Settings → Enhancement and AI Models apply. When you add profiles, the runtime picks the first one whose trigger matches the active app or URL; if nothing matches, it falls back to your user defaults. Manage profiles from the Profiles tab in the sidebar.")
-                    Spacer()
-                }
-                Text("Fallback chain: matching profile (Perfis) → user defaults (the Settings you configured in General / Enhancement / AI Models). No profiles? The user defaults stay in effect automatically.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 4)
-
-            Toggle(isOn: $powerModePersistSettings) {
-                HStack(spacing: 4) {
-                    Text("Persist Configured Preferences")
-                    InfoTip("When enabled, profile preferences stay active after you stop recording instead of reverting to your original preferences. They only change when a different profile activates.")
-                }
-            }
-        } header: {
-            Text("Profiles")
         }
     }
 }

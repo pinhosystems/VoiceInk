@@ -75,8 +75,8 @@ class MiniRecorderShortcutManager: ObservableObject {
 
     private var canUsePowerModeShortcuts: Bool {
         // Power Mode is always-on; only the existence of at least one
-        // enabled configuration matters for shortcut wiring.
-        !PowerModeManager.shared.enabledConfigurations.isEmpty
+        // configuration matters for shortcut wiring.
+        !PowerModeManager.shared.configurations.isEmpty
     }
 
     private func refreshPowerModeShortcuts() {
@@ -209,7 +209,7 @@ class MiniRecorderShortcutManager: ObservableObject {
                       self.canUsePowerModeShortcuts else { return }
 
                 let powerModeManager = PowerModeManager.shared
-                let availableConfigurations = powerModeManager.enabledConfigurations
+                let availableConfigurations = powerModeManager.configurations
 
                 guard index < availableConfigurations.count else { return }
 

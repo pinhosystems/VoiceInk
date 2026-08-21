@@ -38,9 +38,11 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     var selectedAIProvider: String?
     var selectedAIModel: String?
     var autoSendKey: AutoSendKey = .none
-    var isEnabled: Bool = true
     var isDefault: Bool = false
-    var hotkeyShortcut: String? = nil
+    /// When true, this profile's global hotkey only activates the profile
+    /// (setActiveConfiguration + beginSession) instead of also opening the
+    /// recorder and starting a recording.
+    var hotkeySwitchesOnly: Bool = false
 
     // Optional overrides — when nil, the Power Mode does not touch the
     // corresponding system default; when set, the value is applied while
@@ -71,21 +73,22 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         // `removePunctuation` is kept as a legacy key so older exports decode
         // cleanly — the init(from:) below tries `punctuationCleanupMode` first
-        // and falls back to the legacy bool. `hotkeyShortcut` was added by this
-        // fork before the upstream cleanup landed; we keep it to preserve PR #X
-        // configs that round-trip per-config keyboard shortcuts.
-        case id, name, emoji, appConfigs, urlConfigs, isAIEnhancementEnabled, selectedPrompt, selectedLanguage, isTextFormattingEnabled, punctuationCleanupMode, removePunctuation, lowercaseTranscription, useScreenCapture, selectedAIProvider, selectedAIModel, isAutoSendEnabled, autoSendKey, isEnabled, isDefault, hotkeyShortcut
+        // and falls back to the legacy bool. `isEnabled` and `hotkeyShortcut`
+        // were removed (profiles are always-on; shortcut presence lives in
+        // the KeyboardShortcuts store) — old payloads carrying them decode
+        // fine because unknown keys are simply ignored.
+        case id, name, emoji, appConfigs, urlConfigs, isAIEnhancementEnabled, selectedPrompt, selectedLanguage, isTextFormattingEnabled, punctuationCleanupMode, removePunctuation, lowercaseTranscription, useScreenCapture, selectedAIProvider, selectedAIModel, isAutoSendEnabled, autoSendKey, isDefault
         case selectedWhisperModel
         case selectedTranscriptionModelName
         case llmOutputLanguageOverride, localeNormalizationEnabledOverride, whisperPromptDomainOverride, removeFillerWordsOverride, appendTrailingSpaceOverride
-        case customizeTranscription, customizeLLM
+        case customizeTranscription, customizeLLM, hotkeySwitchesOnly
     }
 
     init(id: UUID = UUID(), name: String, emoji: String, appConfigs: [AppConfig]? = nil,
          urlConfigs: [URLConfig]? = nil, isAIEnhancementEnabled: Bool, selectedPrompt: String? = nil,
          selectedTranscriptionModelName: String? = nil, selectedLanguage: String? = nil, useScreenCapture: Bool = false,
          isTextFormattingEnabled: Bool = false, punctuationCleanupMode: PunctuationCleanupMode = .keep, lowercaseTranscription: Bool = false,
-         selectedAIProvider: String? = nil, selectedAIModel: String? = nil, autoSendKey: AutoSendKey = .none, isEnabled: Bool = true, isDefault: Bool = false, hotkeyShortcut: String? = nil) {
+         selectedAIProvider: String? = nil, selectedAIModel: String? = nil, autoSendKey: AutoSendKey = .none, isDefault: Bool = false) {
         self.id = id
         self.name = name
         self.emoji = emoji
@@ -113,14 +116,7 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         self.isTextFormattingEnabled = isTextFormattingEnabled
         self.punctuationCleanupMode = punctuationCleanupMode
         self.lowercaseTranscription = lowercaseTranscription
-        // Profiles cannot be disabled. The init parameter is accepted for
-        // call-site compatibility but always coerced to true so legacy
-        // factories that passed `isEnabled: false` (e.g. duplicate-as-
-        // disabled) silently produce an enabled profile.
-        _ = isEnabled
-        self.isEnabled = true
         self.isDefault = isDefault
-        self.hotkeyShortcut = hotkeyShortcut
     }
 
     init(from decoder: Decoder) throws {
@@ -153,12 +149,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         } else {
             autoSendKey = .none
         }
-        // Always coerce to true on decode — older builds could persist
-        // `isEnabled = false`; profiles are now always-on.
-        _ = try container.decodeIfPresent(Bool.self, forKey: .isEnabled)
-        isEnabled = true
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
-        hotkeyShortcut = try container.decodeIfPresent(String.self, forKey: .hotkeyShortcut)
+        hotkeySwitchesOnly = try container.decodeIfPresent(Bool.self, forKey: .hotkeySwitchesOnly) ?? false
         llmOutputLanguageOverride = try container.decodeIfPresent(String.self, forKey: .llmOutputLanguageOverride)
         localeNormalizationEnabledOverride = try container.decodeIfPresent(Bool.self, forKey: .localeNormalizationEnabledOverride)
         whisperPromptDomainOverride = try container.decodeIfPresent(String.self, forKey: .whisperPromptDomainOverride)
@@ -195,9 +187,8 @@ struct PowerModeConfig: Codable, Identifiable, Equatable {
         try container.encodeIfPresent(selectedAIModel, forKey: .selectedAIModel)
         try container.encode(autoSendKey, forKey: .autoSendKey)
         try container.encodeIfPresent(selectedTranscriptionModelName, forKey: .selectedTranscriptionModelName)
-        try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(isDefault, forKey: .isDefault)
-        try container.encodeIfPresent(hotkeyShortcut, forKey: .hotkeyShortcut)
+        try container.encode(hotkeySwitchesOnly, forKey: .hotkeySwitchesOnly)
         try container.encodeIfPresent(llmOutputLanguageOverride, forKey: .llmOutputLanguageOverride)
         try container.encodeIfPresent(localeNormalizationEnabledOverride, forKey: .localeNormalizationEnabledOverride)
         try container.encodeIfPresent(whisperPromptDomainOverride, forKey: .whisperPromptDomainOverride)
@@ -309,9 +300,8 @@ class PowerModeManager: ObservableObject {
     /// Clones `source` into a new configuration inserted immediately after it
     /// in the priority list, so the duplicate inherits the next-lower
     /// priority slot. The copy never inherits `isDefault` (only one default
-    /// allowed) or `hotkeyShortcut` (per-config shortcuts must stay unique)
-    /// and is created disabled to avoid silently shadowing the source on
-    /// the next app match.
+    /// allowed); its keyboard shortcut is naturally absent because the
+    /// binding lives in the KeyboardShortcuts store under the new UUID.
     @discardableResult
     func duplicateConfiguration(_ source: PowerModeConfig) -> PowerModeConfig? {
         guard let sourceIndex = configurations.firstIndex(where: { $0.id == source.id }) else {
@@ -321,12 +311,6 @@ class PowerModeManager: ObservableObject {
         copy.id = UUID()
         copy.name = uniqueName(basedOn: source.name)
         copy.isDefault = false
-        copy.hotkeyShortcut = nil
-        // Profiles cannot be disabled. The duplicate used to land
-        // disabled so it would not shadow the source on the next app
-        // match; now that disabling is gone, the user must rename / edit
-        // the duplicate before it conflicts.
-        copy.isEnabled = true
 
         configurations.insert(copy, at: sourceIndex + 1)
         saveConfigurations()
@@ -348,7 +332,7 @@ class PowerModeManager: ObservableObject {
     }
 
     func getConfigurationForURL(_ url: String) -> PowerModeConfig? {
-        for config in configurations.filter({ $0.isEnabled }) {
+        for config in configurations {
             if let urlConfigs = config.urlConfigs {
                 for urlConfig in urlConfigs where Self.urlMatches(actual: url, configured: urlConfig.url) {
                     return config
@@ -407,7 +391,7 @@ class PowerModeManager: ObservableObject {
     }
     
     func getConfigurationForApp(_ bundleId: String) -> PowerModeConfig? {
-        for config in configurations.filter({ $0.isEnabled }) {
+        for config in configurations {
             if let appConfigs = config.appConfigs {
                 if appConfigs.contains(where: { $0.bundleIdentifier == bundleId }) {
                     return config
@@ -418,7 +402,7 @@ class PowerModeManager: ObservableObject {
     }
     
     func getDefaultConfiguration() -> PowerModeConfig? {
-        return configurations.first { $0.isEnabled && $0.isDefault }
+        return configurations.first { $0.isDefault }
     }
     
     func hasDefaultConfiguration() -> Bool {
@@ -439,24 +423,6 @@ class PowerModeManager: ObservableObject {
         }
     }
     
-    func enableConfiguration(with id: UUID) {
-        if let index = configurations.firstIndex(where: { $0.id == id }) {
-            configurations[index].isEnabled = true
-            saveConfigurations()
-        }
-    }
-    
-    func disableConfiguration(with id: UUID) {
-        if let index = configurations.firstIndex(where: { $0.id == id }) {
-            configurations[index].isEnabled = false
-            saveConfigurations()
-        }
-    }
-    
-    var enabledConfigurations: [PowerModeConfig] {
-        return configurations.filter { $0.isEnabled }
-    }
-
     func addAppConfig(_ appConfig: AppConfig, to config: PowerModeConfig) {
         if var updatedConfig = configurations.first(where: { $0.id == config.id }) {
             var configs = updatedConfig.appConfigs ?? []

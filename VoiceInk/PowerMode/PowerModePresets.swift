@@ -337,7 +337,6 @@ extension PowerModePreset {
             punctuationCleanupMode: punctuationCleanupMode,
             lowercaseTranscription: lowercaseTranscription,
             autoSendKey: autoSendKey,
-            isEnabled: true,
             isDefault: false
         )
     }

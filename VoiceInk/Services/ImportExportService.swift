@@ -131,7 +131,6 @@ class ImportExportService {
 
         let powerConfigs = powerModeManager.configurations
         let powerModeShortcuts = Dictionary(uniqueKeysWithValues: powerConfigs.compactMap { config -> (String, KeyboardShortcuts.Shortcut)? in
-            guard config.hotkeyShortcut != nil else { return nil }
             guard let shortcut = KeyboardShortcuts.getShortcut(for: .powerMode(id: config.id)) else { return nil }
             return (config.id.uuidString, shortcut)
         })

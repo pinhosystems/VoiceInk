@@ -65,8 +65,8 @@ class TranscriptionPipeline {
 
             let powerModeManager = PowerModeManager.shared
             let activePowerModeConfig = powerModeManager.currentActiveConfiguration
-            let powerModeName = (activePowerModeConfig?.isEnabled == true) ? activePowerModeConfig?.name : nil
-            let powerModeEmoji = (activePowerModeConfig?.isEnabled == true) ? activePowerModeConfig?.emoji : nil
+            let powerModeName = activePowerModeConfig?.name
+            let powerModeEmoji = activePowerModeConfig?.emoji
 
             if shouldCancel() { await onCleanup(); return }
 

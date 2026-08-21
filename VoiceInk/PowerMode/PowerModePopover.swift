@@ -16,7 +16,7 @@ struct PowerModePopover: View {
                 .background(Color.white.opacity(0.1))
             
             ScrollView {
-                let enabledConfigs = powerModeManager.configurations.filter { $0.isEnabled }
+                let enabledConfigs = powerModeManager.configurations
                 VStack(alignment: .leading, spacing: 4) {
                     // Explicit "None" entry that lets the user clear an
                     // active Power Mode session. With Power Mode cleared

@@ -30,20 +30,21 @@ class PowerModeShortcutManager {
     }
 
     private func setupPowerModeHotkeys() {
-        let powerModesWithShortcuts = Set(PowerModeManager.shared.configurations
-            .filter { $0.hotkeyShortcut != nil }
-            .map { $0.id })
+        // Shortcut presence lives in the KeyboardShortcuts store (name
+        // "powerMode_<uuid>"), not on the config — the old `hotkeyShortcut`
+        // string was only a "configured" sentinel that could desync.
+        let currentIds = Set(PowerModeManager.shared.configurations.map { $0.id })
 
-        // Remove shortcuts for deleted or updated configs
-        let idsToRemove = registeredPowerModeIds.subtracting(powerModesWithShortcuts)
+        // Clear bindings for deleted configs
+        let idsToRemove = registeredPowerModeIds.subtracting(currentIds)
         idsToRemove.forEach { id in
             KeyboardShortcuts.setShortcut(nil, for: .powerMode(id: id))
             registeredPowerModeIds.remove(id)
         }
 
-        // Add new shortcuts
+        // Register a handler for every config; the handler is a no-op
+        // until the user actually records a shortcut for that name.
         PowerModeManager.shared.configurations.forEach { config in
-            guard config.hotkeyShortcut != nil else { return }
             guard !registeredPowerModeIds.contains(config.id) else { return }
 
             KeyboardShortcuts.onKeyUp(for: .powerMode(id: config.id)) { [weak self] in
@@ -61,8 +62,13 @@ class PowerModeShortcutManager {
         guard let engine = engine,
               canProcessHotkeyAction(engine: engine) else { return }
 
-        guard let config = PowerModeManager.shared.getConfiguration(with: powerModeId),
-              config.hotkeyShortcut != nil else {
+        guard let config = PowerModeManager.shared.getConfiguration(with: powerModeId) else {
+            return
+        }
+
+        if config.hotkeySwitchesOnly {
+            PowerModeManager.shared.setActiveConfiguration(config)
+            await PowerModeSessionManager.shared.beginSession(with: config)
             return
         }
 

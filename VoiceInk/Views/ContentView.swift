@@ -20,7 +20,7 @@ enum ViewType: String, CaseIterable, Identifiable {
     /// Repurposed from the upstream "VoiceInk Pro" tab into a neutral
     /// About screen for this fork. Routing key `"VoiceInk Pro"` is kept
     /// for back-compat with stored navigation intents.
-    case license = "About"
+    case about = "About"
 
     var id: String { rawValue }
 
@@ -37,7 +37,7 @@ enum ViewType: String, CaseIterable, Identifiable {
         case .audioInput: return "mic.fill"
         case .dictionary: return "character.book.closed.fill"
         case .settings: return "gearshape.fill"
-        case .license: return "info.circle.fill"
+        case .about: return "info.circle.fill"
         }
     }
 }
@@ -84,7 +84,7 @@ struct SidebarSection: Identifiable {
     /// About lives outside the regular sections and renders as a
     /// bottom-anchored footer entry. It is a single read-only screen the
     /// user visits at most once, so it should not consume a section slot.
-    static let footerItem: ViewType = .license
+    static let footerItem: ViewType = .about
 }
 
 struct VisualEffectView: NSViewRepresentable {
@@ -252,7 +252,7 @@ struct ContentView: View {
                 case "AI Models":
                     activeView = .models
                 case "VoiceInk Pro":
-                    activeView = .license
+                    activeView = .about
                 case "History":
                     activeView = .history
                 case "Permissions":
@@ -301,7 +301,7 @@ struct ContentView: View {
             PowerModeView()
         case .settings:
             SettingsView()
-        case .license:
+        case .about:
             LicenseManagementView()
         case .permissions:
             PermissionsView()

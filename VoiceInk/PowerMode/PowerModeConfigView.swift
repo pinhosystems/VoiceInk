@@ -33,6 +33,7 @@ struct ConfigurationView: View {
     @State private var useScreenCapture = false
     @State private var autoSendKey: AutoSendKey = .none
     @State private var isDefault = false
+    @State private var hotkeySwitchesOnly = false
     @State private var isShowingDeleteConfirmation = false
     @State private var powerModeConfigId: UUID = UUID()
     @State private var isTranscriptFormattingExpanded = false
@@ -161,6 +162,7 @@ struct ConfigurationView: View {
             _useScreenCapture = State(initialValue: latestConfig.useScreenCapture)
             _autoSendKey = State(initialValue: latestConfig.autoSendKey)
             _isDefault = State(initialValue: latestConfig.isDefault)
+            _hotkeySwitchesOnly = State(initialValue: latestConfig.hotkeySwitchesOnly)
             _selectedAIProvider = State(initialValue: latestConfig.customizeLLM ? latestConfig.selectedAIProvider : nil)
             _selectedAIModel = State(initialValue: latestConfig.customizeLLM ? latestConfig.selectedAIModel : nil)
             _isTranscriptFormattingExpanded = State(initialValue: latestConfig.isTextFormattingEnabled || latestConfig.punctuationCleanupMode != .keep || latestConfig.lowercaseTranscription)
@@ -714,6 +716,13 @@ struct ConfigurationView: View {
                             .controlSize(.regular)
                             .frame(minHeight: 28)
                     }
+
+                    Toggle(isOn: $hotkeySwitchesOnly) {
+                        HStack(spacing: 6) {
+                            Text("Shortcut only switches profile")
+                            InfoTip("When on, the keyboard shortcut activates this profile without opening the recorder or starting a recording.")
+                        }
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -879,9 +888,6 @@ struct ConfigurationView: View {
     }
 
     private func getConfigForForm() -> PowerModeConfig {
-        let shortcut = KeyboardShortcuts.getShortcut(for: .powerMode(id: powerModeConfigId))
-        let hotkeyString = shortcut != nil ? "configured" : nil
-
         // When the user did NOT opt into transcription customization, do
         // not persist the staged-in model/language. Leaving the local
         // state to flow through would freeze whatever value the picker
@@ -915,9 +921,9 @@ struct ConfigurationView: View {
                 selectedAIProvider: persistedAIProvider,
                 selectedAIModel: persistedAIModel,
                 autoSendKey: autoSendKey,
-                isDefault: isDefault,
-                hotkeyShortcut: hotkeyString
+                isDefault: isDefault
             )
+            config.hotkeySwitchesOnly = hotkeySwitchesOnly
             config.llmOutputLanguageOverride = llmOutputLanguageOverride
             config.localeNormalizationEnabledOverride = localeNormalizationEnabledOverride
             config.whisperPromptDomainOverride = whisperPromptDomainOverride
@@ -944,7 +950,7 @@ struct ConfigurationView: View {
             updatedConfig.selectedAIProvider = persistedAIProvider
             updatedConfig.selectedAIModel = persistedAIModel
             updatedConfig.isDefault = isDefault
-            updatedConfig.hotkeyShortcut = hotkeyString
+            updatedConfig.hotkeySwitchesOnly = hotkeySwitchesOnly
             updatedConfig.llmOutputLanguageOverride = llmOutputLanguageOverride
             updatedConfig.localeNormalizationEnabledOverride = localeNormalizationEnabledOverride
             updatedConfig.whisperPromptDomainOverride = whisperPromptDomainOverride
