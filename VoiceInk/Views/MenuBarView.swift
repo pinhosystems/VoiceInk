@@ -92,17 +92,24 @@ struct MenuBarView: View {
             Toggle("LLM Enhancement", isOn: $enhancementService.isEnhancementEnabled)
 
             Menu {
-                ForEach(enhancementService.allPrompts) { prompt in
-                    Button {
-                        enhancementService.setActivePrompt(prompt)
-                    } label: {
-                        HStack {
-                            Image(systemName: prompt.icon)
-                                .foregroundColor(.accentColor)
-                            Text(prompt.title)
-                            if enhancementService.selectedPromptId == prompt.id {
-                                Spacer()
-                                Image(systemName: "checkmark")
+                ForEach(PromptCategory.orderedCases) { category in
+                    let prompts = enhancementService.allPrompts.filter { $0.category == category }
+                    if !prompts.isEmpty {
+                        Section(category.displayName) {
+                            ForEach(prompts) { prompt in
+                                Button {
+                                    enhancementService.setActivePrompt(prompt)
+                                } label: {
+                                    HStack {
+                                        Image(systemName: prompt.icon)
+                                            .foregroundColor(.accentColor)
+                                        Text(prompt.title)
+                                        if enhancementService.selectedPromptId == prompt.id {
+                                            Spacer()
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -226,7 +233,7 @@ struct MenuBarView: View {
 
                 Divider()
 
-                ForEach(powerModeManager.configurations.filter { $0.isEnabled }) { config in
+                ForEach(powerModeManager.configurations) { config in
                     Button {
                         powerModeManager.setActiveConfiguration(config)
                         Task { await PowerModeSessionManager.shared.beginSession(with: config) }

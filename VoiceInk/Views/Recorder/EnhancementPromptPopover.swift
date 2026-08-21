@@ -31,18 +31,32 @@ struct EnhancementPromptPopover: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    // Transcription Profiles — selectable regardless of
-                    // enhancement toggle.
-                    ForEach(enhancementService.allPrompts) { prompt in
-                        EnhancementPromptRow(
-                            prompt: prompt,
-                            isSelected: selectedPrompt?.id == prompt.id,
-                            isDisabled: false,
-                            action: {
-                                enhancementService.setActivePrompt(prompt)
-                                selectedPrompt = prompt
+                    // Prompts grouped by category — selectable regardless
+                    // of enhancement toggle. The ⌘ badge shows the ⌘1–⌘0
+                    // shortcut, which maps to the prompt's global index in
+                    // allPrompts (see MiniRecorderShortcutManager).
+                    ForEach(PromptCategory.orderedCases) { category in
+                        let prompts = enhancementService.allPrompts.filter { $0.category == category }
+                        if !prompts.isEmpty {
+                            Text(category.displayName)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.45))
+                                .padding(.horizontal, 8)
+                                .padding(.top, 6)
+
+                            ForEach(prompts) { prompt in
+                                EnhancementPromptRow(
+                                    prompt: prompt,
+                                    isSelected: selectedPrompt?.id == prompt.id,
+                                    isDisabled: false,
+                                    shortcutIndex: enhancementService.allPrompts.firstIndex { $0.id == prompt.id },
+                                    action: {
+                                        enhancementService.setActivePrompt(prompt)
+                                        selectedPrompt = prompt
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -68,8 +82,16 @@ struct EnhancementPromptRow: View {
     let prompt: CustomPrompt
     let isSelected: Bool
     let isDisabled: Bool
+    var shortcutIndex: Int? = nil
     let action: () -> Void
-    
+
+    /// ⌘1…⌘9 for indexes 0–8, ⌘0 for index 9 (matching
+    /// MiniRecorderShortcutManager's mapping); nil past the tenth prompt.
+    private var shortcutLabel: String? {
+        guard let index = shortcutIndex, index < 10 else { return nil }
+        return "⌘\((index + 1) % 10)"
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
@@ -83,8 +105,15 @@ struct EnhancementPromptRow: View {
                     .font(.system(size: 13))
                     .lineLimit(1)
 
+                Spacer()
+
+                if let shortcutLabel {
+                    Text(shortcutLabel)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.35))
+                }
+
                 if isSelected {
-                    Spacer()
                     Image(systemName: "checkmark")
                         .foregroundColor(isDisabled ? .green.opacity(0.7) : .green)
                         .font(.system(size: 10))

@@ -27,6 +27,7 @@ struct PromptEditorView: View {
     @State private var description: String
     @State private var triggerWords: [String]
     @State private var useSystemInstructions: Bool
+    @State private var selectedCategory: PromptCategory
     @State private var showingIconPicker = false
     // Dictionary is a modal-only surface (no longer a routable sidebar
     // destination), so the jump-link below opens it as a self-contained
@@ -52,6 +53,7 @@ struct PromptEditorView: View {
             _description = State(initialValue: "")
             _triggerWords = State(initialValue: [])
             _useSystemInstructions = State(initialValue: true)
+            _selectedCategory = State(initialValue: .writing)
         case .edit(let prompt):
             _title = State(initialValue: prompt.title)
             _promptText = State(initialValue: prompt.promptText)
@@ -59,6 +61,7 @@ struct PromptEditorView: View {
             _description = State(initialValue: prompt.description ?? "")
             _triggerWords = State(initialValue: prompt.triggerWords)
             _useSystemInstructions = State(initialValue: prompt.useSystemInstructions)
+            _selectedCategory = State(initialValue: prompt.category)
         }
     }
     
@@ -200,6 +203,12 @@ struct PromptEditorView: View {
 
                 TextField("Brief description", text: $description)
                     .textFieldStyle(.roundedBorder)
+
+                Picker("Category", selection: $selectedCategory) {
+                    ForEach(PromptCategory.orderedCases) { category in
+                        Text(category.displayName).tag(category)
+                    }
+                }
             } header: {
                 Text("Details")
             }
@@ -282,6 +291,8 @@ struct PromptEditorView: View {
                                 promptText = template.promptText
                                 selectedIcon = template.icon
                                 description = template.description
+                                triggerWords = template.triggerWords
+                                selectedCategory = template.category
                             } label: {
                                 Label(template.title, systemImage: template.icon)
                             }
@@ -320,7 +331,8 @@ struct PromptEditorView: View {
                 icon: selectedIcon,
                 description: description.isEmpty ? nil : description,
                 triggerWords: triggerWords,
-                useSystemInstructions: useSystemInstructions
+                useSystemInstructions: useSystemInstructions,
+                category: selectedCategory
             )
         case .edit(let prompt):
             let updatedPrompt = CustomPrompt(
@@ -332,7 +344,9 @@ struct PromptEditorView: View {
                 description: prompt.isPredefined ? prompt.description : (description.isEmpty ? nil : description),
                 isPredefined: prompt.isPredefined,
                 triggerWords: triggerWords,
-                useSystemInstructions: useSystemInstructions
+                useSystemInstructions: useSystemInstructions,
+                vocabularyDomains: prompt.vocabularyDomains,
+                category: prompt.isPredefined ? prompt.category : selectedCategory
             )
             enhancementService.updatePrompt(updatedPrompt)
         }
