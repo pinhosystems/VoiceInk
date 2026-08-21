@@ -1,5 +1,16 @@
 # Agentic Mode Plan (2026-08-21)
 
+> **Status update (same day):** Phase 1 implemented with **AgentRunKit 5.5.0**
+> (github.com/Tom-Ryder/AgentRunKit, MIT) as the agent-loop/tooling library —
+> the user asked for a standardized, provider-agnostic lib instead of a
+> hand-rolled loop. Deployment target bumped 14.4 → 15.0 (AgentRunKit
+> requirement). The router runs a bounded tool loop (maxIterations 6) with
+> type-safe tools instead of the single structured-output call described
+> below; the decision/whitelist/apply/restore design is unchanged. MCP
+> exposure of the same tool catalog stays planned for Phase 2 —
+> AgentRunKit ships an MCP client, and the official MCP Swift SDK covers
+> the server side when we externalize the tools.
+
 Goal: while dictating, the user can speak meta-instructions in natural language ("isso aqui é um email formal", "manda pro Discord, tom informal", "só copia, não cola") and an LLM agent — not a fixed trigger word — interprets them, reconfigures the pipeline (prompt, profile, output language, delivery, autosend), strips the instructions from the text, runs the enhancement, and delivers the result.
 
 ## Architecture decision: in-process router vs .NET/Semantic Kernel sidecar

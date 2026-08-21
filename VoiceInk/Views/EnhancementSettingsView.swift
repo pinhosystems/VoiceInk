@@ -138,6 +138,8 @@ struct EnhancementSettingsView: View {
 
             EnhancementLocaleSection()
 
+            AgenticModeSection()
+
             EnhancementTestSection()
 
             Section {
