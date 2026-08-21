@@ -78,7 +78,7 @@ enum PowerModePresets {
             category: .aiCodingAgent,
             emoji: "🤖",
             name: "AI Coding Agent",
-            description: "Cursor chat, Claude Code, Copilot Chat. Cleans your speech into a structured task brief — does not write code.",
+            description: "For dictating tasks to Cursor chat, Claude Code, or Copilot Chat. Your speech comes out as a clean brief in your own words plus a short Tasks list — it never writes code for you.",
             suggestedApps: [
                 .init(bundleID: "com.todesktop.230313mzl4w4u92", displayName: "Cursor"),
             ],
@@ -114,7 +114,7 @@ enum PowerModePresets {
             category: .devEnvironment,
             emoji: "💻",
             name: "Dev Environment",
-            description: "IDEs and terminals — Xcode, VS Code, JetBrains, Zed, Terminal, iTerm, Warp, and friends.",
+            description: "For IDEs and terminals — Xcode, VS Code, JetBrains, iTerm, Warp. Dictation becomes an agent-ready brief for AI sidebars and chat panels; you review before submitting.",
             suggestedApps: [
                 .init(bundleID: "com.apple.dt.Xcode",                displayName: "Xcode"),
                 .init(bundleID: "com.microsoft.VSCode",              displayName: "Visual Studio Code"),
@@ -160,7 +160,7 @@ enum PowerModePresets {
             category: .messaging,
             emoji: "💬",
             name: "Messaging",
-            description: "Slack, Teams, Discord, iMessage, WhatsApp, Telegram, Google Chat — chat tone + auto-send.",
+            description: "For Slack, Teams, Discord, iMessage, WhatsApp, Telegram. Output is a short, casual message in chat register, sent automatically with ⏎.",
             suggestedApps: [
                 .init(bundleID: "com.tinyspeck.slackmacgap",        displayName: "Slack"),
                 .init(bundleID: "com.microsoft.teams2",             displayName: "Microsoft Teams"),
@@ -197,7 +197,7 @@ enum PowerModePresets {
             category: .email,
             emoji: "📨",
             name: "Email",
-            description: "Mail, Superhuman, Spark, Gmail and Outlook on the web.",
+            description: "For Mail, Superhuman, Spark, Gmail and Outlook on the web. Dictation becomes a formal email — greeting, body, closing — left in the draft for review, never auto-sent.",
             suggestedApps: [
                 .init(bundleID: "com.apple.mail",         displayName: "Mail"),
                 .init(bundleID: "com.superhuman.electron", displayName: "Superhuman"),
@@ -226,7 +226,7 @@ enum PowerModePresets {
             category: .writing,
             emoji: "📝",
             name: "Writing",
-            description: "Notion, Bear, Obsidian, Ulysses, Pages, Google Docs.",
+            description: "For long-form writing in Notion, Bear, Obsidian, Pages, Google Docs. Rewrites your speech for clarity and flow with paragraph breaks — no point ever dropped.",
             suggestedApps: [
                 .init(bundleID: "notion.id",                            displayName: "Notion"),
                 .init(bundleID: "net.shinyfrog.bear",                   displayName: "Bear"),
@@ -262,7 +262,7 @@ enum PowerModePresets {
             category: .aiChat,
             emoji: "🧠",
             name: "AI Chat",
-            description: "ChatGPT, Claude.ai, Gemini, Perplexity, Microsoft Copilot — web assistants.",
+            description: "For ChatGPT, Claude.ai, Gemini, Perplexity on the web. Your speech is treated as the question itself and ⏎ submits it automatically.",
             suggestedApps: [],
             suggestedURLs: [
                 "chatgpt.com",

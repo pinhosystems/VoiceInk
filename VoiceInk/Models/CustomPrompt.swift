@@ -25,6 +25,7 @@ extension PromptIcon {
         "curlybraces",
         "terminal.fill",
         "gearshape.fill",
+        "ant.fill",
         
         // Content
         "doc.text.image.fill",
