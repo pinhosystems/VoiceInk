@@ -1,4 +1,11 @@
-# Agentic Mode Plan (2026-08-21)
+# Agentic Mode Plan (2026-08-21) — REVERTED 2026-08-24
+
+> **REVERTED:** after testing both designs (v1 router-before-pipeline and
+> v2 agent-as-processor) the user asked to remove the feature entirely.
+> All agentic code, the AgentRunKit dependency, and the macOS 15
+> deployment-target bump were reverted; the tree is back to the classic
+> enhancement pipeline. This doc stays as the record of what was tried
+> and why, in case the idea returns.
 
 > **v2 redesign (same day):** the router-before-pipeline design below was
 > replaced after user testing showed a mismatch. The user's mental model:

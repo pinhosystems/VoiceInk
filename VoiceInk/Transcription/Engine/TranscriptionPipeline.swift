@@ -113,9 +113,7 @@ class TranscriptionPipeline {
                 error: nil
             ))
 
-            // Trigger-word detection only runs in classic mode — the agentic
-            // processor understands directives natively.
-            if !AgenticSettings.isEnabled, let enhancementService, enhancementService.isConfigured {
+            if let enhancementService, enhancementService.isConfigured {
                 let detectionResult = await promptDetectionService.analyzeText(text, with: enhancementService)
                 promptDetectionResult = detectionResult
                 await promptDetectionService.applyDetectionResult(detectionResult, to: enhancementService)
@@ -135,57 +133,30 @@ class TranscriptionPipeline {
                 onStateChange(.enhancing)
                 let textForAI = promptDetectionResult?.processedText ?? text
 
-                // Agentic Mode v2: the agent IS the enhancement stage. It
-                // cleans plain dictation per the active prompt's rules or
-                // generates a requested artifact outright; failure falls
-                // back to classic enhancement below.
-                var agenticHandled = false
-                if AgenticSettings.isEnabled, let aiService = enhancementService.getAIService() {
-                    let outcome = await AgenticProcessor.process(
-                        text: textForAI,
-                        enhancementService: enhancementService,
-                        aiService: aiService
-                    )
-                    switch outcome {
-                    case .processed(let finalText, let modelName, let durationMs, let logStep):
-                        transcription.enhancedText = finalText
-                        transcription.aiEnhancementModelName = modelName
-                        transcription.promptName = "Agentic"
-                        transcription.enhancementDuration = Double(durationMs) / 1000.0
-                        apiLog.steps.append(logStep)
-                        finalPastedText = finalText
-                        agenticHandled = true
-                    case .failed(let logStep):
-                        apiLog.steps.append(logStep)
+                do {
+                    let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(textForAI)
+                    transcription.enhancedText = enhancedText
+                    transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
+                    transcription.promptName = promptName
+                    transcription.enhancementDuration = enhancementDuration
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
                     }
-                }
-
-                if !agenticHandled {
-                    do {
-                        let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(textForAI)
-                        transcription.enhancedText = enhancedText
-                        transcription.aiEnhancementModelName = enhancementService.getAIService()?.currentModel
-                        transcription.promptName = promptName
-                        transcription.enhancementDuration = enhancementDuration
-                        if let llmStep = enhancementService.lastLLMCallStep {
-                            apiLog.steps.append(llmStep)
-                        }
-                        finalPastedText = enhancedText
-                    } catch {
-                        let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                        transcription.enhancedText = "Enhancement failed: \(errorDescription)"
-                        if let llmStep = enhancementService.lastLLMCallStep {
-                            apiLog.steps.append(llmStep)
-                        }
-                        let shortReason = String(errorDescription.prefix(80))
-                        await MainActor.run {
-                            NotificationManager.shared.showNotification(
-                                title: "Enhancement failed: \(shortReason)",
-                                type: .warning
-                            )
-                        }
-                        if shouldCancel() { await onCleanup(); return }
+                    finalPastedText = enhancedText
+                } catch {
+                    let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    transcription.enhancedText = "Enhancement failed: \(errorDescription)"
+                    if let llmStep = enhancementService.lastLLMCallStep {
+                        apiLog.steps.append(llmStep)
                     }
+                    let shortReason = String(errorDescription.prefix(80))
+                    await MainActor.run {
+                        NotificationManager.shared.showNotification(
+                            title: "Enhancement failed: \(shortReason)",
+                            type: .warning
+                        )
+                    }
+                    if shouldCancel() { await onCleanup(); return }
                 }
             }
 
