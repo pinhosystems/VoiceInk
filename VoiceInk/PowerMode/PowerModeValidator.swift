@@ -4,28 +4,20 @@ import SwiftUI
 enum PowerModeValidationError: Error, Identifiable {
     case emptyName
     case duplicateName(String)
-    case duplicateAppTrigger(String, String) // (app name, existing power mode name)
-    case duplicateWebsiteTrigger(String, String) // (website, existing power mode name)
-    
+
     var id: String {
         switch self {
         case .emptyName: return "emptyName"
         case .duplicateName: return "duplicateName"
-        case .duplicateAppTrigger: return "duplicateAppTrigger"
-        case .duplicateWebsiteTrigger: return "duplicateWebsiteTrigger"
         }
     }
-    
+
     var localizedDescription: String {
         switch self {
         case .emptyName:
             return "Power mode name cannot be empty."
         case .duplicateName(let name):
             return "A power mode with the name '\(name)' already exists."
-        case .duplicateAppTrigger(let appName, let powerModeName):
-            return "The app '\(appName)' is already configured in the '\(powerModeName)' power mode."
-        case .duplicateWebsiteTrigger(let website, let powerModeName):
-            return "The website '\(website)' is already configured in the '\(powerModeName)' power mode."
         }
     }
 }
@@ -55,39 +47,13 @@ struct PowerModeValidator {
         if isDuplicateName {
             errors.append(.duplicateName(config.name))
         }
-        
 
-        
-        if let appConfigs = config.appConfigs {
-            for appConfig in appConfigs {
-                for existingConfig in powerModeManager.configurations {
-                    if case .edit(let editConfig) = mode, existingConfig.id == editConfig.id {
-                        continue
-                    }
-                    
-                    if let existingAppConfigs = existingConfig.appConfigs,
-                       existingAppConfigs.contains(where: { $0.bundleIdentifier == appConfig.bundleIdentifier }) {
-                        errors.append(.duplicateAppTrigger(appConfig.appName, existingConfig.name))
-                    }
-                }
-            }
-        }
-        
-        if let urlConfigs = config.urlConfigs {
-            for urlConfig in urlConfigs {
-                for existingConfig in powerModeManager.configurations {
-                    if case .edit(let editConfig) = mode, existingConfig.id == editConfig.id {
-                        continue
-                    }
-                    
-                    if let existingUrlConfigs = existingConfig.urlConfigs,
-                       existingUrlConfigs.contains(where: { $0.url == urlConfig.url }) {
-                        errors.append(.duplicateWebsiteTrigger(urlConfig.url, existingConfig.name))
-                    }
-                }
-            }
-        }
-        
+        // Duplicate app/URL triggers across profiles are allowed — list
+        // order decides priority, and AppPickerPopover already surfaces
+        // overlaps with a soft "Also in:" badge. The old hard reject here
+        // presented a second, contradictory mental model of the same
+        // situation.
+
         return errors
     }
 }

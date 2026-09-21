@@ -462,7 +462,8 @@ private struct ReorderablePromptGrid: View {
                                 }
                             },
                             onEdit: onEditPrompt,
-                            onDelete: onDeletePrompt
+                            onDelete: onDeletePrompt,
+                            onRestore: { enhancementService.restorePredefinedPrompt($0) }
                         )
                         .opacity(draggingItem?.id == prompt.id ? 0.3 : 1.0)
                         .scaleEffect(draggingItem?.id == prompt.id ? 1.05 : 1.0)

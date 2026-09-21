@@ -10,6 +10,8 @@ enum PredefinedPrompts {
     static let assistantPromptId   = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     static let taskPromptId        = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
     static let rewritePromptId     = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+    // 0005 was "Email"; it kept its UUID when it became "Email — Formal"
+    // so persisted selections and Power Mode references still resolve.
     static let emailPromptId       = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
     static let chatPromptId        = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
     // 00000000-...-0007 was Code Comment — removed; the slot is kept
@@ -17,6 +19,7 @@ enum PredefinedPrompts {
     // 00000000-...-0008 was Task Prompt (PT-BR) — replaced by the
     // runtime TechTermSalvage block injected by AIEnhancementService
     // based on the user's selected STT language. Same tombstone reason.
+    static let emailCasualPromptId = UUID(uuidString: "00000000-0000-0000-0000-000000000009")!
 
     static var all: [CustomPrompt] {
         // Always return the latest predefined prompts from source code
@@ -30,7 +33,7 @@ enum PredefinedPrompts {
                 title: "Default",
                 promptText: PromptTemplates.all.first { $0.title == "System Default" }?.promptText ?? "",
                 icon: "checkmark.seal.fill",
-                description: "Default mode to improved clarity and accuracy of the transcription",
+                description: "Improves clarity and accuracy of the transcription",
                 isPredefined: true,
                 useSystemInstructions: true
             ),
@@ -83,6 +86,7 @@ enum PredefinedPrompts {
                 icon: "brain.head.profile",
                 description: "Dictated brief in the user's words, followed by a concise task summary (suppressible by voice)",
                 isPredefined: true,
+                triggerWords: ["tarefa", "task"],
                 useSystemInstructions: false,
                 vocabularyDomains: [.userVocabulary, .technical],
                 category: .dev_ai
@@ -105,15 +109,40 @@ enum PredefinedPrompts {
 
             CustomPrompt(
                 id: emailPromptId,
-                title: "Email",
+                title: "Email — Formal",
                 promptText: """
-                Rewrite <TRANSCRIPT> as an email: greeting, body, closing.
+                Rewrite <TRANSCRIPT> as a formal, professional email: greeting, body, closing.
 
-                Preserve every fact, name, date, number, action item, and distinct point the user mentioned — never drop or merge them. Body length follows the source: short asks stay 2–4 sentences; multi-topic dictation expands into separate short paragraphs or a bullet list rather than collapsing into one paragraph. Friendly tone unless the source clearly calls for formal.
+                If the user dictates a subject, put it first on its own line as "Subject:" (or the localized equivalent — "Assunto:", "Asunto:" — matching the output language).
+
+                Formal register: full sentences, no contractions, no slang; courteous but direct. Greeting like "Dear …"/"Prezado(a) …" when a recipient is named, a neutral "Hello,"/"Olá," otherwise. Closing like "Best regards"/"Atenciosamente".
+
+                Preserve every fact, name, date, number, action item, and distinct point the user mentioned — never drop or merge them. Body length follows the source: short asks stay 2–4 sentences; multi-topic dictation expands into separate short paragraphs or a bullet list rather than collapsing into one paragraph.
                 """,
                 icon: "envelope.fill",
-                description: "Professional email formatting",
+                description: "Formal, professional email formatting",
                 isPredefined: true,
+                triggerWords: ["email formal", "formal email", "e-mail formal", "email", "e-mail"],
+                useSystemInstructions: true,
+                category: .writing
+            ),
+
+            CustomPrompt(
+                id: emailCasualPromptId,
+                title: "Email — Casual",
+                promptText: """
+                Rewrite <TRANSCRIPT> as a friendly, casual email: short greeting, body, brief sign-off.
+
+                If the user dictates a subject, put it first on its own line as "Subject:" (or the localized equivalent — "Assunto:", "Asunto:" — matching the output language).
+
+                Relaxed register: contractions are fine, first names, light tone — but still an email, not a chat message. No emojis unless the user dictated them.
+
+                Preserve every fact, name, date, number, action item, and distinct point the user mentioned — never drop or merge them. Body length follows the source: short asks stay 2–4 sentences; multi-topic dictation expands into separate short paragraphs or a bullet list rather than collapsing into one paragraph.
+                """,
+                icon: "envelope.open.fill",
+                description: "Friendly, casual email formatting",
+                isPredefined: true,
+                triggerWords: ["email casual", "casual email", "email informal", "informal email", "e-mail casual", "e-mail informal"],
                 useSystemInstructions: true,
                 category: .writing
             ),
@@ -129,6 +158,7 @@ enum PredefinedPrompts {
                 icon: "bubble.left.and.bubble.right.fill",
                 description: "Casual chat-style formatting",
                 isPredefined: true,
+                triggerWords: ["chat", "mensagem"],
                 useSystemInstructions: true,
                 category: .chat
             ),

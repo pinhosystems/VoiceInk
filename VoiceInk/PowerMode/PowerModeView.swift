@@ -80,6 +80,7 @@ struct PowerModeView: View {
     @State private var panelID = UUID()
     @State private var isReorderPanelOpen = false
     @State private var isPresetGalleryOpen = false
+    @AppStorage("powerModePersistConfig") private var powerModePersistSettings = false
     
     var body: some View {
             VStack(spacing: 0) {
@@ -211,7 +212,21 @@ struct PowerModeView: View {
                                             )
                                             .padding(.horizontal, 24)
                                             .padding(.vertical, 20)
-                                            
+
+                                            // Moved here from Settings → Profiles,
+                                            // which duplicated this screen in the IA.
+                                            HStack(spacing: 4) {
+                                                Toggle(isOn: $powerModePersistSettings) {
+                                                    Text("Persist profile preferences after recording")
+                                                        .font(.system(size: 12))
+                                                }
+                                                .toggleStyle(.switch)
+                                                .controlSize(.small)
+                                                InfoTip("When enabled, profile preferences stay active after you stop recording instead of reverting to your original preferences. They only change when a different profile activates.")
+                                                Spacer()
+                                            }
+                                            .padding(.horizontal, 24)
+
                                             Spacer()
                                                 .frame(height: 40)
                                         }

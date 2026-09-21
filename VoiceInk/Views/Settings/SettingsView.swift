@@ -43,6 +43,7 @@ struct SettingsView: View {
     @State private var isMiddleClickExpanded = false
     @State private var isSoundFeedbackExpanded = false
     @State private var isMuteSystemExpanded = false
+    @State private var isPauseMediaExpanded = false
     @State private var isRestoreClipboardExpanded = false
 
     @AppStorage("DefaultAppLanguage") private var defaultAppLanguage: String = "en"
@@ -91,7 +92,7 @@ struct SettingsView: View {
     ]
 
     private enum SettingsTab: String, CaseIterable, Identifiable {
-        case general, shortcuts, recording, powerMode, data, advanced
+        case general, shortcuts, recording, data, advanced
 
         var id: String { rawValue }
 
@@ -100,7 +101,6 @@ struct SettingsView: View {
             case .general: return "General"
             case .shortcuts: return "Shortcuts"
             case .recording: return "Recording"
-            case .powerMode: return "Profiles"
             case .data: return "Data"
             case .advanced: return "Advanced"
             }
@@ -111,7 +111,6 @@ struct SettingsView: View {
             case .general: return "gear"
             case .shortcuts: return "keyboard"
             case .recording: return "mic.fill"
-            case .powerMode: return "bolt.fill"
             case .data: return "folder.fill"
             case .advanced: return "wrench.and.screwdriver.fill"
             }
@@ -139,10 +138,6 @@ struct SettingsView: View {
                 recordingTab
                     .tabItem { Label(SettingsTab.recording.label, systemImage: SettingsTab.recording.icon) }
                     .tag(SettingsTab.recording)
-
-                powerModeTab
-                    .tabItem { Label(SettingsTab.powerMode.label, systemImage: SettingsTab.powerMode.icon) }
-                    .tag(SettingsTab.powerMode)
 
                 dataTab
                     .tabItem { Label(SettingsTab.data.label, systemImage: SettingsTab.data.icon) }
@@ -388,6 +383,23 @@ struct SettingsView: View {
                     }
                 }
 
+                // Pause Media
+                ExpandableSettingsRow(
+                    isExpanded: $isPauseMediaExpanded,
+                    isEnabled: $playbackController.isPauseMediaEnabled,
+                    label: "Pause Media While Recording",
+                    infoMessage: "Pauses playing media when recording starts and resumes when done."
+                ) {
+                    Picker("Resume Delay", selection: $mediaController.audioResumptionDelay) {
+                        Text("0s").tag(0.0)
+                        Text("1s").tag(1.0)
+                        Text("2s").tag(2.0)
+                        Text("3s").tag(3.0)
+                        Text("4s").tag(4.0)
+                        Text("5s").tag(5.0)
+                    }
+                }
+
                 // Restore Clipboard
                 ExpandableSettingsRow(
                     isExpanded: $isRestoreClipboardExpanded,
@@ -444,18 +456,6 @@ struct SettingsView: View {
             }
             .frame(minWidth: 720, minHeight: 560)
         }
-    }
-
-    // MARK: - Power Mode tab
-
-    private var powerModeTab: some View {
-        Form {
-            PowerModeSection()
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(Color(NSColor.controlBackgroundColor))
-        .padding(.top, 12)
     }
 
     // MARK: - Data tab — Privacy + Backup
@@ -518,12 +518,10 @@ struct SettingsView: View {
         .padding(.top, 12)
     }
 
-    // MARK: - Advanced tab — Experimental + Diagnostics
+    // MARK: - Advanced tab — Dictionary + Diagnostics
 
     private var advancedTab: some View {
         Form {
-            ExperimentalSection()
-
             // MARK: - Dictionary (secondary)
             Section {
                 LabeledContent("Vocabulary & Word Replacements") {
@@ -676,71 +674,6 @@ struct ExpandableSettingsRow<Content: View>: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isHandlingToggleChange = false
             }
-        }
-    }
-}
-
-// MARK: - Power Mode Section
-
-struct PowerModeSection: View {
-    @AppStorage("powerModePersistConfig") private var powerModePersistSettings = false
-
-    var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "bolt.fill")
-                        .foregroundColor(.accentColor)
-                    Text("Profiles run every dictation session")
-                        .font(.system(size: 13, weight: .semibold))
-                    InfoTip("Profiles drive every dictation session. With zero profiles configured the user defaults you set in Settings → Enhancement and AI Models apply. When you add profiles, the runtime picks the first one whose trigger matches the active app or URL; if nothing matches, it falls back to your user defaults. Manage profiles from the Profiles tab in the sidebar.")
-                    Spacer()
-                }
-                Text("Fallback chain: matching profile (Perfis) → user defaults (the Settings you configured in General / Enhancement / AI Models). No profiles? The user defaults stay in effect automatically.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 4)
-
-            Toggle(isOn: $powerModePersistSettings) {
-                HStack(spacing: 4) {
-                    Text("Persist Configured Preferences")
-                    InfoTip("When enabled, profile preferences stay active after you stop recording instead of reverting to your original preferences. They only change when a different profile activates.")
-                }
-            }
-        } header: {
-            Text("Profiles")
-        }
-    }
-}
-
-// MARK: - Experimental Section
-
-struct ExperimentalSection: View {
-    @ObservedObject private var playbackController = PlaybackController.shared
-    @ObservedObject private var mediaController = MediaController.shared
-    @State private var isPauseMediaExpanded = false
-
-    var body: some View {
-        Section {
-            ExpandableSettingsRow(
-                isExpanded: $isPauseMediaExpanded,
-                isEnabled: $playbackController.isPauseMediaEnabled,
-                label: "Pause Media While Recording",
-                infoMessage: "Pauses playing media when recording starts and resumes when done."
-            ) {
-                Picker("Resume Delay", selection: $mediaController.audioResumptionDelay) {
-                    Text("0s").tag(0.0)
-                    Text("1s").tag(1.0)
-                    Text("2s").tag(2.0)
-                    Text("3s").tag(3.0)
-                    Text("4s").tag(4.0)
-                    Text("5s").tag(5.0)
-                }
-            }
-        } header: {
-            Text("Experimental")
         }
     }
 }

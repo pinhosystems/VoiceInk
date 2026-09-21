@@ -24,7 +24,8 @@ struct PredefinedPromptsView: View {
 struct PredefinedTemplateButton: View {
     let prompt: TemplatePrompt
     let action: () -> Void
-    
+    @State private var isShowingText = false
+
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
@@ -42,8 +43,8 @@ struct PredefinedTemplateButton: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(1)
-                    
-                    Spacer(minLength: 0)
+
+                    Spacer(minLength: 22)
                 }
                 
                 Text(prompt.description)
@@ -62,8 +63,37 @@ struct PredefinedTemplateButton: View {
             .shadow(color: cardShadowColor, radius: 6, x: 0, y: 4)
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) { textPreviewButton }
     }
-    
+
+    /// The card itself clones the template; this shows what it actually
+    /// contains first, so the text is not a black box until after cloning.
+    private var textPreviewButton: some View {
+        Button {
+            isShowingText.toggle()
+        } label: {
+            Image(systemName: "eye")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .padding(6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .padding(.top, 8)
+        .help("Show the prompt text")
+        .popover(isPresented: $isShowingText, arrowEdge: .trailing) {
+            ScrollView {
+                Text(prompt.promptText)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(width: 420, height: 320)
+        }
+    }
+
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
             .fill(Color(NSColor.controlBackgroundColor))

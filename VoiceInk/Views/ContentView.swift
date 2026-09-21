@@ -20,7 +20,7 @@ enum ViewType: String, CaseIterable, Identifiable {
     /// Repurposed from the upstream "VoiceInk Pro" tab into a neutral
     /// About screen for this fork. Routing key `"VoiceInk Pro"` is kept
     /// for back-compat with stored navigation intents.
-    case license = "About"
+    case about = "About"
 
     var id: String { rawValue }
 
@@ -37,7 +37,7 @@ enum ViewType: String, CaseIterable, Identifiable {
         case .audioInput: return "mic.fill"
         case .dictionary: return "character.book.closed.fill"
         case .settings: return "gearshape.fill"
-        case .license: return "info.circle.fill"
+        case .about: return "info.circle.fill"
         }
     }
 }
@@ -84,7 +84,7 @@ struct SidebarSection: Identifiable {
     /// About lives outside the regular sections and renders as a
     /// bottom-anchored footer entry. It is a single read-only screen the
     /// user visits at most once, so it should not consume a section slot.
-    static let footerItem: ViewType = .license
+    static let footerItem: ViewType = .about
 }
 
 struct VisualEffectView: NSViewRepresentable {
@@ -123,45 +123,11 @@ struct ContentView: View {
     @State private var sidebarSelection: ViewType? = .metrics
     @State private var activeView: ViewType = .metrics
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
-    @StateObject private var licenseViewModel = LicenseViewModel()
 
-    /// Returns sections with hidden items pruned out. Sections that end
-    /// up empty are dropped so we don't render orphan headers.
-    ///
-    /// Conditional priority: while the user has NOT activated the paid
-    /// plan we lift Providers to the top of the Configure section so the
-    /// app's most-pressing onboarding step (connecting an STT or LLM
-    /// provider) is the first sidebar entry under the section. Once the
-    /// user is on the paid plan we drop the boost and restore the natural
-    /// Profiles-first order; at that point Providers no longer drives the
-    /// conversion funnel, so it sinks back down to its usual slot.
+    /// The full section list — the upstream conversion-funnel reordering
+    /// (Providers hoisted while unlicensed) is gone along with licensing.
     private var visibleSections: [SidebarSection] {
-        let isPaidUser: Bool = {
-            if case .licensed = licenseViewModel.licenseState { return true }
-            return false
-        }()
-
-        return SidebarSection.allSections.compactMap { section in
-            let items: [ViewType]
-            if section.id == "configure" && !isPaidUser {
-                items = prioritizeProviders(in: section.items)
-            } else {
-                items = section.items
-            }
-            guard !items.isEmpty else { return nil }
-            return SidebarSection(id: section.id, title: section.title, items: items)
-        }
-    }
-
-    /// Moves `.providers` to the front of the list, preserving the relative
-    /// order of every other entry. Safe to call even if Providers is not in
-    /// the list — returns the original list unchanged in that case.
-    private func prioritizeProviders(in items: [ViewType]) -> [ViewType] {
-        guard let providersIndex = items.firstIndex(of: .providers) else { return items }
-        var reordered = items
-        let providers = reordered.remove(at: providersIndex)
-        reordered.insert(providers, at: 0)
-        return reordered
+        SidebarSection.allSections
     }
 
     /// Every sidebar destination is routable. Power Mode used to gate on
@@ -191,11 +157,7 @@ struct ContentView: View {
         AboutFooterRow(
             target: SidebarSection.footerItem,
             appVersion: appVersion,
-            isSelected: activeView == SidebarSection.footerItem,
-            isPro: {
-                if case .licensed = licenseViewModel.licenseState { return true }
-                return false
-            }()
+            isSelected: activeView == SidebarSection.footerItem
         ) {
             activeView = SidebarSection.footerItem
         }
@@ -229,16 +191,6 @@ struct ContentView: View {
 
                         Text("VoiceInk")
                             .font(.system(size: 14, weight: .semibold))
-
-                        if case .licensed = licenseViewModel.licenseState {
-                            Text("PRO")
-                                .font(.system(size: 9, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(Color.blue)
-                                .cornerRadius(4)
-                        }
 
                         Spacer()
                     }
@@ -300,7 +252,7 @@ struct ContentView: View {
                 case "AI Models":
                     activeView = .models
                 case "VoiceInk Pro":
-                    activeView = .license
+                    activeView = .about
                 case "History":
                     activeView = .history
                 case "Permissions":
@@ -349,7 +301,7 @@ struct ContentView: View {
             PowerModeView()
         case .settings:
             SettingsView()
-        case .license:
+        case .about:
             LicenseManagementView()
         case .permissions:
             PermissionsView()
@@ -366,7 +318,6 @@ private struct AboutFooterRow: View {
     let target: ViewType
     let appVersion: String
     let isSelected: Bool
-    let isPro: Bool
     let onTap: () -> Void
 
     @State private var isHovering = false
@@ -380,21 +331,9 @@ private struct AboutFooterRow: View {
                     .frame(width: 20, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(target.rawValue)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(primaryForeground)
-
-                        if isPro {
-                            Text("PRO")
-                                .font(.system(size: 9, weight: .heavy))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.accentColor.opacity(0.85))
-                                .cornerRadius(3)
-                        }
-                    }
+                    Text(target.rawValue)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(primaryForeground)
 
                     Text("Version \(appVersion)")
                         .font(.system(size: 10))

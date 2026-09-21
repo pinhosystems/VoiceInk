@@ -6,6 +6,7 @@ struct TemplatePrompt: Identifiable {
     let promptText: String
     let icon: PromptIcon
     let description: String
+    let triggerWords: [String]
     let vocabularyDomains: [VocabularyDomain]
     let category: PromptCategory
 
@@ -15,6 +16,7 @@ struct TemplatePrompt: Identifiable {
         promptText: String,
         icon: PromptIcon,
         description: String,
+        triggerWords: [String] = [],
         vocabularyDomains: [VocabularyDomain] = [.userVocabulary],
         category: PromptCategory = .writing
     ) {
@@ -23,6 +25,7 @@ struct TemplatePrompt: Identifiable {
         self.promptText = promptText
         self.icon = icon
         self.description = description
+        self.triggerWords = triggerWords
         self.vocabularyDomains = vocabularyDomains
         self.category = category
     }
@@ -35,6 +38,7 @@ struct TemplatePrompt: Identifiable {
             icon: icon,
             description: description,
             isPredefined: false,
+            triggerWords: triggerWords,
             vocabularyDomains: vocabularyDomains,
             category: category
         )
@@ -55,6 +59,9 @@ enum PromptTemplates {
         static let commitMessage   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000011")!
         static let prDescription   = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000012")!
         static let codeReview      = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000013")!
+        static let meetingNotes    = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000021")!
+        static let statusUpdate    = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000022")!
+        static let bugReport       = UUID(uuidString: "0F0E0001-0000-0000-0000-000000000023")!
     }
 
     static func template(withID id: UUID) -> TemplatePrompt? {
@@ -79,6 +86,58 @@ enum PromptTemplates {
                 """,
                 icon: "checkmark.seal.fill",
                 description: "Default cleanup",
+                category: .writing
+            ),
+
+            TemplatePrompt(
+                id: TemplateID.meetingNotes,
+                title: "Meeting Notes",
+                promptText: """
+                Rewrite <TRANSCRIPT> as structured meeting notes in markdown.
+
+                Structure (omit any empty section, use the localized headers matching the output language):
+                ## Topics
+                Short bullets — one per distinct topic discussed.
+                ## Decisions
+                Bullets for decisions actually made. Do not invent decisions that were not stated.
+                ## Action items
+                - [ ] checkbox bullets, one per task; include the owner when the user named one.
+
+                Rules:
+                - Preserve every distinct point, name, date, and number. Attribute statements to people when the user did.
+                - Keep the original order within each section.
+                - No preamble, no summary paragraph, no invented content.
+
+                Output only the notes.
+                """,
+                icon: "person.2.fill",
+                description: "Braindump into topics, decisions, and action items",
+                triggerWords: ["meeting notes", "ata"],
+                category: .writing
+            ),
+
+            TemplatePrompt(
+                id: TemplateID.statusUpdate,
+                title: "Status Update",
+                promptText: """
+                Rewrite <TRANSCRIPT> as a short status update (daily/standup style).
+
+                Structure (omit any empty section, use the localized labels matching the output language):
+                **Done:** what was completed.
+                **Next:** what is planned.
+                **Blocked:** blockers, naming who or what is blocking when stated.
+
+                Rules:
+                - Each section is one short sentence or up to 3 tight bullets.
+                - Preserve ticket IDs, branch names, file paths, and technical terms exactly as spoken.
+                - No greetings, no filler, no invented progress.
+
+                Output only the update.
+                """,
+                icon: "chart.bar.fill",
+                description: "Done / next / blocked standup summary",
+                triggerWords: ["status update", "daily"],
+                vocabularyDomains: [.userVocabulary, .technical],
                 category: .writing
             ),
 
@@ -140,6 +199,35 @@ enum PromptTemplates {
                 """,
                 icon: "checklist",
                 description: "Concise markdown review feedback",
+                category: .coding
+            ),
+
+            TemplatePrompt(
+                id: TemplateID.bugReport,
+                title: "Bug Report",
+                promptText: """
+                Rewrite <TRANSCRIPT> as a bug report in markdown.
+
+                Structure (omit sections the user gave no information for, use the localized headers matching the output language):
+                ## Summary
+                One sentence stating the defect.
+                ## Steps to reproduce
+                Numbered list.
+                ## Expected
+                ## Actual
+                ## Environment
+                OS / app version / device, only if mentioned.
+
+                Rules:
+                - Preserve error messages, file paths, versions, and identifiers exactly as spoken; put error messages in inline `code spans`.
+                - Do not invent steps or details the user did not state.
+
+                Output only the markdown body.
+                """,
+                icon: "ant.fill",
+                description: "Steps to reproduce, expected vs actual",
+                triggerWords: ["bug report"],
+                vocabularyDomains: [.userVocabulary, .technical],
                 category: .coding
             ),
         ]

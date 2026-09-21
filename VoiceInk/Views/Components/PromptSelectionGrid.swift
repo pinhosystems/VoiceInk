@@ -50,7 +50,8 @@ struct PromptSelectionGrid: View {
                                 }
                             },
                             onEdit: onEditPrompt,
-                            onDelete: onDeletePrompt
+                            onDelete: onDeletePrompt,
+                            onRestore: { enhancementService.restorePredefinedPrompt($0) }
                         )
                     }
                     

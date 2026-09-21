@@ -45,8 +45,10 @@ enum BackupImporter {
         }
 
         if categories.contains(.prompts) {
-            let predefinedPrompts = enhancementService.customPrompts.filter { $0.isPredefined }
-            enhancementService.customPrompts = predefinedPrompts + backup.customPrompts
+            enhancementService.customPrompts = mergedPrompts(
+                local: enhancementService.customPrompts,
+                imported: backup.customPrompts
+            )
             logger.notice("Imported \(backup.customPrompts.count, privacy: .public) custom prompts")
         }
 
@@ -75,6 +77,19 @@ enum BackupImporter {
         if categories.contains(.customModels) {
             importCustomModels(backup.customCloudModels, transcriptionModelManager: transcriptionModelManager)
         }
+    }
+
+    /// Keeps this machine's built-in prompts, but lets a backup's edited copy
+    /// of one (same UUID) take its place, then appends the backup's
+    /// user-created prompts. Matching by UUID is what stops an imported
+    /// customized built-in from showing up as a duplicate entry.
+    private static func mergedPrompts(local: [CustomPrompt], imported: [CustomPrompt]) -> [CustomPrompt] {
+        let importedById = Dictionary(imported.map { ($0.id, $0) }) { first, _ in first }
+        let predefined = local
+            .filter { $0.isPredefined }
+            .map { (importedById[$0.id] ?? $0).with(isPredefined: true) }
+        let predefinedIds = Set(predefined.map { $0.id })
+        return predefined + imported.filter { !predefinedIds.contains($0.id) }
     }
 
     @MainActor

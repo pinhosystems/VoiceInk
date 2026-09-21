@@ -602,10 +602,9 @@ struct AudioPlayerView: View {
 
                     // Refresh the power-mode label so the history row's pill
                     // reflects the profile that just ran.
-                    let active = PowerModeManager.shared.currentActiveConfiguration
-                    if active?.isEnabled == true {
-                        transcription.powerModeName = active?.name
-                        transcription.powerModeEmoji = active?.emoji
+                    if let active = PowerModeManager.shared.currentActiveConfiguration {
+                        transcription.powerModeName = active.name
+                        transcription.powerModeEmoji = active.emoji
                     }
 
                     try? modelContext.save()
