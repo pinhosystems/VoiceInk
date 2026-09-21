@@ -34,6 +34,8 @@ struct PromptEditorView: View {
     // sheet instead of posting `.navigateToDestination`, which clamps to
     // sidebar rows and was a no-op here. Mirrors Settings → Advanced.
     @State private var isShowingDictionarySheet = false
+    @State private var isShowingFinalPrompt = false
+    @State private var isShowingTemplateBrowser = false
 
     private var isEditingPredefinedPrompt: Bool {
         if case .edit(let prompt) = mode {
@@ -41,7 +43,21 @@ struct PromptEditorView: View {
         }
         return false
     }
-    
+
+    /// The prompt as it ships in `PredefinedPrompts`, for the restore button
+    /// and the "modified" state. Nil for user-created prompts.
+    private var factoryTemplate: CustomPrompt? {
+        guard case .edit(let prompt) = mode, prompt.isPredefined else { return nil }
+        return PredefinedPrompts.all.first { $0.id == prompt.id }
+    }
+
+    /// Whether the fields currently on screen diverge from the shipped text.
+    /// Drives the restore button, so it reflects unsaved edits too.
+    private var hasFactoryDivergence: Bool {
+        guard let template = factoryTemplate else { return false }
+        return PredefinedPromptMerger.hasUserEdits(editedPrompt(from: template), template: template)
+    }
+
     init(mode: Mode, onDismiss: (() -> Void)? = nil) {
         self.mode = mode
         self.onDismiss = onDismiss
@@ -77,10 +93,19 @@ struct PromptEditorView: View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 12) {
-                Text(isEditingPredefinedPrompt ? "Edit Trigger Words" : (mode == .add ? "New Prompt" : "Edit Prompt"))
+                Text(isEditingPredefinedPrompt ? "Edit Built-in Prompt" : (mode == .add ? "New Prompt" : "Edit Prompt"))
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+
+                if isEditingPredefinedPrompt {
+                    Text("Built-in")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
 
@@ -103,11 +128,7 @@ struct PromptEditorView: View {
             )
 
             // Content
-            if isEditingPredefinedPrompt {
-                predefinedPromptForm
-            } else {
-                customPromptForm
-            }
+            promptForm
 
             // Footer
             VStack(spacing: 0) {
@@ -116,6 +137,13 @@ struct PromptEditorView: View {
                         .keyboardShortcut(.escape, modifiers: [])
                         .buttonStyle(.plain)
                         .foregroundColor(.secondary)
+
+                    if hasFactoryDivergence {
+                        Button("Restore Default") { confirmRestore() }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.secondary)
+                            .help("Discard your changes and go back to the prompt VoiceInk ships with")
+                    }
 
                     Spacer()
 
@@ -127,7 +155,7 @@ struct PromptEditorView: View {
                             .frame(minWidth: 100)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isEditingPredefinedPrompt ? false : (title.isEmpty || promptText.isEmpty))
+                    .disabled(title.isEmpty || promptText.isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
                 }
                 .padding(.horizontal, 20)
@@ -152,32 +180,43 @@ struct PromptEditorView: View {
             }
             .frame(minWidth: 720, minHeight: 560)
         }
-    }
-
-    // MARK: - Predefined Prompt Form
-
-    private var predefinedPromptForm: some View {
-        Form {
-            Section {
-                Text("You can only customize the trigger words for system prompts.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            } header: {
-                Text("Editing: \(title)")
-            }
-
-            Section {
-                TriggerWordsEditor(triggerWords: $triggerWords)
+        .sheet(isPresented: $isShowingTemplateBrowser) {
+            NavigationStack {
+                PredefinedPromptsView { template in
+                    apply(template)
+                    isShowingTemplateBrowser = false
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { isShowingTemplateBrowser = false }
+                    }
+                }
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
     }
 
-    // MARK: - Custom Prompt Form
+    private func apply(_ template: TemplatePrompt) {
+        title = template.title
+        promptText = template.promptText
+        selectedIcon = template.icon
+        description = template.description
+        triggerWords = template.triggerWords
+        selectedCategory = template.category
+    }
 
-    private var customPromptForm: some View {
+    // MARK: - Form
+
+    private var promptForm: some View {
         Form {
+            if isEditingPredefinedPrompt {
+                Section {
+                    Text("This is one of VoiceInk's built-in prompts. Edit it freely — \"Restore Default\" brings the shipped version back at any time. While it is edited, app updates to this prompt no longer apply to it.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Section {
                 HStack(alignment: .center, spacing: 14) {
                     Button(action: { showingIconPicker = true }) {
@@ -236,6 +275,8 @@ struct PromptEditorView: View {
                     }
                 }
                 .toggleStyle(.switch)
+
+                finalPromptPreview
             } header: {
                 Text("Instructions")
             }
@@ -284,23 +325,12 @@ struct PromptEditorView: View {
 
             if case .add = mode {
                 Section {
-                    Menu {
-                        ForEach(PromptTemplates.all, id: \.title) { template in
-                            Button {
-                                title = template.title
-                                promptText = template.promptText
-                                selectedIcon = template.icon
-                                description = template.description
-                                triggerWords = template.triggerWords
-                                selectedCategory = template.category
-                            } label: {
-                                Label(template.title, systemImage: template.icon)
-                            }
-                        }
+                    Button {
+                        isShowingTemplateBrowser = true
                     } label: {
                         Label("Start with Template", systemImage: "sparkles")
                     }
-                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -322,6 +352,82 @@ struct PromptEditorView: View {
         }
     }
 
+    // MARK: - Final Prompt Preview
+
+    /// Read-only view of what the LLM actually receives — for prompts using the
+    /// system template, the editable text above is only the `USER_RULES` body.
+    private var finalPromptPreview: some View {
+        DisclosureGroup(isExpanded: $isShowingFinalPrompt) {
+            ScrollView {
+                Text(renderedFinalPrompt)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
+            .frame(maxHeight: 220)
+            .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+            .cornerRadius(6)
+
+            Text("Language, vocabulary and context blocks are appended at runtime.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        } label: {
+            Text("Final prompt")
+                .font(.callout)
+        }
+    }
+
+    private var renderedFinalPrompt: String {
+        // The Assistant prompt's stored text is a placeholder until the user
+        // edits it — the runtime builds it from `assistantMode` instead.
+        if case .edit(let prompt) = mode,
+           prompt.id == PredefinedPrompts.assistantPromptId,
+           !hasFactoryDivergence {
+            return AIPrompts.assistantMode(flags: .all)
+        }
+        return CustomPrompt(
+            title: title,
+            promptText: promptText,
+            useSystemInstructions: useSystemInstructions
+        ).finalPromptText()
+    }
+
+    // MARK: - Actions
+
+    private func confirmRestore() {
+        guard case .edit(let prompt) = mode, let template = factoryTemplate else { return }
+        let alert = NSAlert()
+        alert.messageText = "Restore Default Prompt?"
+        alert.informativeText = "'\(template.title)' goes back to the text, icon and trigger words VoiceInk ships with. Your changes to it are discarded."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Restore")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        enhancementService.restorePredefinedPrompt(prompt)
+        dismissPanel()
+    }
+
+    /// Applies the on-screen fields to `base`, keeping the identity fields the
+    /// editor never exposes. Shared by the save path and the "modified" check.
+    private func editedPrompt(from base: CustomPrompt) -> CustomPrompt {
+        CustomPrompt(
+            id: base.id,
+            title: title,
+            promptText: promptText,
+            isActive: base.isActive,
+            icon: selectedIcon,
+            description: description.isEmpty ? nil : description,
+            isPredefined: base.isPredefined,
+            triggerWords: triggerWords,
+            useSystemInstructions: useSystemInstructions,
+            vocabularyDomains: base.vocabularyDomains,
+            category: selectedCategory,
+            isCustomized: base.isCustomized
+        )
+    }
+
     private func save() {
         switch mode {
         case .add:
@@ -335,20 +441,13 @@ struct PromptEditorView: View {
                 category: selectedCategory
             )
         case .edit(let prompt):
-            let updatedPrompt = CustomPrompt(
-                id: prompt.id,
-                title: prompt.isPredefined ? prompt.title : title,
-                promptText: prompt.isPredefined ? prompt.promptText : promptText,
-                isActive: prompt.isActive,
-                icon: prompt.isPredefined ? prompt.icon : selectedIcon,
-                description: prompt.isPredefined ? prompt.description : (description.isEmpty ? nil : description),
-                isPredefined: prompt.isPredefined,
-                triggerWords: triggerWords,
-                useSystemInstructions: useSystemInstructions,
-                vocabularyDomains: prompt.vocabularyDomains,
-                category: prompt.isPredefined ? prompt.category : selectedCategory
-            )
-            enhancementService.updatePrompt(updatedPrompt)
+            let edited = editedPrompt(from: prompt)
+            // Trigger-word-only edits leave `isCustomized` false so the prompt
+            // keeps receiving upstream text updates.
+            let updated = factoryTemplate.map {
+                edited.with(isCustomized: PredefinedPromptMerger.hasUserEdits(edited, template: $0))
+            } ?? edited
+            enhancementService.updatePrompt(updated)
         }
     }
 }

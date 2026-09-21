@@ -96,6 +96,12 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
     /// Coarse classification surfaced in the prompt picker. Legacy JSON
     /// without the field decodes to `.writing`.
     let category: PromptCategory
+    /// Set on a predefined prompt the user edited. `PredefinedPromptMerger`
+    /// skips the launch-time overwrite for these, so the edit survives across
+    /// launches — at the cost of no longer receiving upstream text updates
+    /// for that prompt until the user restores it. Always false for
+    /// user-created prompts, which are never overwritten anyway.
+    let isCustomized: Bool
 
     init(
         id: UUID = UUID(),
@@ -108,7 +114,8 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         triggerWords: [String] = [],
         useSystemInstructions: Bool = true,
         vocabularyDomains: [VocabularyDomain] = [.userVocabulary],
-        category: PromptCategory = .writing
+        category: PromptCategory = .writing,
+        isCustomized: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -121,10 +128,11 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         self.useSystemInstructions = useSystemInstructions
         self.vocabularyDomains = vocabularyDomains
         self.category = category
+        self.isCustomized = isCustomized
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions, vocabularyDomains, category
+        case id, title, promptText, isActive, icon, description, isPredefined, triggerWords, useSystemInstructions, vocabularyDomains, category, isCustomized
     }
 
     init(from decoder: Decoder) throws {
@@ -140,8 +148,9 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
         useSystemInstructions = try container.decodeIfPresent(Bool.self, forKey: .useSystemInstructions) ?? true
         vocabularyDomains = try container.decodeIfPresent([VocabularyDomain].self, forKey: .vocabularyDomains) ?? [.userVocabulary]
         category = try container.decodeIfPresent(PromptCategory.self, forKey: .category) ?? .writing
+        isCustomized = try container.decodeIfPresent(Bool.self, forKey: .isCustomized) ?? false
     }
-    
+
     /// Renders the user-visible promptText through the system wrapper, with
     /// the system instructions trimmed to mention only the context blocks
     /// listed in `flags`. Pass `.none` to keep the prompt body but drop all
@@ -155,11 +164,35 @@ struct CustomPrompt: Identifiable, Codable, Equatable {
             return self.promptText
         }
     }
+
+    /// Copy-with for the few fields rewritten in place by the launch-time merge
+    /// and the prompt editor. Everything else carries over unchanged.
+    func with(
+        isPredefined: Bool? = nil,
+        triggerWords: [String]? = nil,
+        category: PromptCategory? = nil,
+        isCustomized: Bool? = nil
+    ) -> CustomPrompt {
+        CustomPrompt(
+            id: id,
+            title: title,
+            promptText: promptText,
+            isActive: isActive,
+            icon: icon,
+            description: description,
+            isPredefined: isPredefined ?? self.isPredefined,
+            triggerWords: triggerWords ?? self.triggerWords,
+            useSystemInstructions: useSystemInstructions,
+            vocabularyDomains: vocabularyDomains,
+            category: category ?? self.category,
+            isCustomized: isCustomized ?? self.isCustomized
+        )
+    }
 }
 
 // MARK: - UI Extensions
 extension CustomPrompt {
-    func promptIcon(isSelected: Bool, onTap: @escaping () -> Void, onEdit: ((CustomPrompt) -> Void)? = nil, onDelete: ((CustomPrompt) -> Void)? = nil) -> some View {
+    func promptIcon(isSelected: Bool, onTap: @escaping () -> Void, onEdit: ((CustomPrompt) -> Void)? = nil, onDelete: ((CustomPrompt) -> Void)? = nil, onRestore: ((CustomPrompt) -> Void)? = nil) -> some View {
         VStack(spacing: 8) {
             ZStack {
                 // Dynamic background with blur effect
@@ -245,6 +278,18 @@ extension CustomPrompt {
                     )
             }
             .frame(width: 48, height: 48)
+            .overlay(alignment: .topTrailing) {
+                // Marks a built-in prompt the user edited — the only visual
+                // cue that it no longer matches what VoiceInk ships.
+                if isCustomized {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(size: 13))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(Color.white, Color.accentColor)
+                        .offset(x: 4, y: -4)
+                        .help("Edited — right-click to restore the default")
+                }
+            }
             
             // Enhanced title styling
             VStack(spacing: 2) {
@@ -296,7 +341,7 @@ extension CustomPrompt {
             onTap()
         }
         .contextMenu {
-            if onEdit != nil || onDelete != nil {
+            if onEdit != nil || onDelete != nil || onRestore != nil {
                 if let onEdit = onEdit {
                     Button {
                         onEdit(self)
@@ -304,7 +349,24 @@ extension CustomPrompt {
                         Label("Edit", systemImage: "pencil")
                     }
                 }
-                
+
+                if let onRestore = onRestore, isPredefined, isCustomized {
+                    Button {
+                        let alert = NSAlert()
+                        alert.messageText = "Restore Default Prompt?"
+                        alert.informativeText = "'\(self.title)' goes back to the text, icon and trigger words VoiceInk ships with. Your changes to it are discarded."
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "Restore")
+                        alert.addButton(withTitle: "Cancel")
+
+                        if alert.runModal() == .alertFirstButtonReturn {
+                            onRestore(self)
+                        }
+                    } label: {
+                        Label("Restore Default", systemImage: "arrow.uturn.backward")
+                    }
+                }
+
                 if let onDelete = onDelete, !isPredefined {
                     Button(role: .destructive) {
                         let alert = NSAlert()

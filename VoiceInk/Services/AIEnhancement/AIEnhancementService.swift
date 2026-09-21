@@ -310,7 +310,11 @@ class AIEnhancementService: ObservableObject {
         let promptBody: String
         let resolvedPrompt = overridePrompt ?? activePrompt
         if let resolvedPrompt {
-            if resolvedPrompt.id == PredefinedPrompts.assistantPromptId {
+            // The Assistant prompt's stored text is a placeholder: the runtime
+            // normally rebuilds it from `assistantMode(flags:)` so the context
+            // block references track the user's toggles. Once the user edits
+            // it, their text wins — otherwise the editor would be a dead end.
+            if resolvedPrompt.id == PredefinedPrompts.assistantPromptId, !resolvedPrompt.isCustomized {
                 promptBody = AIPrompts.assistantMode(flags: flags, pack: activePack)
             } else {
                 promptBody = resolvedPrompt.finalPromptText(flags: flags, pack: activePack)
@@ -664,112 +668,27 @@ class AIEnhancementService: ObservableObject {
         selectedPromptId = prompt.id
     }
 
+    /// Restores a predefined prompt to the text, icon and trigger words it
+    /// ships with, clearing the `isCustomized` flag so future app updates to
+    /// that prompt reach the user again. No-op for user-created prompts.
+    func restorePredefinedPrompt(_ prompt: CustomPrompt) {
+        guard let template = PredefinedPrompts.all.first(where: { $0.id == prompt.id }),
+              let index = customPrompts.firstIndex(where: { $0.id == prompt.id }) else { return }
+        customPrompts[index] = PredefinedPromptMerger.restored(customPrompts[index], to: template)
+    }
+
     private func initializePredefinedPrompts() {
-        let predefinedTemplates = PredefinedPrompts.createDefaultPrompts()
-        let validPredefinedIds = Set(predefinedTemplates.map { $0.id })
-        let predefinedTitles = Set(predefinedTemplates.map { $0.title })
-
-        // Purge orphan predefined prompts: entries persisted with
-        // `isPredefined: true` whose UUID is no longer in the source list.
-        // Without this, a prompt that used to be predefined and was later
-        // removed from `PredefinedPrompts` stays stuck — the delete UI
-        // guards on `!isPredefined`, so the user can never remove it.
-        customPrompts.removeAll { $0.isPredefined && !validPredefinedIds.contains($0.id) }
-
-        // Migrate legacy clones: Task Prompt (and any other prompt) was
-        // previously a clonable template — every application of the
-        // "AI Coding Agent" Power Mode preset spawned a fresh
-        // non-predefined "Task Prompt" entry, so users with multiple
-        // applies ended up with two or three duplicates. Now that the
-        // prompt is a predefined entry with a stable UUID, drop the
-        // non-predefined siblings whose title matches a current
-        // predefined title. The single predefined instance below the
-        // loop replaces them in the picker.
-        customPrompts.removeAll { !$0.isPredefined && predefinedTitles.contains($0.title) }
-
-        // De-duplicate user-cloned templates: every "Add new prompt
-        // from template" click spawned a fresh CustomPrompt with a new
-        // UUID but identical title + promptText. Users who explored
-        // the template library now see four "Code Comment" and three
-        // "Chat" entries in the picker. Collapse exact (title,
-        // promptText) duplicates among non-predefined prompts, keeping
-        // the earliest occurrence so any persisted selectedPromptId
-        // referencing it still resolves. Prompts the user actually
-        // edited (different promptText) are untouched.
-        var seenSignatures: Set<String> = []
-        customPrompts = customPrompts.filter { prompt in
-            guard !prompt.isPredefined else { return true }
-            let signature = "\(prompt.title)\u{1F}\(prompt.promptText)"
-            if seenSignatures.contains(signature) {
-                return false
-            }
-            seenSignatures.insert(signature)
-            return true
-        }
-
-        // Re-tag legacy template clones with the right PromptCategory.
-        // Builds shipped before the category field existed decoded old
-        // CustomPrompts with category=.writing regardless of source, so
-        // a user's cloned "Commit Message" or "Code Comment" never
-        // qualified for the runtime tech-term salvage injection in
-        // getSystemMessage. Look each non-predefined prompt up by title
-        // in PromptTemplates and, if the persisted category doesn't
-        // match the source template's, rewrite it. The prompt's UUID,
-        // promptText edits, trigger words, and other user-owned fields
-        // are preserved.
-        let templateByTitle = Dictionary(
-            uniqueKeysWithValues: PromptTemplates.all.map { ($0.title, $0) }
-        )
-        customPrompts = customPrompts.map { prompt -> CustomPrompt in
-            guard !prompt.isPredefined,
-                  let template = templateByTitle[prompt.title],
-                  prompt.category != template.category else { return prompt }
-            return CustomPrompt(
-                id: prompt.id,
-                title: prompt.title,
-                promptText: prompt.promptText,
-                isActive: prompt.isActive,
-                icon: prompt.icon,
-                description: prompt.description,
-                isPredefined: prompt.isPredefined,
-                triggerWords: prompt.triggerWords,
-                useSystemInstructions: prompt.useSystemInstructions,
-                vocabularyDomains: prompt.vocabularyDomains,
-                category: template.category
-            )
-        }
-
-        // One-time seeding of default trigger words: the upsert below
-        // deliberately preserves user-edited triggerWords, so entries
-        // persisted before defaults existed would stay empty forever.
         // Runs once; a user who later clears a trigger list keeps it clear.
         let triggerSeedKey = "PredefinedTriggerWordsSeeded.v1"
         let shouldSeedTriggers = !UserDefaults.standard.bool(forKey: triggerSeedKey)
 
-        for template in predefinedTemplates {
-            if let existingIndex = customPrompts.firstIndex(where: { $0.id == template.id }) {
-                var updatedPrompt = customPrompts[existingIndex]
-                let preservedTriggers = updatedPrompt.triggerWords.isEmpty && shouldSeedTriggers
-                    ? template.triggerWords
-                    : updatedPrompt.triggerWords
-                updatedPrompt = CustomPrompt(
-                    id: updatedPrompt.id,
-                    title: template.title,
-                    promptText: template.promptText,
-                    isActive: updatedPrompt.isActive,
-                    icon: template.icon,
-                    description: template.description,
-                    isPredefined: true,
-                    triggerWords: preservedTriggers,
-                    useSystemInstructions: template.useSystemInstructions,
-                    vocabularyDomains: template.vocabularyDomains,
-                    category: template.category
-                )
-                customPrompts[existingIndex] = updatedPrompt
-            } else {
-                customPrompts.append(template)
-            }
-        }
+        customPrompts = PredefinedPromptMerger.merge(
+            persisted: customPrompts,
+            templates: PredefinedPrompts.createDefaultPrompts(),
+            templateLibrary: PromptTemplates.all,
+            seedTriggerWords: shouldSeedTriggers
+        )
+
         if shouldSeedTriggers {
             UserDefaults.standard.set(true, forKey: triggerSeedKey)
         }

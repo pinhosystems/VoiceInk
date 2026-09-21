@@ -127,7 +127,10 @@ class ImportExportService {
         let powerModeManager = PowerModeManager.shared
         let emojiManager = EmojiManager.shared
 
-        let exportablePrompts = enhancementService.customPrompts.filter { !$0.isPredefined }
+        // Built-in prompts are rebuilt from source on every machine, so they
+        // are not worth exporting — unless the user edited one, in which case
+        // the edit is theirs and has to travel with the backup.
+        let exportablePrompts = enhancementService.customPrompts.filter { !$0.isPredefined || $0.isCustomized }
 
         let powerConfigs = powerModeManager.configurations
         let powerModeShortcuts = Dictionary(uniqueKeysWithValues: powerConfigs.compactMap { config -> (String, KeyboardShortcuts.Shortcut)? in
